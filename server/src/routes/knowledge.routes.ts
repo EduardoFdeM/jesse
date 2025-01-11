@@ -1,9 +1,25 @@
 // server/routes/knowledge.routes.ts
-import express from 'express';
-import { createGlossary, addGlossaryEntry } from '../controllers/glossary.controller';
+import { Router } from 'express';
+import { upload } from '../middlewares/upload.middleware';
+import { authenticate } from '../middlewares/auth.middleware';
+import {
+    createKnowledgeBase,
+    listKnowledgeBases,
+    getKnowledgeBase,
+    updateKnowledgeBase,
+    deleteKnowledgeBase
+} from '../controllers/glossary.controller';
 
-export const knowledgeRoutes = express.Router();
+const router = Router();
 
-knowledgeRoutes.post('/', createGlossary);
-knowledgeRoutes.post('/entry', addGlossaryEntry);
-knowledgeRoutes.post('/upload', upload.single('file'), processKnowledgeFile);
+// Aplicar middleware de autenticação em todas as rotas
+router.use(authenticate);
+
+// Rotas para bases de conhecimento
+router.post('/', upload.single('file'), createKnowledgeBase);
+router.get('/', listKnowledgeBases);
+router.get('/:id', getKnowledgeBase);
+router.put('/:id', upload.single('file'), updateKnowledgeBase);
+router.delete('/:id', deleteKnowledgeBase);
+
+export default router;

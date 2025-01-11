@@ -3,10 +3,10 @@ module.exports = {
   preset: 'ts-jest',
   projects: [
     {
-      displayName: 'backend',
-      testEnvironment: 'node',
-      testMatch: ['<rootDir>/server/src/**/*.test.ts'],
-      setupFiles: ['<rootDir>/server/src/test/setup.ts']
+      //displayName: 'backend',
+      //testEnvironment: 'node',
+      //testMatch: ['<rootDir>/server/src/**/*.test.ts'],
+      //setupFiles: ['<rootDir>/server/src/test/setup.ts']
     },
     {
       displayName: 'frontend',

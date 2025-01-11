@@ -1,102 +1,275 @@
-import React, { useState } from 'react';
-import { Download, Search, FileText, Calendar, Globe2, ArrowDownToLine } from 'lucide-react';
-import { TranslationJob } from '../../types';
+import { useState, useEffect } from 'react';
+import { Download, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Translation } from '../../types/index';
+import { api } from '../../services/api';
+import { FileUpload } from '../upload/FileUpload';
+import { toast } from 'react-toastify';
+import { useSocket } from '../../hooks/useSocket';
 
-interface TranslatedDocumentsProps {
-  jobs: TranslationJob[];
-}
+export function TranslatedDocuments() {
+    const [translations, setTranslations] = useState<Translation[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const [sourceLanguage, setSourceLanguage] = useState('');
+    const [targetLanguage, setTargetLanguage] = useState('');
+    const socket = useSocket();
 
-export function TranslatedDocuments({ jobs }: TranslatedDocumentsProps) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const completedJobs = jobs.filter(job => 
-    job.status === 'completed' &&
-    (job.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     job.sourceLanguage.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     job.targetLanguage.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+    // Função para verificar se uma tradução está em processamento
+    const isProcessing = (status: string) => {
+        return status === 'processing' || status.includes('processing') || status.includes('%');
+    };
 
-  const formatFileSize = (bytes?: number) => {
-    if (!bytes) return 'N/A';
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = bytes;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-      size /= 1024;
-      unitIndex++;
-    }
-    return `${size.toFixed(1)} ${units[unitIndex]}`;
-  };
+    // Função para ordenar traduções
+    const sortTranslations = (translations: Translation[]) => {
+        return [...translations].sort((a, b) => 
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
+    };
 
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">Translated Documents</h2>
-        <div className="relative w-64">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
-          <input
-            type="text"
-            placeholder="Search documents..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
-        </div>
-      </div>
+    // Função para carregar traduções
+    const loadTranslations = async () => {
+        try {
+            const response = await api.get('/api/translations');
+            setTranslations(sortTranslations(response.data.data));
+            setError(null);
+        } catch (err) {
+            console.error('Erro ao carregar traduções:', err);
+            setError('Erro ao carregar traduções');
+        }
+    };
 
-      <div className="bg-white shadow-sm rounded-lg divide-y divide-gray-200">
-        {completedJobs.length === 0 ? (
-          <div className="p-6 text-center">
-            <FileText className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No translated documents</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Your translated documents will appear here once they're ready.
-            </p>
-          </div>
-        ) : (
-          completedJobs.map((job) => (
-            <div key={job.id} className="p-6 hover:bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-6 w-6 text-blue-600" />
+    // Efeito para carregar traduções inicialmente
+    useEffect(() => {
+        loadTranslations();
+    }, []);
+
+    // Efeito para configurar eventos do Socket.IO
+    useEffect(() => {
+        if (!socket) return;
+
+        // Quando uma nova tradução é iniciada
+        socket.on('translation:started', async (translation) => {
+            await loadTranslations(); // Recarrega a lista completa do backend
+        });
+
+        // Quando há progresso na tradução
+        socket.on('translation:progress', ({ id, progress }) => {
+            setTranslations(prev => 
+                prev.map(t => 
+                    t.id === id 
+                        ? { ...t, status: `processing (${progress}%)` }
+                        : t
+                )
+            );
+        });
+
+        // Quando uma tradução é concluída
+        socket.on('translation:completed', async (translation) => {
+            await loadTranslations(); // Recarrega a lista completa do backend
+            toast.success(`Tradução de "${translation.originalName}" concluída!`);
+        });
+
+        // Quando ocorre um erro na tradução
+        socket.on('translation:error', async ({ id, error }) => {
+            await loadTranslations(); // Recarrega a lista completa do backend
+            toast.error(`Erro na tradução: ${error}`);
+        });
+
+        return () => {
+            socket.off('translation:started');
+            socket.off('translation:progress');
+            socket.off('translation:completed');
+            socket.off('translation:error');
+        };
+    }, [socket]);
+
+    const handleFileSelect = async (files: File[]) => {
+        for (const file of files) {
+            await uploadAndTranslateFile(file);
+        }
+    };
+
+    const uploadAndTranslateFile = async (file: File): Promise<void> => {
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('originalname', file.name);
+            formData.append('sourceLanguage', sourceLanguage || 'pt');
+            formData.append('targetLanguage', targetLanguage || 'en');
+
+            // Fazer o upload
+            await api.post('/api/translations', formData);
+            
+        } catch (error: any) {
+            console.error('Erro ao fazer upload:', error);
+            toast.error(error.response?.data?.error || 'Erro ao fazer upload do arquivo');
+        }
+    };
+    
+    const handleDownload = async (fileId: string, fileName: string) => {
+        try {
+            const response = await api.get(`/api/translations/${fileId}/download`, {
+                responseType: 'blob'
+            });
+    
+            const fileURL = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = fileURL;
+            link.setAttribute('download', fileName);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(fileURL);
+        } catch (error) {
+            console.error('Erro ao fazer download:', error);
+            toast.error('Erro ao fazer download do arquivo. Por favor, tente novamente.');
+        }
+    };
+
+    const getStatusIcon = (status: string) => {
+        if (status.includes('processing')) {
+            return <Clock className="h-5 w-5 text-blue-500 animate-spin" />;
+        }
+        switch (status) {
+            case 'completed':
+                return <CheckCircle className="h-5 w-5 text-green-500" />;
+            case 'error':
+                return <XCircle className="h-5 w-5 text-red-500" />;
+            default:
+                return <Clock className="h-5 w-5 text-blue-500 animate-spin" />;
+        }
+    };
+
+    return (
+        <div className="space-y-6">
+            <div className="bg-white shadow rounded-lg p-6">
+                <h2 className="text-lg font-medium mb-4">Nova Tradução</h2>
+                
+                <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
-                        {job.fileName}
-                      </h3>
-                      <div className="mt-1 flex items-center gap-4 text-sm text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4" />
-                          {new Date(job.createdAt).toLocaleDateString()}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Globe2 className="h-4 w-4" />
-                          {job.sourceLanguage.toUpperCase()} → {job.targetLanguage.toUpperCase()}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <ArrowDownToLine className="h-4 w-4" />
-                          {formatFileSize(job.translatedSize)}
-                        </div>
-                      </div>
+                        <label htmlFor="sourceLanguage" className="block text-sm font-medium text-gray-700">
+                            Idioma de Origem
+                        </label>
+                        <select
+                            id="sourceLanguage"
+                            value={sourceLanguage}
+                            onChange={(e) => setSourceLanguage(e.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            required
+                        >
+                             <option value="">Selecione...</option>
+                             <option value="pt">Português</option>
+                             <option value="en">Inglês</option>
+                             <option value="es">Espanhol</option>
+                             <option value="fr">Francês</option>
+                             <option value="de">Alemão</option>
+                             <option value="it">Italiano</option>
+                             <option value="ja">Japonês</option>
+                             <option value="zh">Chinês</option>
+                             <option value="ru">Russo</option>
+                        </select>
                     </div>
-                  </div>
+
+                    <div>
+                        <label htmlFor="targetLanguage" className="block text-sm font-medium text-gray-700">
+                            Idioma de Destino
+                        </label>
+                        <select
+                            id="targetLanguage"
+                            value={targetLanguage}
+                            onChange={(e) => setTargetLanguage(e.target.value)}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            required
+                        >
+                            <option value="">Selecione...</option>
+                             <option value="pt">Português</option>
+                             <option value="en">Inglês</option>
+                             <option value="es">Espanhol</option>
+                             <option value="fr">Francês</option>
+                             <option value="de">Alemão</option>
+                             <option value="it">Italiano</option>
+                             <option value="ja">Japonês</option>
+                             <option value="zh">Chinês</option>
+                             <option value="ru">Russo</option>
+                        </select>
+                    </div>
                 </div>
-                {job.translatedUrl && (
-                  <a
-                    href={job.translatedUrl}
-                    download={`translated_${job.fileName}`}
-                    className="ml-4 flex items-center gap-2 px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    <Download className="h-4 w-4" />
-                    Download
-                  </a>
-                )}
-              </div>
+
+                <FileUpload 
+                    onFileSelect={handleFileSelect}
+                    sourceLanguage={sourceLanguage}
+                    targetLanguage={targetLanguage}
+                />
             </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
+
+            <div className="bg-white shadow rounded-lg p-6">
+                <h2 className="text-lg font-medium mb-4">Documentos Traduzidos</h2>
+
+                {error && (
+                    <div className="p-3 text-red-600 bg-red-50 rounded-md mb-4">
+                        {error}
+                    </div>
+                )}
+
+                <div className="space-y-4">
+                    {translations.map((translation) => (
+                        <div
+                            key={translation.id}
+                            className="p-4 bg-white rounded-lg border border-gray-200 space-y-3"
+                        >
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h3 className="font-medium">{translation.originalName || translation.fileName}</h3>
+                                    <div className="text-sm text-gray-500">
+                                        {translation.sourceLanguage} → {translation.targetLanguage}
+                                    </div>
+                                    <div className="text-sm text-gray-500">
+                                        {new Date(translation.createdAt).toLocaleString()}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {getStatusIcon(translation.status)}
+                                    {(translation.status === 'completed' || translation.status.includes('100%')) && (
+                                        <button
+                                            onClick={() => handleDownload(translation.id, translation.originalName || translation.fileName)}
+                                            className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
+                                            title="Baixar tradução"
+                                        >
+                                            <Download className="h-5 w-5" />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="text-sm text-gray-500 space-y-1">
+                                <div>
+                                    Tamanho: {(translation.fileSize / 1024).toFixed(2)} KB
+                                </div>
+                                {translation.status.includes('processing') && (
+                                    <div className="text-blue-600">
+                                        Status: {translation.status}
+                                    </div>
+                                )}
+                                {translation.knowledgeBase && (
+                                    <div>
+                                        Base de Conhecimento: {translation.knowledgeBase.name}
+                                    </div>
+                                )}
+                                {translation.errorMessage && (
+                                    <div className="text-red-600">
+                                        Erro: {translation.errorMessage}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    ))}
+
+                    {translations.length === 0 && (
+                        <div className="text-center py-12 text-gray-500">
+                            Nenhuma tradução encontrada
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 }

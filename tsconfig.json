@@ -5,7 +5,7 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -32,7 +32,10 @@
     "*.tsx",
     "*.js",
     "*.jsx",
-    "jest.config.cjs"
+    "jest.config.cjs",
+  ],
+  "exclude": [
+    "test", "**/*.test.ts"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

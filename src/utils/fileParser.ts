@@ -17,6 +17,7 @@ export async function parseGlossaryFile(file: File): Promise<GlossaryEntry[]> {
           context: row.context || null,
           category: row.category || null,
           createdAt: new Date(),
+          updatedAt: new Date(),
         }));
 
         resolve(entries);

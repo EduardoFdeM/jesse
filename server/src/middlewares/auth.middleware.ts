@@ -1,18 +1,57 @@
-// server/middlewares/auth.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { UnauthorizedError } from '../utils/errors';
+import prisma from '../config/database';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default_secret';
+// Estender o tipo Request para incluir o usuário
+declare global {
+    namespace Express {
+        interface Request {
+            user?: {
+                id: string;
+                email: string;
+                name: string;
+            };
+        }
+    }
+}
 
-export const authenticate = (req: Request, res: Response, next: NextFunction) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Token ausente' });
+export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // Verificar se o token foi fornecido
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            throw new UnauthorizedError('Token não fornecido');
+        }
 
-  try {
-    const payload = jwt.verify(token, JWT_SECRET) as { userId: number };
-    req.userId = payload.userId;
-    next();
-  } catch {
-    return res.status(401).json({ error: 'Token inválido' });
-  }
+        // Extrair o token
+        const token = authHeader.split(' ')[1];
+
+        // Verificar o token
+        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+
+        // Buscar o usuário
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id }
+        });
+
+        if (!user) {
+            throw new UnauthorizedError('Usuário não encontrado');
+        }
+
+        // Adicionar o usuário à requisição
+        req.user = {
+            id: user.id,
+            email: user.email,
+            name: user.name
+        };
+
+        next();
+    } catch (error) {
+        if (error instanceof jwt.JsonWebTokenError) {
+            next(new UnauthorizedError('Token inválido'));
+        } else {
+            next(error);
+        }
+    }
 };

@@ -1,79 +1,103 @@
 import { useState, useEffect } from 'react';
-import { io } from 'socket.io-client';
-import { CheckCircle, Clock, AlertTriangle } from 'lucide-react';
-import { TranslationJob } from '../../types';
+import { CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Translation } from '../../types';
+import { api } from '../../services/api';
 
-// Initialize the WebSocket client
-const socket = io('http://localhost:3000'); // Update for the WebSocket server URL
-
-// Props interface
 interface TranslationProgressProps {
-  job: TranslationJob;
+    translationId: string;
+    onComplete?: (translation: Translation) => void;
 }
 
-// Functional Component for displaying translation progress
-export function TranslationProgress({ job }: TranslationProgressProps) {
-  const getStatusIcon = () => {
-    switch (job.status) {
-      case 'completed':
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case 'error':
-        return <AlertTriangle className="h-5 w-5 text-red-500" />;
-      default:
-        return <Clock className="h-5 w-5 text-blue-500" />;
+export function TranslationProgress({ translationId, onComplete }: TranslationProgressProps) {
+    const [translation, setTranslation] = useState<Translation | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const response = await api.get(`/api/translations/${translationId}`);
+                const translation = response.data.data;
+                setTranslation(translation);
+
+                if (translation.status === 'completed') {
+                    onComplete?.(translation);
+                } else if (translation.status === 'error') {
+                    setError(translation.errorMessage || 'Erro ao processar tradução');
+                } else {
+                    // Continuar verificando se ainda está em andamento
+                    setTimeout(checkStatus, 2000);
+                }
+            } catch (err) {
+                console.error('Erro ao verificar status da tradução:', err);
+                setError('Erro ao verificar status da tradução');
+            }
+        };
+
+        checkStatus();
+    }, [translationId, onComplete]);
+
+    if (!translation) {
+        return (
+            <div className="flex items-center justify-center p-4">
+                <Clock className="animate-spin h-5 w-5 text-blue-500 mr-2" />
+                <span className="text-sm text-gray-600">Carregando...</span>
+            </div>
+        );
     }
-  };
 
-  return (
-    <div className="border rounded-lg p-4 mb-4">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          {getStatusIcon()}
-          <span className="font-medium">{job.fileName}</span>
-        </div>
-        <span className="text-sm text-gray-500">
-          {new Date(job.createdAt).toLocaleString()}
-        </span>
-      </div>
+    return (
+        <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+                <h3 className="text-lg font-medium">Status da Tradução</h3>
+                {translation.status === 'completed' && (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                )}
+                {translation.status === 'error' && (
+                    <XCircle className="h-5 w-5 text-red-500" />
+                )}
+                {translation.status === 'pending' && (
+                    <Clock className="animate-spin h-5 w-5 text-blue-500" />
+                )}
+            </div>
 
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm text-gray-600">
-          <span>Progress</span>
-          <span>{job.progress}%</span>
+            <div className="space-y-2">
+                <div className="text-sm text-gray-500">
+                    <span className="font-medium">Arquivo: </span>
+                    {translation.fileName}
+                </div>
+                <div className="text-sm text-gray-500">
+                    <span className="font-medium">Tamanho: </span>
+                    {(translation.fileSize / 1024).toFixed(2)} KB
+                </div>
+                <div className="text-sm text-gray-500">
+                    <span className="font-medium">Idiomas: </span>
+                    {translation.sourceLanguage} → {translation.targetLanguage}
+                </div>
+                {translation.knowledgeBase && (
+                    <div className="text-sm text-gray-500">
+                        <span className="font-medium">Base de Conhecimento: </span>
+                        {translation.knowledgeBase.name}
+                    </div>
+                )}
+            </div>
+
+            {error && (
+                <div className="p-3 text-red-600 bg-red-50 rounded-md">
+                    {error}
+                </div>
+            )}
+
+            {translation.status === 'completed' && translation.translatedUrl && (
+                <div className="flex justify-end">
+                    <a
+                        href={`/api/translations/${translation.id}/download`}
+                        download
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700"
+                    >
+                        Baixar Tradução
+                    </a>
+                </div>
+            )}
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div
-            className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-            style={{ width: `${job.progress}%` }}
-          />
-        </div>
-      </div>
-    </div>
-  );
+    );
 }
-
-// Separate Real-Time Progress Component
-export function RealTimeTranslationProgress() {
-  const [progress, setProgress] = useState<number>(0);
-
-  useEffect(() => {
-    // Listen to translation progress updates from the backend
-    socket.on('translation-progress', (data: { progress: number }) => {
-      setProgress(data.progress);
-    });
-
-    return () => {
-      socket.off('translation-progress');
-    };
-  }, []);
-
-  return (
-    <div>
-      <h3>Progresso da Tradução</h3>
-      <progress value={progress} max="100"></progress>
-      <p>{progress}% concluído</p>
-    </div>
-  );
-}
-
-export default RealTimeTranslationProgress;

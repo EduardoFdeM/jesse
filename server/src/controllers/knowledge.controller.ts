@@ -1,250 +1,171 @@
 import { Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../utils/asyncHandler';
-import { z } from 'zod';
-import { parse, unparse } from 'papaparse';
-import { Configuration, OpenAIApi } from 'openai';
-import * as fs from 'fs';
-import csvParser from 'csv-parser';
+import { processKnowledgeBaseFile } from '../services/knowledge.service';
+import { NotFoundError } from '../utils/errors';
+import prisma from '../config/database';
+import fs from 'fs';
+import { KnowledgeBase } from '@prisma/client';
 
-
-
-const prisma = new PrismaClient();
-
-const openai = new OpenAIApi(new Configuration({
-  apiKey: process.env.OPENAI_API_KEY, // Certifique-se de que a variável está configurada no .env
-}));
-
-export async function generateEmbeddings(text: string): Promise<number[]> {
-  const response = await openai.createEmbedding({
-    model: 'text-embedding-ada-002',
-    input: text,
-  });
-  return response.data.data[0].embedding;
-}
-
-const createKnowledgeBaseSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  description: z.string(),
-  sourceLanguage: z.string().min(2, 'Source language is required'),
-  targetLanguage: z.string().min(2, 'Target language is required'),
-  entries: z.array(z.object({
-    sourceText: z.string().min(1, 'Source text is required'),
-    targetText: z.string().min(1, 'Target text is required'),
-    context: z.string().optional(),
-    category: z.string().optional(),
-  })).optional(),
-});
-
+// Criar base de conhecimento
 export const createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-  const validatedData = createKnowledgeBaseSchema.parse(req.body);
-  const userId = req.user?.id;
+    const { name, description, sourceLanguage, targetLanguage } = req.body;
+    const file = req.file;
 
-  if (!userId) {
-    throw new Error('User not authenticated');
-  }
+    if (!file) {
+        throw new Error('Nenhum arquivo enviado');
+    }
 
-  const knowledgeBase = await prisma.knowledgeBase.create({
-    data: {
-      name: validatedData.name,
-      description: validatedData.description,
-      sourceLanguage: validatedData.sourceLanguage,
-      targetLanguage: validatedData.targetLanguage,
-      userId,
-      entries: validatedData.entries ? {
-        createMany: {
-          data: validatedData.entries.map(entry => ({
-            sourceText: entry.sourceText,
-            targetText: entry.targetText,
-            context: entry.context,
-            category: entry.category,
-          })),
-        },
-      } : undefined,
-    },
-    include: {
-      entries: true,
-    },
-  });
+    const knowledgeBase = await processKnowledgeBaseFile(file.path, {
+        name,
+        description,
+        sourceLanguage,
+        targetLanguage,
+        userId: req.user!.id
+    });
 
-  res.status(201).json({
-    status: 'success',
-    data: knowledgeBase,
-  });
+    res.status(201).json({
+        status: 'success',
+        data: knowledgeBase
+    });
 });
 
-export const importEntries = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const file = req.file;
+// Listar bases de conhecimento
+export const getKnowledgeBases = asyncHandler(async (req: Request, res: Response) => {
+    const knowledgeBases = await prisma.knowledgeBase.findMany({
+        where: { userId: req.user!.id }
+    });
 
-  if (!file) {
-    throw new Error('No file uploaded');
-  }
-
-  if (file.mimetype !== 'text/csv') {
-    throw new Error('Invalid file format. Please upload a CSV file');
-  }
-
-  const csvString = file.buffer.toString('utf-8');
-  const parseResult = parse(csvString, {
-    header: true,
-    skipEmptyLines: true,
-  });
-
-  if (parseResult.errors.length > 0) {
-    throw new Error('Invalid CSV format');
-  }
-
-  const entries = (parseResult.data as any[]).map(row => ({
-    sourceText: row.sourceText,
-    targetText: row.targetText,
-    context: row.context,
-    category: row.category,
-  }));
-
-  const updatedKnowledgeBase = await prisma.knowledgeBase.update({
-    where: { id },
-    data: {
-      entries: {
-        createMany: {
-          data: entries,
-        },
-      },
-    },
-    include: {
-      entries: true,
-    },
-  });
-
-  res.json({
-    status: 'success',
-    data: updatedKnowledgeBase,
-  });
+    res.json({
+        status: 'success',
+        data: knowledgeBases
+    });
 });
 
-export const exportEntries = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  const knowledgeBase = await prisma.knowledgeBase.findUnique({
-    where: { id },
-    include: {
-      entries: true,
-    },
-  });
-
-  if (!knowledgeBase) {
-    throw new Error('Knowledge base not found');
-  }
-
-  const csvData = knowledgeBase.entries.map(entry => ({
-    sourceText: entry.sourceText,
-    targetText: entry.targetText,
-    context: entry.context || '',
-    category: entry.category || '',
-  }));
-
-  const csvString = unparse(csvData);
-
-  res.setHeader('Content-Type', 'text/csv');
-  res.setHeader('Content-Disposition', `attachment; filename="knowledge-base-${id}.csv"`);
-  res.send(csvString);
-});
-
+// Obter uma base de conhecimento específica
 export const getKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
+    const { id } = req.params;
 
-  const knowledgeBase = await prisma.knowledgeBase.findUnique({
-    where: { id },
-    include: {
-      entries: true,
-    },
-  });
-
-  if (!knowledgeBase) {
-    throw new Error('Knowledge base not found');
-  }
-
-  res.json({
-    status: 'success',
-    data: knowledgeBase,
-  });
-});
-
-export const updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const validatedData = createKnowledgeBaseSchema.partial().parse(req.body);
-
-  const knowledgeBase = await prisma.knowledgeBase.update({
-    where: { id },
-    data: {
-      name: validatedData.name,
-      description: validatedData.description,
-      sourceLanguage: validatedData.sourceLanguage,
-      targetLanguage: validatedData.targetLanguage,
-      entries: validatedData.entries ? {
-        createMany: {
-          data: validatedData.entries.map(entry => ({
-            sourceText: entry.sourceText,
-            targetText: entry.targetText,
-            context: entry.context,
-            category: entry.category,
-          })),
-        },
-      } : undefined,
-    },
-    include: {
-      entries: true,
-    },
-  });
-
-  res.json({
-    status: 'success',
-    data: knowledgeBase,
-  });
-});
-
-export const deleteKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-
-  await prisma.knowledgeBase.delete({
-    where: { id },
-  });
-
-  res.json({
-    status: 'success',
-    message: 'Knowledge base deleted successfully',
-  });
-});
-
-export const processKnowledgeFile = async (req: Request, res: Response) => {
-  const { file } = req;
-  if (!file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-
-  const data: any[] = [];
-
-  if (file.mimetype === 'text/csv') {
-    fs.createReadStream(file.path)
-      .pipe(csvParser())
-      .on('data', (row) => data.push(row))
-      .on('end', async () => {
-        try {
-          const processedEntries = await Promise.all(data.map(async (entry) => ({
-            sourceText: entry.sourceText,
-            targetText: entry.targetText,
-            context: entry.context || null,
-            category: entry.category || null,
-            embedding: await generateEmbeddings(entry.sourceText),
-            knowledgeBaseId: req.body.knowledgeBaseId,
-          })));
-
-          await prisma.glossaryEntry.createMany({ data: processedEntries });
-          res.status(200).json({ message: 'Base de conhecimento processada com sucesso!' });
-        } catch (error) {
-          console.error('Erro ao processar arquivo:', error);
-          res.status(500).json({ error: 'Erro ao processar arquivo' });
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
         }
-      });
-  } else {
-    res.status(400).json({ error: 'Formato de arquivo não suportado' });
-  }
-};
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    res.json({
+        status: 'success',
+        data: knowledgeBase
+    });
+});
+
+// Atualizar base de conhecimento
+export const updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { name, description } = req.body;
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    const updatedKnowledgeBase = await prisma.knowledgeBase.update({
+        where: { id },
+        data: { name, description }
+    });
+
+    res.json({
+        status: 'success',
+        data: updatedKnowledgeBase
+    });
+});
+
+// Excluir base de conhecimento
+export const deleteKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    // Excluir o arquivo
+    if (fs.existsSync(knowledgeBase.filePath)) {
+        fs.unlinkSync(knowledgeBase.filePath);
+    }
+
+    await prisma.knowledgeBase.delete({
+        where: { id }
+    });
+
+    res.json({
+        status: 'success',
+        data: null
+    });
+});
+
+// Obter conteúdo da base de conhecimento
+export const getKnowledgeBaseContent = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    if (!fs.existsSync(knowledgeBase.filePath)) {
+        throw new NotFoundError('Arquivo não encontrado');
+    }
+
+    const content = fs.readFileSync(knowledgeBase.filePath, 'utf-8');
+
+    res.json({
+        status: 'success',
+        data: content
+    });
+});
+
+// Atualizar conteúdo da base de conhecimento
+export const updateKnowledgeBaseContent = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { content } = req.body;
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    fs.writeFileSync(knowledgeBase.filePath, content, 'utf-8');
+
+    res.json({
+        status: 'success',
+        data: null
+    });
+});

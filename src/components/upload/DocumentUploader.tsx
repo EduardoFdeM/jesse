@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FileUpload } from './FileUpload';
 import { LanguageSelector } from '../translation/LanguageSelector';
-import axios from 'axios';
+import api from '../../axiosConfig';
+
+
 
 export function DocumentUploader() {
     const [sourceLanguage, setSourceLanguage] = useState('');
@@ -31,7 +33,7 @@ export function DocumentUploader() {
         formData.append('targetLanguage', targetLanguage);
     
         try {
-          const response = await axios.post('/api/translations/upload', formData, {
+          const response = await api.post('/api/translations', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
           });
     
@@ -59,7 +61,11 @@ export function DocumentUploader() {
             label="Target Language"
           />
         </div>
-        <FileUpload onFileSelect={handleFileSelect} />
+        <FileUpload 
+          onFileSelect={handleFileSelect}
+          sourceLanguage={sourceLanguage}
+          targetLanguage={targetLanguage}
+        />
         <button
           onClick={handleSubmit}
           className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"

@@ -10,7 +10,7 @@
     "lib": ["ES2020"],
     "outDir": "dist",
     "rootDir": ".",
-    "baseUrl": ".",
+    "baseUrl": "http://localhost:3000",
     "paths": {
       "~/*": ["./src/*"],
       "@server/*": ["./server/src/*"]

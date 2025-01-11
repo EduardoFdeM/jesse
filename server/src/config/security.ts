@@ -6,7 +6,7 @@ import { Express } from 'express';
 export const configureSecurityMiddleware = (app: Express) => {
   // CORS configuration
   const corsOptions = {
-    origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Vite's default port
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000', // Vite's default port
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

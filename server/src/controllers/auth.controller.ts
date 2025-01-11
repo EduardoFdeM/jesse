@@ -1,71 +1,141 @@
-import { Request, Response, NextFunction } from 'express';
-import { PrismaClient } from '@prisma/client';
+// server/controllers/auth.controller.ts
+import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { asyncHandler } from '../utils/asyncHandler';
+import prisma from '../config/database';
 import { UnauthorizedError } from '../utils/errors';
+import { asyncHandler } from '../utils/asyncHandler';
 
-const prisma = new PrismaClient();
+// Login
+export const login = asyncHandler(async (req: Request, res: Response) => {
+    console.log('📝 Tentativa de login:', {
+        email: req.body.email,
+        hasPassword: !!req.body.password
+    });
 
-export const login = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  try {
     const { email, password } = req.body;
 
+    // Validar campos obrigatórios
     if (!email || !password) {
-      throw new UnauthorizedError('Email and password are required');
+        console.log('❌ Email ou senha não fornecidos');
+        throw new UnauthorizedError('Email e senha são obrigatórios');
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Buscar usuário
+    const user = await prisma.user.findUnique({
+        where: { email }
+    });
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      throw new UnauthorizedError('Invalid credentials');
+    console.log('🔍 Usuário encontrado:', {
+        found: !!user,
+        userId: user?.id,
+        userEmail: user?.email
+    });
+
+    if (!user) {
+        console.log('❌ Usuário não encontrado');
+        throw new UnauthorizedError('Credenciais inválidas');
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || 'default-secret', {
-      expiresIn: '24h',
+    // Verificar senha
+    const validPassword = await bcrypt.compare(password, user.password);
+    console.log('🔐 Verificação de senha:', {
+        valid: validPassword,
+        passwordLength: password.length,
+        hashedPasswordLength: user.password.length
     });
 
-    res.status(200).json({
-      status: 'success',
-      data: {
-        token,
-        user: { id: user.id, email: user.email, name: user.name },
-      },
+    if (!validPassword) {
+        console.log('❌ Senha inválida');
+        throw new UnauthorizedError('Credenciais inválidas');
+    }
+
+    // Gerar token
+    const token = jwt.sign(
+        { id: user.id },
+        process.env.JWT_SECRET!,
+        { expiresIn: '24h' }
+    );
+
+    console.log('✅ Login bem-sucedido:', {
+        userId: user.id,
+        userEmail: user.email
     });
-  } catch (error) {
-    next(error);
-  }
+
+    res.json({
+        status: 'success',
+        data: {
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            }
+        }
+    });
 });
 
-
+// Registro
 export const register = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password, name } = req.body;
+    const { name, email, password } = req.body;
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+    // Validar campos obrigatórios
+    if (!name || !email || !password) {
+        throw new Error('Todos os campos são obrigatórios');
+    }
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      password: hashedPassword,
-      name,
-    },
-  });
+    // Verificar se usuário já existe
+    const existingUser = await prisma.user.findUnique({
+        where: { email }
+    });
 
-  const token = jwt.sign(
-    { userId: user.id },
-    process.env.JWT_SECRET || 'default-secret',
-    { expiresIn: '24h' }
-  );
+    if (existingUser) {
+        throw new Error('Email já cadastrado');
+    }
 
-  res.status(201).json({
-    status: 'success',
-    data: {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-      },
-    },
-  });
+    // Hash da senha
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Criar usuário
+    const user = await prisma.user.create({
+        data: {
+            name,
+            email,
+            password: hashedPassword
+        }
+    });
+
+    // Gerar token
+    const token = jwt.sign(
+        { id: user.id },
+        process.env.JWT_SECRET!,
+        { expiresIn: '24h' }
+    );
+
+    res.status(201).json({
+        status: 'success',
+        data: {
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            }
+        }
+    });
+});
+
+// Verificar token
+export const verifyToken = asyncHandler(async (req: Request, res: Response) => {
+    res.json({
+        status: 'success',
+        data: {
+            user: {
+                id: req.user!.id,
+                email: req.user!.email,
+                name: req.user!.name
+            }
+        }
+    });
 });

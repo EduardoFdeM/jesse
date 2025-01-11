@@ -1,74 +1,79 @@
-import React, { useCallback } from 'react';
+import { useState, useRef } from 'react';
 import { Upload } from 'lucide-react';
-import { parseGlossaryFile } from '../../utils/fileParser';
-import { GlossaryEntry } from '../../types';
 
 interface GlossaryFileUploadProps {
-  onEntriesLoaded: (entries: GlossaryEntry[]) => void;
+  onContentLoaded: (content: string) => void;
   onError: (error: string) => void;
 }
 
-export function GlossaryFileUpload({ onEntriesLoaded, onError }: GlossaryFileUploadProps) {
-  const handleFileUpload = useCallback(async (file: File) => {
-    try {
-      const entries = await parseGlossaryFile(file);
-      onEntriesLoaded(entries);
-    } catch (error) {
-      onError('Failed to parse file. Please ensure it\'s a valid CSV file.');
+export function GlossaryFileUpload({ onContentLoaded, onError }: GlossaryFileUploadProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    processFile(file);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
     }
-  }, [onEntriesLoaded, onError]);
+  };
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (file) {
-        handleFileUpload(file);
+  const processFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        onContentLoaded(content);
+      } catch (error) {
+        onError('Erro ao processar arquivo');
+        console.error('Erro ao processar arquivo:', error);
       }
-    },
-    [handleFileUpload]
-  );
-
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        handleFileUpload(file);
-      }
-    },
-    [handleFileUpload]
-  );
+    };
+    reader.onerror = () => {
+      onError('Erro ao ler arquivo');
+    };
+    reader.readAsText(file);
+  };
 
   return (
     <div
+      className={`p-6 border-2 border-dashed rounded-lg text-center cursor-pointer transition-colors ${
+        isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-500'
+      }`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      onDragOver={(e) => e.preventDefault()}
-      className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors"
-      data-testid="drop-zone"
+      onClick={() => fileInputRef.current?.click()}
     >
-      <div className="flex flex-col items-center gap-3">
-        <Upload className="h-8 w-8 text-gray-400" />
-        <div>
-          <p className="text-sm font-medium text-gray-700">
-            Drop your file here
-          </p>
-          <p className="text-xs text-gray-500">or</p>
-        </div>
-        <label className="cursor-pointer bg-blue-600 text-white px-3 py-1.5 text-sm rounded-md hover:bg-blue-700">
-          Browse Files
-          <input
-            type="file"
-            className="hidden"
-            accept=".csv,.txt"
-            onChange={handleFileInput}
-            data-testid="file-input"
-          />
-        </label>
-        <div className="text-xs text-gray-500 space-y-1">
-          <p>Accepted formats: CSV</p>
-          <p>Format: source_text,target_text[,context,category]</p>
-        </div>
-      </div>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileSelect}
+        className="hidden"
+        accept=".txt,.csv,.xlsx,.xls"
+      />
+      <Upload className="mx-auto h-12 w-12 text-gray-400" />
+      <p className="mt-2 text-sm text-gray-600">
+        Arraste e solte um arquivo aqui, ou clique para selecionar
+      </p>
+      <p className="mt-1 text-xs text-gray-500">
+        Suporta arquivos TXT, CSV, XLSX, XLS
+      </p>
     </div>
   );
 }

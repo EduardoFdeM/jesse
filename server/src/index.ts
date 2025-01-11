@@ -1,75 +1,75 @@
 import express from 'express';
-import dotenv from 'dotenv';
 import cors from 'cors';
+import dotenv from 'dotenv';
 import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
-import { configureSecurityMiddleware } from './config/security';
-import { authRoutes } from './routes/auth.routes';
-import { translationRoutes } from './routes/translation.routes';
-import { knowledgeRoutes } from './routes/knowledge.routes';
-import { authMiddleware } from './middlewares/auth';
-import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
-import { Server } from "socket.io";
+import authRoutes from './routes/auth.routes';
+import translationRoutes from './routes/translation.routes';
+import knowledgeRoutes from './routes/knowledge.routes';
+import { errorHandler } from './middlewares/error.middleware';
+import path from 'path';
+import { initializeSocket } from './config/socket';
 
 // Carregar variáveis de ambiente
 dotenv.config();
 
-// Inicializar o app Express
+console.log('🚀 Iniciando servidor...');
+
 const app = express();
-
-// Configurações do CORS
-const allowedOrigins = ['http://localhost:3000', 'http://localhost:5000'];
-app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST'] }));
-
-// Middleware de segurança
-configureSecurityMiddleware(app);
-
-// Middleware de parsing
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Rotas públicas
-app.use('/api/auth', authRoutes);
-
-// Rotas protegidas
-app.use('/api/translations', authMiddleware, translationRoutes);
-app.use('/api/knowledge-bases', authMiddleware, knowledgeRoutes);
-
-// Middleware de arquivos estáticos
-app.use('/downloads', express.static('uploads'));
-
-// Manipuladores de erros
-app.use(errorHandler);
-app.use(notFoundHandler);
-
-// Criar servidor HTTP e integrar com Socket.IO
 const httpServer = createServer(app);
-const io = new SocketIOServer(httpServer, {
-  cors: {
-    origin: allowedOrigins,
-    methods: ['GET', 'POST'],
-  },
+
+// Configurar Socket.IO
+console.log('🔌 Configurando Socket.IO...');
+const io = initializeSocket(httpServer);
+console.log('✅ Socket.IO configurado');
+
+// Middlewares
+app.use(cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+
+// Servir arquivos estáticos
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/translated_pdfs', express.static(path.join(process.cwd(), 'translated_pdfs')));
+
+// Rota raiz
+app.get('/', (req, res) => {
+    res.json({
+        message: 'API do Tradutor de Documentos',
+        version: '1.0.0',
+        status: 'online',
+        timestamp: new Date(),
+        endpoints: {
+            root: '/',
+            auth: '/api/auth',
+            translations: '/api/translations',
+            knowledgeBases: '/api/knowledge-bases',
+            socket: '/socket.io'
+        }
+    });
 });
 
-// Configuração do WebSocket
-io.on('connection', (socket) => {
-  console.log('Novo cliente conectado:', socket.id);
+// Rotas
+app.use('/api/auth', authRoutes);
+app.use('/api/translations', translationRoutes);
+app.use('/api/knowledge-bases', knowledgeRoutes);
 
-  // Receber e transmitir atualizações em tempo real
-  socket.on('translation-progress', (data) => {
-    console.log('Atualização recebida:', data);
-    io.emit('progress-update', data);
-  });
+// Middleware de erro
+app.use(errorHandler);
 
-  socket.on('disconnect', () => {
-    console.log('Cliente desconectado:', socket.id);
-  });
-});
-
-// Iniciar o servidor
+// Iniciar servidor
 const PORT = process.env.PORT || 4000;
-httpServer.listen(PORT, () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
 
-export { io };
+try {
+    httpServer.listen(PORT, () => {
+        console.log('=================================');
+        console.log(`✨ Servidor rodando em http://localhost:${PORT}`);
+        console.log('Socket.IO configurado e pronto');
+        console.log('=================================');
+    });
+} catch (error) {
+    console.error('❌ Erro ao iniciar servidor:', error);
+}

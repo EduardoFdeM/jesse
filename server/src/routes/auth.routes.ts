@@ -1,9 +1,15 @@
 // server/routes/auth.routes.ts
-import express from 'express';
-import { login, register } from '../controllers/auth.controller';
+import { Router } from 'express';
+import { login, register, verifyToken } from '../controllers/auth.controller';
+import { authenticate } from '../middlewares/auth.middleware';
 
+const router = Router();
 
-export const authRoutes = express.Router();
+// Rotas públicas
+router.post('/login', login);
+router.post('/register', register);
 
-authRoutes.post('/login', login);
-authRoutes.post('/register', register);
+// Rota protegida
+router.get('/verify', authenticate, verifyToken);
+
+export default router;
