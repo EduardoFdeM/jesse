@@ -1,18 +1,10 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_BACKEND_URL;
+const SOCKET_URL = 'https://pdf-tradutor-production.up.railway.app';
 
 const socket = io(SOCKET_URL, {
-  transports: ['websocket', 'polling'],
-  autoConnect: true,
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000,
-  timeout: 45000, // Match server's connectTimeout
-  withCredentials: true,
-  extraHeaders: {
-    'Cache-Control': 'no-cache'
-  }
+  transports: ['websocket'],
+  withCredentials: true
 });
 
 // Debug logging

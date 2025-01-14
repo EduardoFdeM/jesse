@@ -4,21 +4,23 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "prisma:seed": "npx ts-node server/prisma/seed.ts",
+    "prisma:seed": "npx prisma generate --schema=server/prisma/schema.prisma",
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "server:dev": "tsx server/src/index.ts",
-    "server:build": "tsc -p server/tsconfig.json",
-    "server:start": "node server/dist/index.js",
-    "vercel-build": "npx prisma generate && npx prisma migrate deploy",
+    "server:dev": "cd server && nodemon --watch 'src/**/*.ts' --exec 'tsx' src/index.ts",
+    "server:build": "cd server && npx prisma generate && rimraf dist && tsc",
+    "server:start": "cd server && node dist/index.js",
+    "vercel-build": "cd server && npx prisma generate && cd .. && npm run build",
     "test": "echo 'Skipping tests temporarily'",
     "test:watch": "echo 'Skipping tests temporarily'",
     "db:check": "cd server && npx tsx src/scripts/checkUsers.ts",
     "db:studio": "cd server && npx prisma studio",
     "db:push": "cd server && npx prisma db push",
-    "db:generate": "cd server && npx prisma generate"
+    "db:generate": "cd server && npx prisma generate",
+    "railway:build": "cd server && npx prisma generate && npx prisma db push && tsc",
+    "prisma:migrate": "cd server && npx prisma migrate deploy"
   },
   "dependencies": {
     "@paralleldrive/cuid2": "^2.2.2",
@@ -46,6 +48,7 @@
     "openai": "^4.77.3",
     "papaparse": "^5.4.1",
     "pdf-parse": "^1.1.1",
+    "pdf2json": "^3.1.5",
     "pdfkit": "^0.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -103,7 +106,7 @@
     "vite": "^5.4.2"
   },
   "engines": {
-    "node": ">=20.18.0",
-    "npm": ">=10.8.2"
+    "node": ">=18.0.0",
+    "npm": ">=10.8.0"
   }
 }

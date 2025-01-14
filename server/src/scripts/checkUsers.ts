@@ -12,6 +12,13 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const prisma = new PrismaClient();
 
+interface PrismaUser {
+    id: string;
+    email: string;
+    name: string;
+    password: string;
+}
+
 async function checkUsers() {
     try {
         // Verificar conexão com o banco
@@ -26,7 +33,7 @@ async function checkUsers() {
         if (users.length === 0) {
             console.log('❗ Nenhum usuário encontrado no banco de dados.');
         } else {
-            users.forEach(user => {
+            users.forEach((user: PrismaUser) => {
                 console.log('👤 Usuário:', {
                     id: user.id,
                     email: user.email,
@@ -85,7 +92,7 @@ async function checkUsers() {
                     data: { password: hashedPassword }
                 });
 
-                console.log('✅ Senha atualizada com sucesso!');
+                console.log('✅ Senha atualizada para o usuário:', updatedUser.email);
             }
         }
 

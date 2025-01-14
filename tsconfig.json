@@ -6,10 +6,9 @@
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "node",
-    "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true,
+    "noEmit": false,
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
@@ -23,7 +22,8 @@
     "paths": {
       "~/*": ["./src/*"],
       "@server/*": ["./server/src/*"]
-    }
+    },
+    "outDir": "./dist"
   },
   "include": [
     "src/**/*",
@@ -31,11 +31,14 @@
     "*.ts",
     "*.tsx",
     "*.js",
-    "*.jsx",
-    "jest.config.cjs",
+    "*.jsx"
   ],
   "exclude": [
-    "test", "**/*.test.ts"
+    "test", "**/*.test.ts",
+    "eslint.config.js",
+    "postcss.config.js",
+    "tailwind.config.js",
+    "jest.config.cjs"
   ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

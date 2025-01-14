@@ -2,9 +2,9 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import prisma from '../config/database';
-import { UnauthorizedError } from '../utils/errors';
-import { asyncHandler } from '../utils/asyncHandler';
+import prisma from '../config/database.js';
+import { UnauthorizedError } from '../utils/errors.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Login
 export const login = asyncHandler(async (req: Request, res: Response) => {

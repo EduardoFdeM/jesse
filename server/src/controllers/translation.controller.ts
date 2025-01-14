@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '../utils/asyncHandler';
-import { translateFile } from '../services/translation.service';
-import { NotFoundError, ValidationError } from '../utils/errors';
-import prisma from '../config/database';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { translateFile } from '../services/translation.service.js';
+import { NotFoundError, ValidationError } from '../utils/errors.js';
+import prisma from '../config/database.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
-import { AuthenticatedRequest } from '../types/express';
-import { emitTranslationStarted, emitTranslationProgress, emitTranslationCompleted, emitTranslationError } from '../services/socket.service';
+import { AuthenticatedRequest } from '../types/express.js';
+import { emitTranslationStarted, emitTranslationProgress, emitTranslationCompleted, emitTranslationError } from '../services/socket.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

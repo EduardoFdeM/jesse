@@ -1,8 +1,8 @@
 // server/routes/translation.routes.ts
 import { Router } from 'express';
-import { createTranslation, downloadTranslation, getTranslation, getTranslations, clearTranslationHistory } from '../controllers/translation.controller';
-import { upload, uploadLock, uploadUnlock } from '../middlewares/upload.middleware';
-import { authenticate } from '../middlewares/auth.middleware';
+import { createTranslation, downloadTranslation, getTranslation, getTranslations, clearTranslationHistory } from '../controllers/translation.controller.js';
+import { upload, uploadLock, uploadUnlock } from '../middlewares/upload.middleware.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 

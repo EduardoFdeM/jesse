@@ -1,4 +1,4 @@
-import { getIO } from '../config/socket';
+import { getIO } from '../config/socket.js';
 import { Translation } from '@prisma/client';
 
 export const SocketEvents = {

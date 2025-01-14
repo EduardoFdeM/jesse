@@ -1,8 +1,14 @@
 import { Request, Response } from 'express';
-import prisma from '../config/database';
-import { processKnowledgeBaseFile } from '../services/knowledge.service';
+import prisma from '../config/database.js';
+import { processKnowledgeBaseFile } from '../services/knowledge.service.js';
 import path from 'path';
 import fs from 'fs';
+
+// Criar uma interface para o erro
+interface ProcessError extends Error {
+    code?: string;
+    details?: unknown;
+}
 
 // Listar todas as bases de conhecimento do usuário
 export const listKnowledgeBases = async (req: Request, res: Response) => {
@@ -128,9 +134,13 @@ export const createKnowledgeBase = async (req: Request, res: Response) => {
             status: 'success',
             data: knowledgeBase
         });
-    } catch (error) {
-        console.error('Erro ao criar base de conhecimento:', error);
-        return res.status(500).json({ error: 'Erro interno do servidor' });
+    } catch (error: unknown) {
+        const processError = error as ProcessError;
+        console.error('Erro ao processar arquivo:', processError);
+        return res.status(500).json({ 
+            error: 'Erro ao processar arquivo',
+            details: processError.message 
+        });
     }
 };
 

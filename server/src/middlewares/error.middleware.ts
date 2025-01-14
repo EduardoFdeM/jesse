@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
-import { CustomError } from '../utils/errors';
+import { CustomError } from '../utils/errors.js';
 
 export const errorHandler = (
   err: Error,
@@ -9,7 +9,7 @@ export const errorHandler = (
   next: NextFunction
 ) => {
   // Log error with request details for debugging
-  console.error('� Erro detectado:', {
+  console.error('❌ Erro detectado:', {
     message: err.message,
     name: err.name,
     stack: err.stack,

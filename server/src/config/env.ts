@@ -26,7 +26,7 @@ const envSchema = z.object({
         required_error: "DATABASE_URL é obrigatório para conexão com o banco de dados"
     }),
     OPENAI_API_KEY: z.string().optional(),
-    FRONTEND_URL: z.string().default('http://localhost:5173'),
+    FRONTEND_URL: z.string().default('https://pdf-tradutor-of.vercel.app/'),
     UPLOAD_DIR: z.string().default('./uploads')
 });
 

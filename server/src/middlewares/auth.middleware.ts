@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import { UnauthorizedError } from '../utils/errors';
-import prisma from '../config/database';
+import { UnauthorizedError } from '../utils/errors.js';
+import prisma from '../config/database.js';
 
 // Estender o tipo Request para incluir o usuário
 declare global {

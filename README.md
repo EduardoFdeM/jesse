@@ -95,6 +95,81 @@ cp .env.example .env
 ```bash
 npm run dev
 ```
+## Estrutura do código:
+
+JESSE
+├── .bolt
+├── knowledge_bases/
+├── node_modules/
+├── server/
+│   ├── knowledge_bases/
+│   ├── prisma/
+│   │   ├── migrations/
+│   │   └── schema.prisma
+│   ├── server/
+│   └── src/
+│       ├── config/
+│       │   ├── database.ts
+│       │   ├── env.ts
+│       │   ├── openai.ts
+│       │   ├── security.ts
+│       │   └── socket.ts
+│       ├── controllers/
+│       ├── middlewares/
+│       ├── routes/
+│       ├── scripts/
+│       ├── services/
+│       ├── test/
+│       ├── types/
+│       └── utils/
+│       ├── app.ts
+│       ├── index.ts
+│       └── server.ts
+│   ├── test/
+│   ├── uploads/
+│   ├── .env
+│   ├── .npmrc
+│   └── tsconfig.json
+├── src/
+│   ├── @types/
+│   ├── components/
+│   ├── hooks/
+│   ├── pages/
+│   ├── services/
+│   ├── types/
+│   ├── utils/
+│   ├── .env
+│   ├── App.tsx
+│   ├── axiosConfig.ts
+│   ├── index.css
+│   ├── main.tsx
+│   ├── socketConfig.ts
+│   ├── vite-env.d.ts
+│   ├── types.ts
+├── test
+├── uploads
+├── .eslintrc.json
+├── .gitignore
+├── .railwayignore
+├── eslint.config.js
+├── index.html
+├── jest.config.cjs
+├── jest.config.js
+├── package-lock.json
+├── package.json
+├── postcss.config.js
+├── Procfile
+├── railway.toml
+├── README.md
+├── tailwind.config.js
+├── tsconfig.app.json
+├── tsconfig.app.tsbuildinfo
+├── tsconfig.json
+├── tsconfig.node.json
+├── tsconfig.node.tsbuildinfo
+├── tsconfig.server.json
+├── tsconfig.tsbuildinfo
+└── vite.config.ts
 
 ## 🔧 Uso
 

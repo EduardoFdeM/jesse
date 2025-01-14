@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '../utils/asyncHandler';
-import { processKnowledgeBaseFile } from '../services/knowledge.service';
-import { NotFoundError } from '../utils/errors';
-import prisma from '../config/database';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { processKnowledgeBaseFile } from '../services/knowledge.service.js';
+import { NotFoundError } from '../utils/errors.js';
+import prisma from '../config/database.js';
 import fs from 'fs';
 import { KnowledgeBase } from '@prisma/client';
 

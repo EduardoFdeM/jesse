@@ -1,12 +1,13 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:4000',
+    baseURL: 'https://pdf-tradutor-production.up.railway.app/',
     headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
     },
-    withCredentials: false
+    withCredentials: true
 });
 
 // Interceptor para logs de requisição

@@ -1,14 +1,14 @@
 // server/routes/knowledge.routes.ts
 import { Router } from 'express';
-import { upload } from '../middlewares/upload.middleware';
-import { authenticate } from '../middlewares/auth.middleware';
+import { upload } from '../middlewares/upload.middleware.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 import {
     createKnowledgeBase,
     listKnowledgeBases,
     getKnowledgeBase,
     updateKnowledgeBase,
     deleteKnowledgeBase
-} from '../controllers/glossary.controller';
+} from '../controllers/glossary.controller.js';
 
 const router = Router();
 

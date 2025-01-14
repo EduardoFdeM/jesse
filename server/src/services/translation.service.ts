@@ -1,12 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
-import { NotFoundError } from '../utils/errors';
-import prisma from '../config/database';
-import { Translation } from '@prisma/client';
+import { NotFoundError } from '../utils/errors.js';
+import { PrismaClient } from '@prisma/client';
 import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
-import { emitTranslationProgress } from './socket.service';
+import { emitTranslationProgress } from './socket.service.js';
 
 interface PDFTextR {
     T: string;
@@ -27,6 +26,24 @@ interface PDFData {
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
+
+const prisma = new PrismaClient();
+
+interface TranslationData {
+    id: string;
+    fileName: string;
+    filePath: string;
+    fileSize: number;
+    fileType: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    status: string;
+    errorMessage?: string | null;
+    translatedUrl?: string | null;
+    costData?: string | null;
+    userId: string;
+    knowledgeBaseId?: string | null;
+}
 
 // Função otimizada para dividir o texto em chunks muito maiores
 const splitTextIntoChunks = (text: string, maxChunkSize: number = 24000): string[] => {
@@ -392,7 +409,7 @@ const unlockTranslation = (translationId: string, userId: string) => {
     activeTranslations.delete(lockKey);
 };
 
-export const translateFile = async (params: TranslateFileParams): Promise<Translation> => {
+export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
     console.log('🔄 Iniciando tradução do arquivo:', params);
     
     // Verificar se o arquivo existe
@@ -604,10 +621,19 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
 
         // Retornar o resultado
         return {
-            filePath: translatedFilePath,
+            id: params.translationId,
             fileName: translatedFileName,
-            costData: JSON.stringify(totalCostLog)
-        } as Translation;
+            filePath: translatedFilePath,
+            fileSize: fs.statSync(translatedFilePath).size,
+            fileType: path.extname(translatedFilePath),
+            sourceLanguage: params.sourceLanguage,
+            targetLanguage: params.targetLanguage,
+            status: 'completed',
+            translatedUrl: translatedFilePath,
+            costData: JSON.stringify(totalCostLog),
+            userId: params.userId,
+            knowledgeBaseId: params.knowledgeBasePath ? path.basename(params.knowledgeBasePath) : null
+        };
     } catch (error) {
         console.error('❌ Erro ao traduzir arquivo:', error);
         

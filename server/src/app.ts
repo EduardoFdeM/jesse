@@ -4,9 +4,9 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import path from 'path';
 import fs from 'fs';
-import authRoutes from './routes/auth.routes';
-import translationRoutes from './routes/translation.routes';
-import knowledgeRoutes from './routes/knowledge.routes';
+import authRoutes from './routes/auth.routes.js';
+import translationRoutes from './routes/translation.routes.js';
+import knowledgeRoutes from './routes/knowledge.routes.js';
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,12 +32,16 @@ console.log('📂 Diretórios de arquivos configurados:', {
 const app = express();
 
 // Configuração do CORS
-const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 app.use(cors({
-    origin: frontendUrl,
+    origin: [
+        'https://pdf-tradutor-of.vercel.app',
+        'http://localhost:5173', // para desenvolvimento local
+        'https://pdf-tradutor-production.up.railway.app'
+    ],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+    exposedHeaders: ['Access-Control-Allow-Origin']
 }));
 
 // Middlewares básicos
@@ -74,6 +78,10 @@ app.get('/', (_req, res) => {
     });
 });
 
+// Health Check
+import healthRoutes from './routes/health.routes.js';
+app.use('/api/health', healthRoutes);
+
 // Rotas da API
 app.use('/api/auth', authRoutes);
 app.use('/api/translations', translationRoutes);
@@ -100,8 +108,14 @@ app.use((req, res) => {
     });
 });
 
-// Tratamento de erros globais
-app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+// Substituir o tipo 'any' por um tipo específico
+interface ServerError extends Error {
+    statusCode?: number;
+    code?: string;
+}
+
+// Atualizar o middleware de erro
+app.use((err: ServerError, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('❌ Erro não tratado:', {
         method: req.method,
         path: req.path,
@@ -113,6 +127,7 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
         message: err.message,
         timestamp: new Date().toISOString()
     });
+    next(); // Adicionado para resolver o warning de variável não utilizada
 });
 
 export default app; 
