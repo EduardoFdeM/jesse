@@ -1,13 +1,15 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import authRoutes from './routes/auth.routes.js';
 import translationRoutes from './routes/translation.routes.js';
 import knowledgeRoutes from './routes/knowledge.routes.js';
-import { errorHandler } from './middlewares/error.middleware.js';
+import healthRoutes from './routes/health.routes.js';
 import path from 'path';
 import { initializeSocket } from './config/socket.js';
+import { configureSecurityMiddleware } from './config/security.js';
+import cors from 'cors';
+import corsOptions from './config/cors.js';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -15,6 +17,15 @@ dotenv.config();
 console.log('🚀 Iniciando servidor...');
 
 const app = express();
+
+// Mover estas linhas para antes de qualquer middleware ou rota
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+
+// Depois configurar os outros middlewares
+configureSecurityMiddleware(app);
+
+// Criar servidor HTTP depois das configurações de CORS
 const httpServer = createServer(app);
 
 // Configurar Socket.IO
@@ -23,29 +34,30 @@ const io = initializeSocket(httpServer);
 console.log('✅ Socket.IO configurado');
 
 // Middlewares
-app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL || 'http://localhost:5173',
-        'http://localhost:4000',
-        'http://127.0.0.1:4000'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
-}));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Logging middleware
+app.use((req, _res, next) => {
+    console.log(`📝 ${req.method} ${req.path}`, {
+        headers: req.headers,
+        query: req.query,
+        body: req.body
+    });
+    next();
+});
 
 // Servir arquivos estáticos
 app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 app.use('/translated_pdfs', express.static(path.join(process.cwd(), 'translated_pdfs')));
 
 // Rota raiz
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
     res.json({
         message: 'API do Tradutor de Documentos',
         version: '1.0.0',
         status: 'online',
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
         endpoints: {
             root: '/',
             auth: '/api/auth',
@@ -57,7 +69,6 @@ app.get('/', (req, res) => {
 });
 
 // Health Check
-import healthRoutes from './routes/health.routes.js';
 app.use('/api/health', healthRoutes);
 
 // Rotas da API
@@ -86,13 +97,12 @@ app.use((req, res) => {
     });
 });
 
-// Substituir o tipo 'any' por um tipo específico
+// Middleware de Erro
 interface ServerError extends Error {
     statusCode?: number;
     code?: string;
 }
 
-// Atualizar o middleware de erro
 app.use((err: ServerError, req: express.Request, res: express.Response, next: express.NextFunction) => {
     console.error('❌ Erro não tratado:', {
         method: req.method,
@@ -105,7 +115,23 @@ app.use((err: ServerError, req: express.Request, res: express.Response, next: ex
         message: err.message,
         timestamp: new Date().toISOString()
     });
-    next(); // Adicionado para resolver o warning de variável não utilizada
+    next();
+});
+
+// Adicionar middleware para logging de CORS
+app.use((req, res, next) => {
+  console.log('🔒 CORS Headers:', {
+    origin: req.headers.origin,
+    method: req.method,
+    path: req.path,
+    responseHeaders: {
+      'access-control-allow-origin': res.getHeader('access-control-allow-origin'),
+      'access-control-allow-credentials': res.getHeader('access-control-allow-credentials'),
+      'access-control-allow-methods': res.getHeader('access-control-allow-methods'),
+      'access-control-allow-headers': res.getHeader('access-control-allow-headers')
+    }
+  });
+  next();
 });
 
 const PORT = process.env.PORT || 4000;

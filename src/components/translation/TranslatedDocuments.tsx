@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { Translation } from '../../types/index';
 import { api } from '../../services/api';
@@ -13,11 +13,6 @@ export function TranslatedDocuments() {
     const [targetLanguage, setTargetLanguage] = useState('');
     const socket = useSocket();
 
-    // Função para verificar se uma tradução está em processamento
-    const isProcessing = (status: string) => {
-        return status === 'processing' || status.includes('processing') || status.includes('%');
-    };
-
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]) => {
         return [...translations].sort((a, b) => 
@@ -26,7 +21,7 @@ export function TranslatedDocuments() {
     };
 
     // Função para carregar traduções
-    const loadTranslations = async () => {
+    const loadTranslations = useCallback(async () => {
         try {
             const response = await api.get('/api/translations');
             setTranslations(sortTranslations(response.data.data));
@@ -35,20 +30,20 @@ export function TranslatedDocuments() {
             console.error('Erro ao carregar traduções:', err);
             setError('Erro ao carregar traduções');
         }
-    };
+    }, []);
 
     // Efeito para carregar traduções inicialmente
     useEffect(() => {
         loadTranslations();
-    }, []);
+    }, [loadTranslations]);
 
     // Efeito para configurar eventos do Socket.IO
     useEffect(() => {
         if (!socket) return;
 
         // Quando uma nova tradução é iniciada
-        socket.on('translation:started', async (translation) => {
-            await loadTranslations(); // Recarrega a lista completa do backend
+        socket.on('translation:started', async () => {
+            await loadTranslations();
         });
 
         // Quando há progresso na tradução
@@ -69,8 +64,8 @@ export function TranslatedDocuments() {
         });
 
         // Quando ocorre um erro na tradução
-        socket.on('translation:error', async ({ id, error }) => {
-            await loadTranslations(); // Recarrega a lista completa do backend
+        socket.on('translation:error', async ({ error }) => {
+            await loadTranslations();
             toast.error(`Erro na tradução: ${error}`);
         });
 
@@ -80,7 +75,7 @@ export function TranslatedDocuments() {
             socket.off('translation:completed');
             socket.off('translation:error');
         };
-    }, [socket]);
+    }, [socket, loadTranslations]);
 
     const handleFileSelect = async (files: File[]) => {
         for (const file of files) {
@@ -90,18 +85,43 @@ export function TranslatedDocuments() {
 
     const uploadAndTranslateFile = async (file: File): Promise<void> => {
         try {
+            console.log('Iniciando upload do arquivo:', file.name);
+            
             const formData = new FormData();
             formData.append('file', file);
             formData.append('originalname', file.name);
             formData.append('sourceLanguage', sourceLanguage || 'pt');
             formData.append('targetLanguage', targetLanguage || 'en');
 
-            // Fazer o upload
-            await api.post('/api/translations', formData);
+            // Adicionar logs detalhados
+            console.log('FormData criado:', {
+                fileName: file.name,
+                fileSize: file.size,
+                sourceLanguage: sourceLanguage || 'pt',
+                targetLanguage: targetLanguage || 'en'
+            });
+
+            const response = await api.post('/api/translations', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                },
+                onUploadProgress: (progressEvent) => {
+                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
+                    console.log(`Upload progress: ${percentCompleted}%`);
+                }
+            });
+
+            console.log('Resposta do upload:', response.data);
             
-        } catch (error: any) {
+            if (response.data.error) {
+                throw new Error(response.data.error);
+            }
+
+            toast.success('Arquivo enviado com sucesso!');
+            await loadTranslations();
+        } catch (error: Error | unknown) {
             console.error('Erro ao fazer upload:', error);
-            toast.error(error.response?.data?.error || 'Erro ao fazer upload do arquivo');
+            toast.error(error instanceof Error ? error.message : 'Erro ao fazer upload do arquivo');
         }
     };
     

@@ -7,6 +7,8 @@ import fs from 'fs';
 import authRoutes from './routes/auth.routes.js';
 import translationRoutes from './routes/translation.routes.js';
 import knowledgeRoutes from './routes/knowledge.routes.js';
+import corsOptions from './config/cors.js';
+
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -31,22 +33,12 @@ console.log('📂 Diretórios de arquivos configurados:', {
 // Inicialização do Express
 const app = express();
 
-// Configuração do CORS
-app.use(cors({
-    origin: [
-        'https://pdf-tradutor-of.vercel.app',
-        'http://localhost:5173', // para desenvolvimento local
-        'https://pdf-tradutor-production.up.railway.app'
-    ],
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-    exposedHeaders: ['Access-Control-Allow-Origin']
-}));
-
 // Middlewares básicos
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Configuração do CORS
+app.use(cors(corsOptions));
 
 // Logging middleware
 app.use((req, _res, next) => {
@@ -73,7 +65,8 @@ app.get('/', (_req, res) => {
             root: '/',
             auth: '/api/auth',
             translations: '/api/translations',
-            knowledgeBases: '/api/knowledge-bases'
+            knowledgeBases: '/api/knowledge-bases',
+            socket: '/socket.io'
         }
     });
 });

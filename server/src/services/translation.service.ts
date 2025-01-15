@@ -1,11 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
-import { NotFoundError } from '../utils/errors.js';
-import { PrismaClient } from '@prisma/client';
 import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
+import prisma from '../config/database.js';
 import { emitTranslationProgress } from './socket.service.js';
+import { uploadToSpaces } from '../config/storage.js';
 
 interface PDFTextR {
     T: string;
@@ -26,8 +26,6 @@ interface PDFData {
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
 });
-
-const prisma = new PrismaClient();
 
 interface TranslationData {
     id: string;
@@ -289,41 +287,50 @@ export type ChatCompletionMessageParam = {
     content: string;
 };
 
-// Função para salvar texto como PDF
-const saveTextAsPDF = async (text: string, outputPath: string): Promise<void> => {
-    return new Promise((resolve, reject) => {
-        try {
+// Função para gerar nome único de arquivo
+const generateUniqueFileName = (originalName: string): string => {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(7);
+    const ext = path.extname(originalName);
+    const baseName = path.basename(originalName, ext);
+    return `${baseName}_${timestamp}_${random}${ext}`;
+};
+
+// Função para salvar texto como PDF e fazer upload para o Spaces
+const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath: string; fileSize: number }> => {
+    try {
+        console.log('📄 Gerando PDF');
+        const fileBuffer = await new Promise<Buffer>((resolve, reject) => {
+            const chunks: Buffer[] = [];
             const doc = new PDFDocument({
                 margin: 50,
                 size: 'A4'
             });
-
-            const writeStream = fs.createWriteStream(outputPath);
-            doc.pipe(writeStream);
-
-            // Configurar fonte e tamanho
-            doc.fontSize(12);
             
-            // Adicionar o texto, quebrando em páginas automaticamente
+            doc.on('data', chunk => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
+            doc.on('error', reject);
+
+            doc.fontSize(12);
             doc.text(text, {
                 align: 'left',
                 lineGap: 5
             });
 
-            // Finalizar o documento
             doc.end();
+        });
 
-            writeStream.on('finish', () => {
-                resolve();
-            });
+        console.log('☁️ Fazendo upload do PDF para o Spaces');
+        const fileUrl = await uploadToSpaces(fileBuffer, fileName);
 
-            writeStream.on('error', (error) => {
-                reject(error);
-            });
-        } catch (error) {
-            reject(error);
-        }
-    });
+        return {
+            filePath: fileUrl,
+            fileSize: fileBuffer.length
+        };
+    } catch (err) {
+        console.error('Erro ao gerar ou fazer upload do PDF:', err);
+        throw err;
+    }
 };
 
 interface TranslationLock {
@@ -343,7 +350,6 @@ const cleanupTranslationLocks = () => {
     for (const [key, lock] of activeTranslations.entries()) {
         if (now - lock.timestamp > TRANSLATION_LOCK_TIMEOUT) {
             activeTranslations.delete(key);
-            // Atualizar status no banco se necessário
             if (lock.status === 'processing' || lock.status === 'pending') {
                 prisma.translation.update({
                     where: { id: lock.translationId },
@@ -410,6 +416,10 @@ const unlockTranslation = (translationId: string, userId: string) => {
 };
 
 export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
+    const canProceed = await checkAndLockTranslation(params.translationId, params.userId);
+    if (!canProceed) {
+        throw new Error('Tradução já está em andamento');
+    }
     console.log('🔄 Iniciando tradução do arquivo:', params);
     
     // Verificar se o arquivo existe
@@ -430,13 +440,15 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         throw new Error('Tradução já está em andamento ou finalizada');
     }
 
-    let totalCostLog: CostLog = {
+    const totalCostLog: CostLog = {
         inputTokens: 0,
         outputTokens: 0,
         inputCost: 0,
         outputCost: 0,
         totalCost: 0
     };
+
+    const translatedChunks: string[] = [];
 
     try {
         // Atualizar status para processing
@@ -462,15 +474,9 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 .replace(/\s*\n\s*/g, '\n')
                 .trim();
 
-        } catch (error) {
-            await prisma.translation.update({
-                where: { id: params.translationId },
-                data: { 
-                    status: 'error',
-                    errorMessage: 'Erro ao extrair texto do arquivo'
-                }
-            });
-            throw error;
+        } catch (err) {
+            console.error('Erro ao processar arquivo:', err);
+            throw err;
         }
 
         // Preparar base de conhecimento de forma mais compacta
@@ -491,7 +497,6 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
 
         // Dividir em chunks maiores e traduzir
         const chunks = splitTextIntoChunks(fileContent);
-        let translatedChunks: string[] = [];
         let failedChunks = 0;
 
         // Cache para evitar traduções duplicadas
@@ -574,45 +579,30 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             throw new Error('Nenhum texto foi traduzido com sucesso');
         }
 
-        // Salvar resultado
-        const translatedText = translatedChunks.join('\n');
-        const translatedFileName = `translated_${Date.now()}${path.extname(params.filePath)}`;
-        const translatedDir = path.join(process.cwd(), 'translated_pdfs');
-        const translatedFilePath = path.join(translatedDir, translatedFileName);
-
-        console.log('📁 Salvando arquivo traduzido:', {
-            dir: translatedDir,
-            filePath: translatedFilePath,
-            fileName: translatedFileName
-        });
-
-        // Garantir que o diretório existe
-        if (!fs.existsSync(translatedDir)) {
-            console.log('📂 Criando diretório:', translatedDir);
-            fs.mkdirSync(translatedDir, { recursive: true });
-        }
+        // Gerar nome único para o arquivo traduzido
+        const uniqueFileName = generateUniqueFileName(params.filePath);
 
         // Salvar o arquivo no formato apropriado
+        let savedFile;
         if (path.extname(params.filePath).toLowerCase() === '.pdf') {
-            console.log('📄 Salvando como PDF');
-            await saveTextAsPDF(translatedText, translatedFilePath);
+            savedFile = await saveTextAsPDF(translatedChunks.join('\n'), uniqueFileName);
         } else {
-            console.log('📝 Salvando como texto');
-            fs.writeFileSync(translatedFilePath, translatedText, 'utf-8');
-        }
-
-        console.log('✅ Arquivo salvo com sucesso');
-
-        // Verificar se o arquivo foi salvo corretamente
-        if (!fs.existsSync(translatedFilePath)) {
-            throw new Error('Falha ao salvar o arquivo traduzido');
+            const textBuffer = Buffer.from(translatedChunks.join('\n'), 'utf-8');
+            const fileUrl = await uploadToSpaces(textBuffer, uniqueFileName);
+            savedFile = {
+                filePath: fileUrl,
+                fileSize: textBuffer.length
+            };
         }
 
         // Atualizar custos finais
         await prisma.translation.update({
             where: { id: params.translationId },
             data: {
-                costData: JSON.stringify(totalCostLog)
+                costData: JSON.stringify(totalCostLog),
+                filePath: savedFile.filePath,
+                fileSize: savedFile.fileSize,
+                fileName: uniqueFileName
             }
         });
 
@@ -622,34 +612,25 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         // Retornar o resultado
         return {
             id: params.translationId,
-            fileName: translatedFileName,
-            filePath: translatedFilePath,
-            fileSize: fs.statSync(translatedFilePath).size,
-            fileType: path.extname(translatedFilePath),
+            fileName: uniqueFileName,
+            filePath: savedFile.filePath,
+            fileSize: savedFile.fileSize,
+            fileType: path.extname(params.filePath),
             sourceLanguage: params.sourceLanguage,
             targetLanguage: params.targetLanguage,
             status: 'completed',
-            translatedUrl: translatedFilePath,
+            translatedUrl: savedFile.filePath,
             costData: JSON.stringify(totalCostLog),
             userId: params.userId,
             knowledgeBaseId: params.knowledgeBasePath ? path.basename(params.knowledgeBasePath) : null
         };
-    } catch (error) {
-        console.error('❌ Erro ao traduzir arquivo:', error);
-        
-        // Atualizar status para erro
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: {
-                status: 'error',
-                errorMessage: error instanceof Error ? error.message : 'Erro desconhecido durante a tradução'
-            }
-        });
-        updateTranslationLock(params.translationId, params.userId, 'error');
-        
-        throw error;
+
+    } catch (err) {
+        console.error('❌ Erro durante a tradução:', err);
+        throw err;
     } finally {
         // Liberar o lock da tradução
         unlockTranslation(params.translationId, params.userId);
     }
 };
+

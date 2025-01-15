@@ -3,24 +3,33 @@ import { io } from 'socket.io-client';
 const SOCKET_URL = 'https://pdf-tradutor-production.up.railway.app';
 
 const socket = io(SOCKET_URL, {
-  transports: ['websocket'],
-  withCredentials: true
+    path: '/socket.io/',
+    transports: ['polling', 'websocket'],
+    withCredentials: true,
+    autoConnect: false,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000
 });
 
-// Debug logging
-if (import.meta.env.DEV) {
-  socket.onAny((event, ...args) => {
-    console.log(`[Socket.IO] ${event}:`, args);
-  });
-}
-
-// Add error handling
-socket.on('connect_error', (error) => {
-  console.error('Socket connection error:', error);
-});
-
+// Melhorar logs de debug
 socket.on('connect', () => {
-  console.log('Socket connected successfully');
+    console.log('✅ Socket conectado com sucesso:', socket.id);
 });
+
+socket.on('connect_error', (error) => {
+    console.error('❌ Erro na conexão Socket:', error.message);
+});
+
+socket.on('disconnect', (reason) => {
+    console.log('🔌 Socket desconectado:', reason);
+});
+
+// Exportar função de conexão explícita
+export const connectSocket = () => {
+    if (!socket.connected) {
+        socket.connect();
+    }
+};
 
 export default socket;

@@ -1,42 +1,32 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { translateFile } from '../services/translation.service.js';
-import { NotFoundError, ValidationError } from '../utils/errors.js';
+import { ValidationError, NotFoundError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-import { AuthenticatedRequest } from '../types/express.js';
-import { emitTranslationStarted, emitTranslationProgress, emitTranslationCompleted, emitTranslationError } from '../services/socket.service.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Unir arquivos após tradução
-async function mergeFiles(partFiles: string[], outputFile: string) {
-    const writeStream = fs.createWriteStream(outputFile);
-    for (const file of partFiles) {
-        const data = await fs.promises.readFile(file);
-        writeStream.write(data);
-        // Limpar arquivo temporário após uso
-        await fs.promises.unlink(file);
-    }
-    writeStream.end();
-}
-
-const generateFilePath = (originalName: string): string => {
-    const timestamp = Date.now();
-    const fileExtension = path.extname(originalName);
-    const baseName = path.basename(originalName, fileExtension);
-    return `${baseName}_${timestamp}${fileExtension}`;
-};
+import { emitTranslationStarted, emitTranslationCompleted } from '../services/socket.service.js';
 
 // Cache para controle de traduções em andamento
-const activeTranslations = new Map<string, Promise<any>>();
+const activeTranslations = new Map<string, Promise<void>>();
+
+// Adicionar função generateFilePath que estava faltando
+const generateFilePath = (originalName: string): string => {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(7);
+    const ext = path.extname(originalName);
+    const baseName = path.basename(originalName, ext);
+    return `${baseName}_${timestamp}_${random}${ext}`;
+};
 
 // Criar tradução
 export const createTranslation = asyncHandler(async (req: Request, res: Response) => {
+    console.log('📝 Recebendo requisição de tradução:', {
+        body: req.body,
+        file: req.file,
+        user: req.user
+    });
+
     const { sourceLanguage, targetLanguage } = req.body;
     const file = req.file;
     
@@ -102,7 +92,7 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
     });
 
     // Criar uma promise para o processo de tradução
-    const translationPromise = (async () => {
+    const translationPromise = (async (): Promise<void> => {
         try {
             console.log('🔄 Iniciando processo de tradução no controller');
             
@@ -113,7 +103,7 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
             });
 
             if (!req.user || !req.user.id) {
-                return res.status(401).json({ error: 'Usuário não autenticado.' });
+                throw new Error('Usuário não autenticado.');
             }
 
             console.log('📝 Chamando serviço de tradução');
@@ -174,13 +164,9 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
                 }
             });
 
-            // Emitir erro
-            emitTranslationError(translation.id, error instanceof Error ? error.message : 'Erro desconhecido durante a tradução');
-            
             throw error;
         } finally {
             console.log('🔄 Limpando cache de traduções ativas');
-            // Remover a tradução do cache quando terminar
             activeTranslations.delete(translationKey);
         }
     })();
@@ -197,97 +183,14 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
 // Rota de Download
 export const downloadTranslation = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const translation = await prisma.translation.findUnique({ where: { id } });
 
-    try {
-        const translation = await prisma.translation.findUnique({
-            where: { id }
-        });
-
-        if (!translation) {
-            return res.status(404).json({ 
-                error: 'Tradução não encontrada',
-                details: 'Não foi possível encontrar a tradução solicitada'
-            });
-        }
-
-        if (!translation.filePath) {
-            return res.status(404).json({ 
-                error: 'Arquivo não encontrado',
-                details: 'O arquivo desta tradução não está disponível'
-            });
-        }
-
-        if (!fs.existsSync(translation.filePath)) {
-            // Atualizar o status da tradução se o arquivo não existir
-            await prisma.translation.update({
-                where: { id },
-                data: {
-                    status: 'error',
-                    errorMessage: 'Arquivo não encontrado no servidor'
-                }
-            });
-
-            return res.status(404).json({ 
-                error: 'Arquivo não encontrado',
-                details: 'O arquivo físico não foi encontrado no servidor'
-            });
-        }
-
-        // Verificar o status da tradução
-        if (translation.status !== 'completed' && !translation.status.includes('100%') && translation.status !== 'completed_with_errors') {
-            return res.status(400).json({ 
-                error: 'Tradução não concluída',
-                details: `Status atual: ${translation.status}`
-            });
-        }
-
-        const fileName = translation.originalName || translation.fileName;
-        const fileExt = path.extname(translation.filePath).toLowerCase();
-        
-        // Configurar headers apropriados baseado no tipo de arquivo
-        if (fileExt === '.pdf') {
-            res.setHeader('Content-Type', 'application/pdf');
-        } else {
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        }
-
-        // Garantir que o nome do arquivo seja seguro para URLs
-        const safeFileName = encodeURIComponent(fileName);
-        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${safeFileName}`);
-
-        // Adicionar headers para prevenir cache
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-
-        // Usar streaming para o download com buffer apropriado
-        const fileStream = fs.createReadStream(translation.filePath, { 
-            highWaterMark: 64 * 1024 // 64KB buffer
-        });
-        
-        fileStream.on('error', (error) => {
-            console.error('Erro ao ler arquivo:', error);
-            if (!res.headersSent) {
-                res.status(500).json({ 
-                    error: 'Erro ao ler arquivo',
-                    details: 'Ocorreu um erro ao tentar ler o arquivo para download'
-                });
-            }
-        });
-
-        // Pipe o stream com tratamento de erro
-        fileStream.pipe(res).on('error', (error) => {
-            console.error('Erro durante o streaming:', error);
-        });
-    } catch (error) {
-        console.error('Erro no download:', error);
-        if (!res.headersSent) {
-            res.status(500).json({ 
-                error: 'Erro interno',
-                details: 'Ocorreu um erro ao processar sua solicitação'
-            });
-        }
+    if (!translation) {
+        throw new NotFoundError('Tradução não encontrada');
     }
+
+    // Redirecionar para a URL do Spaces
+    res.redirect(translation.filePath);
 });
 
 // Função para obter uma tradução específica

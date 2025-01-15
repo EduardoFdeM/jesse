@@ -1,10 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { toast } from 'react-toastify';
+import { toast } from 'react-hot-toast';
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-
-console.log('🔌 Tentando conectar ao Socket.IO em:', SOCKET_URL);
+const SOCKET_URL = 'https://pdf-tradutor-production.up.railway.app';
 
 export const useSocket = () => {
     const socketRef = useRef<Socket | null>(null);
@@ -42,13 +40,16 @@ export const useSocket = () => {
 
         socket.on('disconnect', (reason) => {
             console.log('❌ Desconectado:', reason);
-            toast.warn('Conexão perdida');
+            toast.error('Conexão perdida');
         });
 
         socket.on('error', (error) => {
             console.error('❌ Erro no socket:', error);
             toast.error('Erro no socket');
         });
+
+        // Conectar explicitamente
+        socket.connect();
 
         return () => {
             if (socket) {
@@ -60,4 +61,4 @@ export const useSocket = () => {
     }, []);
 
     return socketRef.current;
-}; 
+};

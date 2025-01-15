@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FileText } from 'lucide-react';
 import { api } from '../services/api';
 import toast from 'react-hot-toast';
+import { AxiosError } from 'axios';
 
 export function Register() {
     const navigate = useNavigate();
@@ -31,19 +32,29 @@ export function Register() {
                 password: formData.password
             });
             
-            const { token, user } = response.data.data;
+            if (response.data?.data) {
+                const { token, user } = response.data.data;
+                localStorage.setItem('jwtToken', token);
+                localStorage.setItem('userEmail', user.email);
+                localStorage.setItem('userId', user.id);
+                localStorage.setItem('userName', user.name);
+                
+                toast.success('Conta criada com sucesso!');
+                navigate('/');
+            }
+        } catch (error: unknown) {
+            console.error('Erro ao registrar:', error);
             
-            // Salvar dados do usuário
-            localStorage.setItem('jwtToken', token);
-            localStorage.setItem('userEmail', user.email);
-            localStorage.setItem('userId', user.id);
-            localStorage.setItem('userName', user.name);
-            
-            toast.success('Conta criada com sucesso!');
-            navigate('/');
-        } catch (err) {
-            console.error('Erro ao registrar:', err);
-            toast.error('Erro ao criar conta');
+            if (error instanceof Error) {
+                const axiosError = error as AxiosError<{ error?: string; message?: string }>;
+                if (axiosError.response?.data?.error === 'EMAIL_EXISTS') {
+                    toast.error('Este email já está cadastrado');
+                } else if (axiosError.response?.data?.message) {
+                    toast.error(axiosError.response.data.message);
+                } else {
+                    toast.error('Erro ao criar conta. Por favor, tente novamente.');
+                }
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -71,6 +82,7 @@ export function Register() {
                                 id="name"
                                 type="text"
                                 required
+                                autoComplete="name"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -85,6 +97,7 @@ export function Register() {
                                 id="email"
                                 type="email"
                                 required
+                                autoComplete="username"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -99,6 +112,7 @@ export function Register() {
                                 id="password"
                                 type="password"
                                 required
+                                autoComplete="new-password"
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -113,6 +127,7 @@ export function Register() {
                                 id="confirmPassword"
                                 type="password"
                                 required
+                                autoComplete="new-password"
                                 value={formData.confirmPassword}
                                 onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"

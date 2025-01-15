@@ -58,6 +58,7 @@ export function Login() {
                                 id="email"
                                 type="email"
                                 required
+                                autoComplete="username"
                                 value={formData.email}
                                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
@@ -72,6 +73,7 @@ export function Login() {
                                 id="password"
                                 type="password"
                                 required
+                                autoComplete="current-password"
                                 value={formData.password}
                                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"

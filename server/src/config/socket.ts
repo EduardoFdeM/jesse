@@ -1,6 +1,7 @@
 // socket.ts
 import { Server } from 'socket.io';
 import { Server as HttpServer } from 'http';
+import corsOptions from '../config/cors.js';
 
 let io: Server;
 
@@ -14,26 +15,40 @@ export const initializeSocket = (httpServer: HttpServer) => {
     
     io = new Server(httpServer, {
         path: '/socket.io/',
-        transports: ['polling', 'websocket'],
         cors: {
-            origin: process.env.FRONTEND_URL || 'http://localhost:5173',
-            methods: ['GET', 'POST', 'OPTIONS'],
+            ...corsOptions,
+            methods: ['GET', 'POST'],
             credentials: true
         },
         allowEIO3: true,
         pingTimeout: 60000,
-        pingInterval: 25000
+        pingInterval: 25000,
+        transports: ['polling', 'websocket']
     });
 
     io.on('connection', (socket) => {
         console.log('👤 Cliente conectado:', socket.id);
 
-        socket.on('disconnect', () => {
-            console.log('👋 Cliente desconectado:', socket.id);
+        console.log('🤝 Handshake:', {
+            headers: socket.handshake.headers,
+            query: socket.handshake.query,
+            auth: socket.handshake.auth
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('👋 Cliente desconectado:', socket.id, 'Razão:', reason);
         });
 
         socket.on('error', (error) => {
             console.error('❌ Erro no socket:', error);
+        });
+    });
+
+    io.engine.on('connection_error', (err) => {
+        console.error('❌ Erro de conexão no Engine:', {
+            code: err.code,
+            message: err.message,
+            context: err.context
         });
     });
 
