@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import prisma from '../config/database.js';
 import { KnowledgeBase } from '@prisma/client';
+import { uploadToSpaces } from '../config/storage.js';
 
 interface CreateKnowledgeBaseParams {
     name: string;
@@ -12,36 +13,62 @@ interface CreateKnowledgeBaseParams {
 }
 
 export const processKnowledgeBaseFile = async (filePath: string, params: CreateKnowledgeBaseParams): Promise<KnowledgeBase> => {
-    console.log('🔄 Processando arquivo da base de conhecimento:', filePath);
+    console.log('🔄 [1/5] Iniciando processamento do arquivo:', filePath);
 
     try {
-        // Obter informações do arquivo
-        const stats = fs.statSync(filePath);
-        const fileType = path.extname(filePath).slice(1);
-        const fileName = path.basename(filePath);
+        // Validar arquivo
+        if (!fs.existsSync(filePath)) {
+            throw new Error('Arquivo temporário não encontrado');
+        }
 
-        // Criar a base de conhecimento no banco de dados
+        // Ler o arquivo
+        console.log('📖 [2/5] Lendo arquivo');
+        const fileContent = await fs.promises.readFile(filePath);
+        const fileName = `kb_${Date.now()}_${path.basename(filePath)}`;
+        const fileSize = fileContent.length;
+        const fileType = path.extname(filePath).slice(1);
+
+        // Validar tipo de arquivo
+        const allowedTypes = ['txt', 'csv', 'xlsx', 'xls'];
+        if (!allowedTypes.includes(fileType.toLowerCase())) {
+            throw new Error(`Tipo de arquivo não suportado. Tipos permitidos: ${allowedTypes.join(', ')}`);
+        }
+
+        // Fazer upload para o Spaces
+        console.log('☁️ [3/5] Enviando para o Spaces');
+        const spacesUrl = await uploadToSpaces(fileContent, fileName, 'knowledge');
+        console.log('✅ [4/5] Upload concluído:', spacesUrl);
+
+        // Criar a base de conhecimento no banco
+        console.log('💾 [5/5] Salvando no banco de dados');
         const knowledgeBase = await prisma.knowledgeBase.create({
             data: {
                 ...params,
                 fileName,
-                filePath,
+                filePath: spacesUrl,
                 fileType,
-                fileSize: stats.size
+                fileSize
             }
         });
+
+        // Limpar arquivo temporário
+        await fs.promises.unlink(filePath);
+        console.log('🧹 Arquivo temporário removido');
 
         return knowledgeBase;
     } catch (error) {
         console.error('❌ Erro ao processar arquivo da base de conhecimento:', error);
-        // Se houver erro, tentar limpar o arquivo
-        if (fs.existsSync(filePath)) {
-            try {
-                fs.unlinkSync(filePath);
-            } catch (unlinkError) {
-                console.error('⚠️ Erro ao limpar arquivo após falha:', unlinkError);
+        
+        // Limpar arquivo temporário em caso de erro
+        try {
+            if (fs.existsSync(filePath)) {
+                await fs.promises.unlink(filePath);
+                console.log('🧹 Arquivo temporário removido após erro');
             }
+        } catch (cleanupError) {
+            console.error('⚠️ Erro ao limpar arquivo temporário:', cleanupError);
         }
+        
         throw error;
     }
-}; 
+};

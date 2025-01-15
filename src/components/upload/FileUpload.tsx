@@ -6,7 +6,6 @@ import { toast } from 'react-hot-toast';
 import { KnowledgeBase } from '../../types';
 
 interface FileUploadProps {
-  onFileSelect: (files: File[]) => void;
   sourceLanguage: string;
   targetLanguage: string;
 }
@@ -22,7 +21,7 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 // const DEBOUNCE_DELAY = 1000;
 
-export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, sourceLanguage, targetLanguage }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLanguage }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -55,6 +54,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, sourceLang
 
     try {
       setIsLoading(true);
+      console.log('📤 Iniciando upload do arquivo:', item.file.name);
 
       // Cancelar requisição anterior se existir
       if (abortControllerRef.current) {
@@ -69,48 +69,68 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, sourceLang
       formData.set('originalname', item.file.name);
       
       if (useKnowledgeBase && selectedKnowledgeBase) {
+        console.log('🔍 Usando base de conhecimento:', selectedKnowledgeBase);
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
       }
 
+      console.log('🚀 Enviando requisição para o servidor');
       const response = await api.post('/api/translations', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
         },
         signal: abortControllerRef.current.signal,
-        withCredentials: true
+        withCredentials: true,
+        onUploadProgress: (progressEvent) => {
+          const progress = progressEvent.total 
+            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
+            : 0;
+          console.log(`📊 Progresso do upload: ${progress}%`);
+        }
       });
 
       if (response.data) {
+        console.log('✅ Upload concluído com sucesso');
         toast.success('Arquivo enviado com sucesso! A tradução começará em breve.');
-        // Remover item da fila após sucesso
         uploadQueueRef.current.shift();
       }
-    } catch (error: any) {
+    } catch (error) {
+      console.error('❌ Erro durante o upload:', error);
+      
+      if (axios.isCancel(error)) {
+        console.log('⚠️ Upload cancelado');
+        return;
+      }
+
       if (!axios.isCancel(error)) {
         console.error('Erro durante o upload:', error);
         
-        if (error.response?.status === 401) {
-          toast.error('Sessão expirada. Por favor, faça login novamente.');
-          window.location.href = '/login';
-          uploadQueueRef.current = []; // Limpar fila
-        } else if (error.response?.status === 429) {
-          // Se receber 429, aumentar o delay e tentar novamente
-          if (item.retries < MAX_RETRIES) {
-            item.retries++;
-            uploadTimeoutRef.current = setTimeout(() => {
-              processingRef.current = false;
-              processQueue();
-            }, RETRY_DELAY * item.retries);
-            return;
+        if (axios.isAxiosError(error)) {
+          if (error.response?.status === 401) {
+            toast.error('Sessão expirada. Por favor, faça login novamente.');
+            window.location.href = '/login';
+            uploadQueueRef.current = []; // Limpar fila
+          } else if (error.response?.status === 429) {
+            // Se receber 429, aumentar o delay e tentar novamente
+            if (item.retries < MAX_RETRIES) {
+              item.retries++;
+              uploadTimeoutRef.current = setTimeout(() => {
+                processingRef.current = false;
+                processQueue();
+              }, RETRY_DELAY * item.retries);
+              return;
+            } else {
+              toast.error('Muitas tentativas de upload. Tente novamente mais tarde.');
+              uploadQueueRef.current.shift(); // Remover após máximo de tentativas
+            }
           } else {
-            toast.error('Muitas tentativas de upload. Tente novamente mais tarde.');
-            uploadQueueRef.current.shift(); // Remover após máximo de tentativas
+            const errorMessage = error.response?.data?.error || 'Erro ao enviar arquivo. Verifique a conexão ou formato do arquivo.';
+            toast.error(errorMessage);
+            uploadQueueRef.current.shift(); // Remover em caso de erro não recuperável
           }
         } else {
-          const errorMessage = error.response?.data?.error || 'Erro ao enviar arquivo. Verifique a conexão ou formato do arquivo.';
-          toast.error(errorMessage);
-          uploadQueueRef.current.shift(); // Remover em caso de erro não recuperável
+          toast.error('Erro desconhecido ao enviar arquivo');
+          uploadQueueRef.current.shift();
         }
       }
     } finally {
@@ -125,7 +145,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, sourceLang
         }, RETRY_DELAY);
       }
     }
-  }, [sourceLanguage, targetLanguage, useKnowledgeBase, selectedKnowledgeBase, onFileSelect]);
+  }, [sourceLanguage, targetLanguage, useKnowledgeBase, selectedKnowledgeBase]);
 
   // Efeito para monitorar a fila
   useEffect(() => {

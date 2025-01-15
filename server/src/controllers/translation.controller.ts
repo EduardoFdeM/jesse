@@ -1,16 +1,13 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { translateFile } from '../services/translation.service.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import fs from 'fs';
 import path from 'path';
 import { emitTranslationStarted, emitTranslationCompleted } from '../services/socket.service.js';
+import { translateFile } from '../services/translation.service.js';
 
-// Cache para controle de traduções em andamento
-const activeTranslations = new Map<string, Promise<void>>();
-
-// Adicionar função generateFilePath que estava faltando
+// Adicionar função generateFilePath no início do arquivo
 const generateFilePath = (originalName: string): string => {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
@@ -19,12 +16,37 @@ const generateFilePath = (originalName: string): string => {
     return `${baseName}_${timestamp}_${random}${ext}`;
 };
 
+// Interface para requisições autenticadas
+interface AuthenticatedRequest extends Request {
+    user: {
+        id: string;
+        email: string;
+        name: string;
+    };
+}
+
+// Cache de traduções ativas
+const activeTranslations = new Map<string, {
+    promise: Promise<void>;
+    status: string;
+    startTime: number;
+}>();
+
+// Helper para tipar corretamente o asyncHandler
+const authenticatedHandler = <T>(
+    handler: (req: AuthenticatedRequest, res: Response) => Promise<T>
+) => {
+    return asyncHandler((req: Request, res: Response) => {
+        return handler(req as AuthenticatedRequest, res);
+    });
+};
+
 // Criar tradução
-export const createTranslation = asyncHandler(async (req: Request, res: Response) => {
-    console.log('📝 Recebendo requisição de tradução:', {
-        body: req.body,
-        file: req.file,
-        user: req.user
+export const createTranslation = authenticatedHandler(async (req, res) => {
+    console.log('📥 [1/6] Recebendo arquivo:', {
+        fileName: req.file?.originalname,
+        fileSize: req.file?.size,
+        mimeType: req.file?.mimetype
     });
 
     const { sourceLanguage, targetLanguage } = req.body;
@@ -172,7 +194,11 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
     })();
 
     // Armazenar a promise no cache
-    activeTranslations.set(translationKey, translationPromise);
+    activeTranslations.set(translationKey, {
+        promise: translationPromise,
+        status: 'pending',
+        startTime: Date.now()
+    });
 
     // Aguardar a conclusão da tradução (sem bloquear a resposta)
     translationPromise.catch(error => {
@@ -180,7 +206,7 @@ export const createTranslation = asyncHandler(async (req: Request, res: Response
     });
 });
 
-// Rota de Download
+// Rota de Download (não precisa de autenticação específica)
 export const downloadTranslation = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const translation = await prisma.translation.findUnique({ where: { id } });
@@ -189,34 +215,29 @@ export const downloadTranslation = asyncHandler(async (req: Request, res: Respon
         throw new NotFoundError('Tradução não encontrada');
     }
 
-    // Redirecionar para a URL do Spaces
     res.redirect(translation.filePath);
 });
 
-// Função para obter uma tradução específica
+// Obter uma tradução específica
 export const getTranslation = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
+    const translation = await prisma.translation.findUnique({ where: { id } });
 
-    // Buscar a tradução no banco de dados
-    const translation = await prisma.translation.findUnique({
-        where: { id },
-    });
-
-    // Verificar se a tradução foi encontrada
     if (!translation) {
         throw new NotFoundError('Tradução não encontrada');
     }
 
-    // Retornar a tradução encontrada
     res.status(200).json({
         message: 'Tradução encontrada',
         data: translation,
     });
 });
 
-// Função para obter todas as traduções
-export const getTranslations = asyncHandler(async (req: Request, res: Response) => {
-    const translations = await prisma.translation.findMany(); // Busca todas as traduções
+// Listar traduções do usuário
+export const getTranslations = authenticatedHandler(async (req, res) => {
+    const translations = await prisma.translation.findMany({
+        where: { userId: req.user.id }
+    });
 
     res.status(200).json({
         message: 'Traduções encontradas',
@@ -224,16 +245,11 @@ export const getTranslations = asyncHandler(async (req: Request, res: Response) 
     });
 });
 
-export const clearTranslationHistory = async (req: Request, res: Response) => {
+// Limpar histórico de traduções
+export const clearTranslationHistory = authenticatedHandler(async (req, res) => {
     try {
-        const userId = req.user?.id;
-        if (!userId) {
-            return res.status(401).json({ error: 'Usuário não autenticado' });
-        }
-
-        // Primeiro, pegar todos os arquivos do usuário
         const translations = await prisma.translation.findMany({
-            where: { userId },
+            where: { userId: req.user.id },
             select: { filePath: true }
         });
 
@@ -250,7 +266,7 @@ export const clearTranslationHistory = async (req: Request, res: Response) => {
 
         // Deletar registros do banco
         await prisma.translation.deleteMany({
-            where: { userId }
+            where: { userId: req.user.id }
         });
 
         res.json({ message: 'Histórico de traduções limpo com sucesso' });
@@ -258,4 +274,4 @@ export const clearTranslationHistory = async (req: Request, res: Response) => {
         console.error('Erro ao limpar histórico:', error);
         res.status(500).json({ error: 'Erro ao limpar histórico de traduções' });
     }
-};
+});

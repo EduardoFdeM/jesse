@@ -1,12 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
 import { Request, Response, NextFunction } from 'express';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 
@@ -92,7 +87,8 @@ export const upload = multer({
         filename: async (req, file, cb) => {
             const uniqueSuffix = Date.now();
             const ext = path.extname(file.originalname);
-            cb(null, `${uniqueSuffix}-${file.originalname}`);
+            const fileName = `${uniqueSuffix}${ext}`;
+            cb(null, fileName);
         }
     }),
     limits: {

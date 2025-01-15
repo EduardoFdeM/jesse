@@ -8,6 +8,8 @@ import { KnowledgeBase } from '@prisma/client';
 
 // Criar base de conhecimento
 export const createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
+    console.log('📥 Recebendo requisição para criar base de conhecimento');
+    
     const { name, description, sourceLanguage, targetLanguage } = req.body;
     const file = req.file;
 
@@ -15,18 +17,29 @@ export const createKnowledgeBase = asyncHandler(async (req: Request, res: Respon
         throw new Error('Nenhum arquivo enviado');
     }
 
-    const knowledgeBase = await processKnowledgeBaseFile(file.path, {
-        name,
-        description,
-        sourceLanguage,
-        targetLanguage,
-        userId: req.user!.id
-    });
+    try {
+        const knowledgeBase = await processKnowledgeBaseFile(file.path, {
+            name,
+            description,
+            sourceLanguage,
+            targetLanguage,
+            userId: req.user!.id
+        });
 
-    res.status(201).json({
-        status: 'success',
-        data: knowledgeBase
-    });
+        console.log('✅ Base de conhecimento criada com sucesso:', knowledgeBase.id);
+        
+        res.status(201).json({
+            status: 'success',
+            data: knowledgeBase
+        });
+    } catch (error) {
+        console.error('❌ Erro ao criar base de conhecimento:', error);
+        // Garantir que o arquivo temporário seja removido em caso de erro
+        if (file && fs.existsSync(file.path)) {
+            await fs.promises.unlink(file.path).catch(console.error);
+        }
+        throw error;
+    }
 });
 
 // Listar bases de conhecimento
