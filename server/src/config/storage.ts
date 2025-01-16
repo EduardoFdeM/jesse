@@ -1,20 +1,18 @@
 import { S3 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 
-const spacesEndpoint = new URL(process.env.SPACES_ENDPOINT || 'https://nyc3.digitaloceanspaces.com');
-
+// Configurações do S3
 export const s3Client = new S3({
-    endpoint: spacesEndpoint.href,
-    region: 'nyc3',
+    region: process.env.AWS_REGION,
     credentials: {
-        accessKeyId: process.env.SPACES_KEY || '',
-        secretAccessKey: process.env.SPACES_SECRET || ''
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
     }
 });
 
 type FileType = 'translation' | 'knowledge';
 
-export const uploadToSpaces = async (
+export const uploadToS3 = async (
     fileBuffer: Buffer, 
     fileName: string, 
     type: FileType = 'translation'
@@ -28,7 +26,7 @@ export const uploadToSpaces = async (
         const upload = new Upload({
             client: s3Client,
             params: {
-                Bucket: process.env.SPACES_BUCKET || '',
+                Bucket: process.env.AWS_S3_BUCKET || '',
                 Key: `${folder}/${fileName}`,
                 Body: fileBuffer,
                 ACL: 'public-read',
@@ -36,10 +34,14 @@ export const uploadToSpaces = async (
             }
         });
 
+        upload.on('httpUploadProgress', (progress) => {
+            console.log(`📊 Progresso do upload: ${progress.loaded}/${progress.total}`);
+        });
+
         await upload.done();
         console.log('✅ Upload concluído com sucesso');
         
-        return `https://${process.env.SPACES_BUCKET}.${spacesEndpoint.host}/${folder}/${fileName}`;
+        return `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${folder}/${fileName}`;
     } catch (error) {
         console.error('❌ Erro no upload:', error);
         throw error;
@@ -56,6 +58,12 @@ const determineContentType = (fileName: string): string => {
             return 'text/plain';
         case 'csv':
             return 'text/csv';
+        case 'xlsx':
+        case 'xls':
+            return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        case 'doc':
+        case 'docx':
+            return 'application/msword';
         default:
             return 'application/octet-stream';
     }

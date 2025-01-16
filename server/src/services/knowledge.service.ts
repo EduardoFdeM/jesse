@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import prisma from '../config/database.js';
 import { KnowledgeBase } from '@prisma/client';
-import { uploadToSpaces } from '../config/storage.js';
+import { uploadToS3 } from '../config/storage.js';
 
 interface CreateKnowledgeBaseParams {
     name: string;
@@ -36,7 +36,7 @@ export const processKnowledgeBaseFile = async (filePath: string, params: CreateK
 
         // Fazer upload para o Spaces
         console.log('☁️ [3/5] Enviando para o Spaces');
-        const spacesUrl = await uploadToSpaces(fileContent, fileName, 'knowledge');
+        const spacesUrl = await uploadToS3(fileContent, fileName, 'knowledge');
         console.log('✅ [4/5] Upload concluído:', spacesUrl);
 
         // Criar a base de conhecimento no banco

@@ -5,7 +5,7 @@ import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { emitTranslationProgress } from './socket.service.js';
-import { uploadToSpaces } from '../config/storage.js';
+import { uploadToS3 } from '../config/storage.js';
 
 interface PDFTextR {
     T: string;
@@ -321,7 +321,7 @@ const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath
         });
 
         console.log('☁️ Fazendo upload do PDF para o Spaces');
-        const fileUrl = await uploadToSpaces(fileBuffer, fileName);
+        const fileUrl = await uploadToS3(fileBuffer, fileName);
 
         return {
             filePath: fileUrl,
@@ -588,7 +588,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             savedFile = await saveTextAsPDF(translatedChunks.join('\n'), uniqueFileName);
         } else {
             const textBuffer = Buffer.from(translatedChunks.join('\n'), 'utf-8');
-            const fileUrl = await uploadToSpaces(textBuffer, uniqueFileName);
+            const fileUrl = await uploadToS3(textBuffer, uniqueFileName);
             savedFile = {
                 filePath: fileUrl,
                 fileSize: textBuffer.length
