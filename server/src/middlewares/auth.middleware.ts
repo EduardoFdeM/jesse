@@ -18,40 +18,44 @@ declare global {
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {
-        // Verificar se o token foi fornecido
+        console.log('🔒 Headers recebidos:', req.headers);
         const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        
+        if (!authHeader) {
+            console.log('❌ Header de autorização ausente');
             throw new UnauthorizedError('Token não fornecido');
         }
 
-        // Extrair o token
+        if (!authHeader.startsWith('Bearer ')) {
+            console.log('❌ Formato do token inválido');
+            throw new UnauthorizedError('Formato do token inválido');
+        }
+
         const token = authHeader.split(' ')[1];
+        console.log('🔑 Token extraído:', token.substring(0, 10) + '...');
+        
+        try {
+            const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+            console.log('✅ Token verificado para usuário:', decoded.id);
+            
+            const user = await prisma.user.findUnique({
+                where: { id: decoded.id },
+                select: { id: true, email: true, name: true }
+            });
 
-        // Verificar o token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
+            if (!user) {
+                console.log('❌ Usuário não encontrado:', decoded.id);
+                throw new UnauthorizedError('Usuário não encontrado');
+            }
 
-        // Buscar o usuário
-        const user = await prisma.user.findUnique({
-            where: { id: decoded.id }
-        });
-
-        if (!user) {
-            throw new UnauthorizedError('Usuário não encontrado');
+            req.user = user;
+            next();
+        } catch (jwtError) {
+            console.error('❌ Erro na verificação do token:', jwtError);
+            throw new UnauthorizedError('Token inválido ou expirado');
         }
-
-        // Adicionar o usuário à requisição
-        req.user = {
-            id: user.id,
-            email: user.email,
-            name: user.name
-        };
-
-        next();
     } catch (error) {
-        if (error instanceof jwt.JsonWebTokenError) {
-            next(new UnauthorizedError('Token inválido'));
-        } else {
-            next(error);
-        }
+        console.error('❌ Erro de autenticação:', error);
+        next(error);
     }
 };

@@ -62,6 +62,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
       }
       abortControllerRef.current = new AbortController();
 
+      const token = localStorage.getItem('jwtToken');
+      console.log('🔍 Debug Token:', token ? 'Token existe' : 'Token não encontrado');
+      if (!token) {
+        console.error('❌ Token não encontrado');
+        toast.error('Sessão expirada. Por favor, faça login novamente.');
+        return;
+      }
+
+      console.log('🔑 Token encontrado, preparando requisição');
       const formData = new FormData();
       formData.append('file', item.file);
       formData.append('sourceLanguage', sourceLanguage);
@@ -73,12 +82,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
       }
 
-      console.log('🚀 Enviando requisição para o servidor');
+      const headers = {
+        'Content-Type': 'multipart/form-data',
+        'Authorization': `Bearer ${token}`
+      };
+      console.log('📤 Headers da requisição:', headers);
+
+      console.log('🚀 Enviando requisição autenticada');
       const response = await api.post('/api/translations', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'Authorization': `Bearer ${localStorage.getItem('jwtToken')}`
-        },
+        headers,
         signal: abortControllerRef.current.signal,
         withCredentials: true,
         onUploadProgress: (progressEvent) => {
@@ -163,7 +175,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
 
       const token = localStorage.getItem('jwtToken');
       if (!token) {
-        toast.error('Você precisa estar autenticado para fazer upload de arquivos');
+        console.error('❌ Token não encontrado');
+        toast.error('Sessão expirada. Por favor, faça login novamente.');
         return;
       }
 
