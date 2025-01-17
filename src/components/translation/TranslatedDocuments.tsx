@@ -42,8 +42,8 @@ export function TranslatedDocuments() {
         if (!socket) return;
 
         // Quando uma nova tradução é iniciada
-        socket.on('translation:started', async () => {
-            await loadTranslations();
+        socket.on('translation:started', async (data) => {
+            setTranslations(prev => sortTranslations([...prev, data]));
         });
 
         // Quando há progresso na tradução
@@ -58,14 +58,24 @@ export function TranslatedDocuments() {
         });
 
         // Quando uma tradução é concluída
-        socket.on('translation:completed', async (translation) => {
-            await loadTranslations(); // Recarrega a lista completa do backend
+        socket.on('translation:completed', (translation) => {
+            setTranslations(prev => 
+                sortTranslations(
+                    prev.map(t => t.id === translation.id ? translation : t)
+                )
+            );
             toast.success(`Tradução de "${translation.originalName}" concluída!`);
         });
 
         // Quando ocorre um erro na tradução
-        socket.on('translation:error', async ({ error }) => {
-            await loadTranslations();
+        socket.on('translation:error', ({ id, error }) => {
+            setTranslations(prev => 
+                prev.map(t => 
+                    t.id === id 
+                        ? { ...t, status: 'error', errorMessage: error }
+                        : t
+                )
+            );
             toast.error(`Erro na tradução: ${error}`);
         });
 
@@ -75,7 +85,7 @@ export function TranslatedDocuments() {
             socket.off('translation:completed');
             socket.off('translation:error');
         };
-    }, [socket, loadTranslations]);
+    }, [socket]);
 
     const handleFileSelect = async (files: File[]) => {
         for (const file of files) {
@@ -127,18 +137,14 @@ export function TranslatedDocuments() {
     
     const handleDownload = async (fileId: string, fileName: string) => {
         try {
-            const response = await api.get(`/api/translations/${fileId}/download`, {
-                responseType: 'blob'
-            });
-    
-            const fileURL = window.URL.createObjectURL(new Blob([response.data]));
-            const link = document.createElement('a');
-            link.href = fileURL;
-            link.setAttribute('download', fileName);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            window.URL.revokeObjectURL(fileURL);
+            const response = await api.get(`/api/translations/${fileId}/download`);
+            
+            if (response.data.url) {
+                // Abrir em nova aba e forçar download
+                window.open(response.data.url, '_blank');
+            } else {
+                throw new Error('URL de download não disponível');
+            }
         } catch (error) {
             console.error('Erro ao fazer download:', error);
             toast.error('Erro ao fazer download do arquivo. Por favor, tente novamente.');

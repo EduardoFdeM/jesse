@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
-import { Translation } from '../../types';
+import { Translation } from '../../types/index';
 import { api } from '../../services/api';
 
 interface TranslationProgressProps {

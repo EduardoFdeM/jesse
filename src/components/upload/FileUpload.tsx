@@ -1,6 +1,5 @@
 import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import axios from 'axios';
 import api, { clearControllers } from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
 import { KnowledgeBase } from '../../types';
@@ -8,6 +7,7 @@ import { KnowledgeBase } from '../../types';
 interface FileUploadProps {
   sourceLanguage: string;
   targetLanguage: string;
+  onFileSelect: (files: File[]) => Promise<void>;
 }
 
 interface UploadQueueItem {
@@ -20,8 +20,7 @@ interface UploadQueueItem {
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 // const DEBOUNCE_DELAY = 1000;
-
-export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLanguage }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLanguage, onFileSelect }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
@@ -29,6 +28,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
   const processingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [outputFormat, setOutputFormat] = useState('pdf');
 
   // Limpar recursos ao desmontar
   useEffect(() => {
@@ -45,119 +46,45 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
 
   // Processador de fila de upload
   const processQueue = useCallback(async () => {
-    if (processingRef.current || uploadQueueRef.current.length === 0) {
-      return;
-    }
+    if (processingRef.current || uploadQueueRef.current.length === 0) return;
 
     processingRef.current = true;
     const item = uploadQueueRef.current[0];
 
     try {
-      setIsLoading(true);
-      console.log('📤 Iniciando upload do arquivo:', item.file.name);
-
-      // Cancelar requisição anterior se existir
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-      }
-      abortControllerRef.current = new AbortController();
-
-      const token = localStorage.getItem('jwtToken');
-      console.log('🔍 Debug Token:', token ? 'Token existe' : 'Token não encontrado');
-      if (!token) {
-        console.error('❌ Token não encontrado');
-        toast.error('Sessão expirada. Por favor, faça login novamente.');
-        return;
-      }
-
-      console.log('🔑 Token encontrado, preparando requisição');
-      const formData = new FormData();
-      formData.append('file', item.file);
-      formData.append('sourceLanguage', sourceLanguage);
-      formData.append('targetLanguage', targetLanguage);
-      formData.set('originalname', item.file.name);
-      
-      if (useKnowledgeBase && selectedKnowledgeBase) {
-        console.log('🔍 Usando base de conhecimento:', selectedKnowledgeBase);
-        formData.append('knowledgeBaseId', selectedKnowledgeBase);
-      }
-
-      const headers = {
-        'Content-Type': 'multipart/form-data',
-        'Authorization': `Bearer ${token}`
-      };
-      console.log('📤 Headers da requisição:', headers);
-
-      console.log('🚀 Enviando requisição autenticada');
-      const response = await api.post('/api/translations', formData, {
-        headers,
-        signal: abortControllerRef.current.signal,
-        withCredentials: true,
-        onUploadProgress: (progressEvent) => {
-          const progress = progressEvent.total 
-            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
-            : 0;
-          console.log(`📊 Progresso do upload: ${progress}%`);
-        }
-      });
-
-      if (response.data) {
-        console.log('✅ Upload concluído com sucesso');
-        toast.success('Arquivo enviado com sucesso! A tradução começará em breve.');
-        uploadQueueRef.current.shift();
-      }
-    } catch (error) {
-      console.error('❌ Erro durante o upload:', error);
-      
-      if (axios.isCancel(error)) {
-        console.log('⚠️ Upload cancelado');
-        return;
-      }
-
-      if (!axios.isCancel(error)) {
-        console.error('Erro durante o upload:', error);
+        setIsLoading(true);
+        const token = localStorage.getItem('jwtToken');
         
-        if (axios.isAxiosError(error)) {
-          if (error.response?.status === 401) {
+        if (!token) {
             toast.error('Sessão expirada. Por favor, faça login novamente.');
-            window.location.href = '/login';
-            uploadQueueRef.current = []; // Limpar fila
-          } else if (error.response?.status === 429) {
-            // Se receber 429, aumentar o delay e tentar novamente
-            if (item.retries < MAX_RETRIES) {
-              item.retries++;
-              uploadTimeoutRef.current = setTimeout(() => {
-                processingRef.current = false;
-                processQueue();
-              }, RETRY_DELAY * item.retries);
-              return;
-            } else {
-              toast.error('Muitas tentativas de upload. Tente novamente mais tarde.');
-              uploadQueueRef.current.shift(); // Remover após máximo de tentativas
-            }
-          } else {
-            const errorMessage = error.response?.data?.error || 'Erro ao enviar arquivo. Verifique a conexão ou formato do arquivo.';
-            toast.error(errorMessage);
-            uploadQueueRef.current.shift(); // Remover em caso de erro não recuperável
-          }
-        } else {
-          toast.error('Erro desconhecido ao enviar arquivo');
-          uploadQueueRef.current.shift();
+            return;
         }
-      }
+
+        const formData = new FormData();
+        formData.append('file', item.file);
+        formData.append('sourceLanguage', sourceLanguage);
+        formData.append('targetLanguage', targetLanguage);
+        formData.append('originalname', item.file.name);
+
+        await onFileSelect([item.file]);
+
+        uploadQueueRef.current.shift();
+    } catch (error) {
+        if (error instanceof Error) {
+            toast.error(error.message);
+        } else {
+            toast.error('Erro ao enviar arquivo');
+        }
+        uploadQueueRef.current.shift();
     } finally {
-      setIsLoading(false);
-      if (uploadQueueRef.current.length === 0) {
+        setIsLoading(false);
         processingRef.current = false;
-      } else {
-        // Delay antes de processar próximo item
-        uploadTimeoutRef.current = setTimeout(() => {
-          processingRef.current = false;
-          processQueue();
-        }, RETRY_DELAY);
-      }
+        
+        if (uploadQueueRef.current.length > 0) {
+            processQueue();
+        }
     }
-  }, [sourceLanguage, targetLanguage, useKnowledgeBase, selectedKnowledgeBase]);
+  }, [sourceLanguage, targetLanguage, onFileSelect]);
 
   // Efeito para monitorar a fila
   useEffect(() => {
@@ -168,47 +95,32 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      if (!sourceLanguage || !targetLanguage) {
-        toast.error('Selecione os idiomas de origem e destino');
-        return;
-      }
-
-      const token = localStorage.getItem('jwtToken');
-      if (!token) {
-        console.error('❌ Token não encontrado');
-        toast.error('Sessão expirada. Por favor, faça login novamente.');
-        return;
-      }
-
-      const file = acceptedFiles[0];
-      const fileId = `${file.name}-${file.size}-${file.lastModified}`;
-      const now = Date.now();
-
-      // Verificar se arquivo já está na fila
-      const isDuplicate = uploadQueueRef.current.some(
-        item => item.id === fileId && now - item.timestamp < 5000
-      );
-
-      if (isDuplicate) {
-        console.log('Upload duplicado detectado, ignorando');
-        return;
-      }
-
-      // Adicionar à fila
-      uploadQueueRef.current.push({
-        file,
-        id: fileId,
-        timestamp: now,
-        retries: 0
-      });
-
-      // Iniciar processamento se não estiver em andamento
-      if (!processingRef.current) {
-        processQueue();
+      if (acceptedFiles.length > 0) {
+        setSelectedFile(acceptedFiles[0]);
       }
     },
-    [sourceLanguage, targetLanguage, processQueue]
+    []
   );
+
+  const handleSubmit = async () => {
+    if (!selectedFile) {
+      toast.error('Selecione um arquivo primeiro');
+      return;
+    }
+
+    if (!sourceLanguage || !targetLanguage) {
+      toast.error('Selecione os idiomas de origem e destino');
+      return;
+    }
+
+    try {
+      await onFileSelect([selectedFile]);
+      setSelectedFile(null); // Limpa o arquivo selecionado após envio
+    } catch (error) {
+      console.error('Erro no envio:', error);
+      toast.error('Erro ao enviar arquivo');
+    }
+  };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -281,6 +193,34 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
           </p>
         )}
       </div>
+
+      <div className="flex space-x-4 items-center">
+        <select
+          value={outputFormat}
+          onChange={(e) => setOutputFormat(e.target.value)}
+          className="mt-1 block rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+        >
+          <option value="pdf">PDF</option>
+          <option value="docx">DOCX</option>
+          <option value="txt">TXT</option>
+        </select>
+
+        {selectedFile && (
+          <button
+            onClick={handleSubmit}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            disabled={!sourceLanguage || !targetLanguage}
+          >
+            Iniciar Tradução
+          </button>
+        )}
+      </div>
+
+      {selectedFile && (
+        <div className="text-sm text-gray-600">
+          Arquivo selecionado: {selectedFile.name}
+        </div>
+      )}
     </div>
   );
 };
