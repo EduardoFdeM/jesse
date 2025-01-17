@@ -38,7 +38,7 @@ const authenticatedHandler = <T>(
 // Criar tradução
 export const createTranslation = authenticatedHandler(async (req, res) => {
     try {
-        const { sourceLanguage, targetLanguage } = req.body;
+        const { sourceLanguage, targetLanguage, outputFormat = 'pdf' } = req.body;
         const file = req.file;
         
         if (!file || !sourceLanguage || !targetLanguage || !req.user?.id) {
@@ -79,7 +79,8 @@ export const createTranslation = authenticatedHandler(async (req, res) => {
             sourceLanguage,
             targetLanguage,
             userId: req.user.id,
-            translationId: translation.id
+            translationId: translation.id,
+            outputFormat
         }).catch(error => {
             console.error('Erro na tradução em background:', error);
         });

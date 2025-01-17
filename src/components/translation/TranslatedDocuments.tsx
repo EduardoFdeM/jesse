@@ -41,13 +41,11 @@ export function TranslatedDocuments() {
     useEffect(() => {
         if (!socket) return;
 
-        // Quando uma nova tradução é iniciada
-        socket.on('translation:started', async (data) => {
+        const handleStarted = (data: Translation) => {
             setTranslations(prev => sortTranslations([...prev, data]));
-        });
+        };
 
-        // Quando há progresso na tradução
-        socket.on('translation:progress', ({ id, progress }) => {
+        const handleProgress = ({ id, progress }: { id: string; progress: number }) => {
             setTranslations(prev => 
                 prev.map(t => 
                     t.id === id 
@@ -55,20 +53,18 @@ export function TranslatedDocuments() {
                         : t
                 )
             );
-        });
+        };
 
-        // Quando uma tradução é concluída
-        socket.on('translation:completed', (translation) => {
+        const handleCompleted = (translation: Translation) => {
             setTranslations(prev => 
                 sortTranslations(
                     prev.map(t => t.id === translation.id ? translation : t)
                 )
             );
             toast.success(`Tradução de "${translation.originalName}" concluída!`);
-        });
+        };
 
-        // Quando ocorre um erro na tradução
-        socket.on('translation:error', ({ id, error }) => {
+        const handleError = ({ id, error }: { id: string; error: string }) => {
             setTranslations(prev => 
                 prev.map(t => 
                     t.id === id 
@@ -77,15 +73,25 @@ export function TranslatedDocuments() {
                 )
             );
             toast.error(`Erro na tradução: ${error}`);
-        });
+        };
+
+        socket.on('translation:started', handleStarted);
+        socket.on('translation:progress', handleProgress);
+        socket.on('translation:completed', handleCompleted);
+        socket.on('translation:error', handleError);
+
+        // Carregar traduções inicialmente e a cada 30 segundos
+        loadTranslations();
+        const interval = setInterval(loadTranslations, 30000);
 
         return () => {
-            socket.off('translation:started');
-            socket.off('translation:progress');
-            socket.off('translation:completed');
-            socket.off('translation:error');
+            socket.off('translation:started', handleStarted);
+            socket.off('translation:progress', handleProgress);
+            socket.off('translation:completed', handleCompleted);
+            socket.off('translation:error', handleError);
+            clearInterval(interval);
         };
-    }, [socket]);
+    }, [socket, loadTranslations]);
 
     const handleFileSelect = async (files: File[]) => {
         for (const file of files) {
@@ -140,14 +146,27 @@ export function TranslatedDocuments() {
             const response = await api.get(`/api/translations/${fileId}/download`);
             
             if (response.data.url) {
-                // Abrir em nova aba e forçar download
-                window.open(response.data.url, '_blank');
+                const fileExtension = fileName.split('.').pop()?.toLowerCase();
+                
+                // Se for PDF, abre em nova guia
+                if (fileExtension === 'pdf') {
+                    window.open(response.data.url, '_blank');
+                    return;
+                }
+                
+                // Para outros formatos, força o download
+                const link = document.createElement('a');
+                link.href = response.data.url;
+                link.download = fileName; // Força o download com o nome original
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
             } else {
                 throw new Error('URL de download não disponível');
             }
         } catch (error) {
             console.error('Erro ao fazer download:', error);
-            toast.error('Erro ao fazer download do arquivo. Por favor, tente novamente.');
+            toast.error('Erro ao fazer download do arquivo');
         }
     };
 

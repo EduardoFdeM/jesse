@@ -113,12 +113,19 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
       return;
     }
 
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('sourceLanguage', sourceLanguage);
+    formData.append('targetLanguage', targetLanguage);
+    formData.append('outputFormat', outputFormat);
+    formData.append('originalname', selectedFile.name);
+
     try {
-      await onFileSelect([selectedFile]);
-      setSelectedFile(null); // Limpa o arquivo selecionado após envio
+        await onFileSelect([selectedFile]);
+        setSelectedFile(null);
     } catch (error) {
-      console.error('Erro no envio:', error);
-      toast.error('Erro ao enviar arquivo');
+        console.error('Erro no envio:', error);
+        toast.error('Erro ao enviar arquivo');
     }
   };
 

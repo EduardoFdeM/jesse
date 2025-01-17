@@ -6,6 +6,7 @@ import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
 import { validateOpenAIConnection } from '../config/openai.js';
+import { Server } from 'socket.io';
 
 interface PDFTextR {
     T: string;
@@ -43,11 +44,9 @@ interface TranslationData {
     knowledgeBaseId?: string | null;
 }
 
-// Adicionar interface para Socket.io global
+// Declaração do tipo global
 declare global {
-    var io: {
-        emit: (event: string, data: any) => void;
-    } | undefined;
+    var io: Server | undefined;
 }
 
 // Função otimizada para dividir o texto em chunks muito maiores
@@ -93,7 +92,7 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             reject(new Error('Timeout ao extrair texto do PDF'));
-        }, 30000); // 30 segundos de timeout
+        }, 30000);
 
         const pdfParser = new PDFParser();
         
@@ -108,7 +107,7 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
                     )
                     .join('\n');
                 resolve(decodeURIComponent(text));
-            } catch (parseError) {
+            } catch (error) {
                 reject(new Error('Erro ao processar texto do PDF'));
             }
         });
@@ -126,10 +125,6 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
         }
     });
 };
-
-// Constantes para cálculo de custo
-const COST_PER_1K_INPUT_TOKENS = 0.0015;   // $0.0015 por 1K tokens de entrada
-const COST_PER_1K_OUTPUT_TOKENS = 0.0020;  // $0.0020 por 1K tokens de saída
 
 // Função para estimar número de tokens (aproximado)
 const estimateTokens = (text: string): number => {
@@ -222,6 +217,7 @@ interface TranslateFileParams {
     userId: string;
     knowledgeBasePath?: string;
     translationId: string;
+    outputFormat: string;
 }
 
 export type ChatCompletionMessageParam = {
@@ -241,17 +237,29 @@ const generateUniqueFileName = (originalName: string): string => {
 // Função para salvar texto como PDF e fazer upload para o Spaces
 const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath: string; fileSize: number }> => {
     try {
-        console.log('📄 Gerando PDF');
-        const fileBuffer = await new Promise<Buffer>((resolve, reject) => {
-            const chunks: Buffer[] = [];
+        return new Promise((resolve, reject) => {
             const doc = new PDFDocument({
                 margin: 50,
                 size: 'A4'
             });
+
+            const chunks: Buffer[] = [];
             
             doc.on('data', chunk => chunks.push(chunk));
-            doc.on('end', () => resolve(Buffer.concat(chunks)));
-            doc.on('error', reject);
+            
+            doc.on('end', async () => {
+                try {
+                    const fileBuffer = Buffer.concat(chunks);
+                    const fileUrl = await uploadToS3(fileBuffer, fileName);
+                    
+                    resolve({
+                        filePath: fileUrl,
+                        fileSize: fileBuffer.length
+                    });
+                } catch (err) {
+                    reject(err);
+                }
+            });
 
             doc.fontSize(12);
             doc.text(text, {
@@ -261,18 +269,114 @@ const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath
 
             doc.end();
         });
-
-        console.log('☁️ Fazendo upload do PDF para o Spaces');
-        const fileUrl = await uploadToS3(fileBuffer, fileName);
-
-        return {
-            filePath: fileUrl,
-            fileSize: fileBuffer.length
-        };
     } catch (err) {
         console.error('Erro ao gerar ou fazer upload do PDF:', err);
         throw err;
     }
+};
+
+// Função para salvar arquivo traduzido
+const saveTranslatedFile = async (text: string, fileName: string, outputFormat: string): Promise<{ filePath: string; fileSize: number; fileName: string }> => {
+    try {
+        const result = await saveTextAsPDF(text, fileName);
+        return {
+            ...result,
+            fileName: fileName.replace(/\.[^/.]+$/, '.pdf')
+        };
+    } catch (err) {
+        console.error('Erro ao salvar arquivo traduzido:', err);
+        throw err;
+    }
+};
+
+// Função para preservar a formatação do texto
+const preserveFormatting = (originalText: string, translatedText: string): string => {
+    // Se o texto original começa com #, mantenha o mesmo nível de heading
+    const headingMatch = originalText.match(/^#+\s/);
+    if (headingMatch?.length) {
+        const headingLevel = headingMatch[0];
+        return `${headingLevel} ${translatedText.replace(/^#+\s*/, '')}`;
+    }
+
+    // Preservar listas não ordenadas (*, -, +)
+    const listMatch = originalText.match(/^[*\-+]\s/);
+    if (listMatch?.length) {
+        const marker = listMatch[0].charAt(0);
+        return `${marker} ${translatedText.replace(/^[*\-+]\s*/, '')}`;
+    }
+
+    // Preservar listas ordenadas (1., 2., etc)
+    const orderedListMatch = originalText.match(/^\d+\.\s/);
+    if (orderedListMatch?.length) {
+        const number = orderedListMatch[0].match(/^\d+/)?.[0] || '1';
+        return `${number}. ${translatedText.replace(/^\d+\.\s*/, '')}`;
+    }
+
+    // Preservar citações (>)
+    if (originalText.startsWith('> ')) {
+        return `> ${translatedText.replace(/^>\s*/, '')}`;
+    }
+
+    // Preservar código inline (`code`)
+    const codeMatches = originalText.match(/`[^`]+`/g);
+    if (codeMatches) {
+        let result = translatedText;
+        codeMatches.forEach(match => {
+            const code = match.replace(/`/g, '');
+            result = result.replace(code, match);
+        });
+        return result;
+    }
+
+    // Preservar bold e italic (**bold**, *italic*, __bold__, _italic_)
+    const boldMatch = originalText.match(/(\*\*|__)[^*_]+(\*\*|__)/);
+    if (boldMatch) {
+        const markers = boldMatch[1];
+        return `${markers}${translatedText.replace(/(\*\*|__)/g, '')}${markers}`;
+    }
+
+    const italicMatch = originalText.match(/([*_])[^*_]+([*_])/);
+    if (italicMatch) {
+        const markers = italicMatch[1];
+        return `${markers}${translatedText.replace(/[*_]/g, '')}${markers}`;
+    }
+
+    // Preservar links [texto](url)
+    const linkMatch = originalText.match(/\[([^\]]+)\]\(([^)]+)\)/);
+    if (linkMatch) {
+        const url = linkMatch[2];
+        return `[${translatedText.replace(/\[([^\]]+)\]\(([^)]+)\)/, '$1')}](${url})`;
+    }
+
+    // Preservar imagens ![alt](url)
+    const imageMatch = originalText.match(/!\[([^\]]+)\]\(([^)]+)\)/);
+    if (imageMatch) {
+        const url = imageMatch[2];
+        return `![${translatedText.replace(/!\[([^\]]+)\]\(([^)]+)\)/, '$1')}](${url})`;
+    }
+
+    return translatedText;
+};
+
+// Função para traduzir mantendo a formatação
+const translateChunkWithFormatting = async (
+    chunk: string, 
+    params: TranslateFileParams,
+    knowledgeBaseContent?: string
+): Promise<string> => {
+    const lines = chunk.split('\n');
+    const translatedLines = await Promise.all(
+        lines.map(async (line) => {
+            if (!line.trim()) return line;
+            const result = await translateChunkWithRetry(
+                line, 
+                params, 
+                knowledgeBaseContent || ''
+            );
+            return preserveFormatting(line, result.text);
+        })
+    );
+    return translatedLines.join('\n');
 };
 
 // Função principal de tradução
@@ -309,8 +413,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         const translatedChunks: string[] = [];
 
         for (let i = 0; i < chunks.length; i++) {
-            const result = await translateChunkWithRetry(chunks[i], params, '');
-            translatedChunks.push(result.text);
+            const translatedText = await translateChunkWithFormatting(chunks[i], params);
+            translatedChunks.push(translatedText);
             
             // Emitir progresso via socket
             const progress = Math.round((i + 1) / chunks.length * 100);
@@ -319,15 +423,17 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 data: { status: `processing (${progress}%)` }
             });
             
-            global.io?.emit('translation:progress', { 
-                id: params.translationId, 
-                progress 
-            });
+            if (global.io) {
+                global.io.emit('translation:progress', { 
+                    id: params.translationId, 
+                    progress 
+                });
+            }
         }
 
         // Salvar resultado
         const uniqueFileName = generateUniqueFileName(params.filePath);
-        const savedFile = await saveTextAsPDF(translatedChunks.join('\n'), uniqueFileName);
+        const savedFile = await saveTranslatedFile(translatedChunks.join('\n'), uniqueFileName, params.outputFormat);
 
         // Finalizar tradução e emitir evento de conclusão
         const updatedTranslation = await prisma.translation.update({
@@ -336,12 +442,14 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 status: 'completed',
                 filePath: savedFile.filePath,
                 fileSize: savedFile.fileSize,
-                fileName: uniqueFileName
+                fileName: savedFile.fileName
             }
         });
 
         // Emitir evento de conclusão
-        global.io?.emit('translation:completed', updatedTranslation);
+        if (global.io) {
+            global.io.emit('translation:completed', updatedTranslation);
+        }
 
         return updatedTranslation;
     } catch (error: unknown) {
@@ -354,10 +462,12 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             }
         });
         
-        global.io?.emit('translation:error', { 
-            id: params.translationId, 
-            error: errorMessage
-        });
+        if (global.io) {
+            global.io.emit('translation:error', { 
+                id: params.translationId, 
+                error: errorMessage
+            });
+        }
         
         throw error;
     }
