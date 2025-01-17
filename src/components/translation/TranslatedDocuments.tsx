@@ -154,10 +154,10 @@ export function TranslatedDocuments() {
                     return;
                 }
                 
-                // Para outros formatos, força o download
+                // Para DOCX e TXT, força o download
                 const link = document.createElement('a');
                 link.href = response.data.url;
-                link.download = fileName; // Força o download com o nome original
+                link.setAttribute('download', fileName); // Força o download com o nome original
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);

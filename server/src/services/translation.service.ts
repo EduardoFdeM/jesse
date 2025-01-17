@@ -7,6 +7,7 @@ import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
 import { validateOpenAIConnection } from '../config/openai.js';
 import { Server } from 'socket.io';
+import { Document, Paragraph, Packer, TextRun } from 'docx';
 
 interface PDFTextR {
     T: string;
@@ -126,12 +127,6 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
     });
 };
 
-// Função para estimar número de tokens (aproximado)
-const estimateTokens = (text: string): number => {
-    // Aproximadamente 4 caracteres por token
-    return Math.ceil(text.length / 4);
-};
-
 // Interface para custos de tradução
 interface TranslationCost {
     inputTokens: number;
@@ -186,8 +181,8 @@ const translateChunkWithRetry = async (
                     totalTokens: completion.usage?.total_tokens || 0
                 }
             };
-        } catch (error: unknown) {
-            if (error instanceof Error && 'status' in error && error.status === 401) {
+        } catch (err) {
+            if (err instanceof Error && 'status' in err && err.status === 401) {
                 // Erro de autenticação - não tentar novamente
                 await prisma.translation.update({
                     where: { id: params.translationId },
@@ -200,7 +195,7 @@ const translateChunkWithRetry = async (
             }
 
             if (attempt === retries) {
-                throw error;
+                throw err;
             }
 
             // Delay exponencial entre tentativas
@@ -218,20 +213,12 @@ interface TranslateFileParams {
     knowledgeBasePath?: string;
     translationId: string;
     outputFormat: string;
+    originalName: string;
 }
 
 export type ChatCompletionMessageParam = {
     role: 'user' | 'assistant' | 'system';
     content: string;
-};
-
-// Função para gerar nome único de arquivo
-const generateUniqueFileName = (originalName: string): string => {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(7);
-    const ext = path.extname(originalName);
-    const baseName = path.basename(originalName, ext);
-    return `${baseName}_${timestamp}_${random}${ext}`;
 };
 
 // Função para salvar texto como PDF e fazer upload para o Spaces
@@ -276,12 +263,74 @@ const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath
 };
 
 // Função para salvar arquivo traduzido
-const saveTranslatedFile = async (text: string, fileName: string, outputFormat: string): Promise<{ filePath: string; fileSize: number; fileName: string }> => {
+const saveTranslatedFile = async (
+    text: string, 
+    fileName: string, 
+    outputFormat: string
+): Promise<{ filePath: string; fileSize: number; fileName: string }> => {
     try {
-        const result = await saveTextAsPDF(text, fileName);
+        let fileBuffer: Buffer;
+        const finalFileName = fileName.replace(/\.[^/.]+$/, `.${outputFormat}`);
+
+        switch (outputFormat.toLowerCase()) {
+            case 'txt': {
+                fileBuffer = Buffer.from(text, 'utf-8');
+                break;
+            }
+            case 'docx': {
+                const doc = new Document({
+                    sections: [{
+                        properties: {},
+                        children: [
+                            new Paragraph({
+                                children: [new TextRun(text)]
+                            })
+                        ]
+                    }]
+                });
+                fileBuffer = await Packer.toBuffer(doc);
+                break;
+            }
+            case 'pdf':
+            default: {
+                const pdfDoc = new PDFDocument({
+                    margin: 50,
+                    size: 'A4'
+                });
+                const chunks: Buffer[] = [];
+                pdfDoc.on('data', chunk => chunks.push(chunk));
+                
+                return new Promise((resolve, reject) => {
+                    pdfDoc.on('end', async () => {
+                        try {
+                            fileBuffer = Buffer.concat(chunks);
+                            const fileUrl = await uploadToS3(fileBuffer, finalFileName);
+                            resolve({
+                                filePath: fileUrl,
+                                fileSize: fileBuffer.length,
+                                fileName: finalFileName
+                            });
+                        } catch (err) {
+                            reject(err);
+                        }
+                    });
+
+                    pdfDoc.fontSize(12);
+                    pdfDoc.text(text, {
+                        align: 'left',
+                        lineGap: 5
+                    });
+                    pdfDoc.end();
+                });
+            }
+        }
+
+        // Upload do arquivo para S3
+        const fileUrl = await uploadToS3(fileBuffer, finalFileName);
         return {
-            ...result,
-            fileName: fileName.replace(/\.[^/.]+$/, '.pdf')
+            filePath: fileUrl,
+            fileSize: fileBuffer.length,
+            fileName: finalFileName
         };
     } catch (err) {
         console.error('Erro ao salvar arquivo traduzido:', err);
@@ -291,71 +340,21 @@ const saveTranslatedFile = async (text: string, fileName: string, outputFormat: 
 
 // Função para preservar a formatação do texto
 const preserveFormatting = (originalText: string, translatedText: string): string => {
-    // Se o texto original começa com #, mantenha o mesmo nível de heading
-    const headingMatch = originalText.match(/^#+\s/);
-    if (headingMatch?.length) {
-        const headingLevel = headingMatch[0];
-        return `${headingLevel} ${translatedText.replace(/^#+\s*/, '')}`;
+    // Preservar quebras de linha
+    if (originalText.includes('\n')) {
+        const originalLines = originalText.split('\n');
+        const translatedLines = translatedText.split('\n');
+        return translatedLines.map((line, index) => {
+            // Preservar indentação
+            const originalIndentation = originalLines[index]?.match(/^\s*/)?.[0] || '';
+            return `${originalIndentation}${line}`;
+        }).join('\n');
     }
 
-    // Preservar listas não ordenadas (*, -, +)
-    const listMatch = originalText.match(/^[*\-+]\s/);
-    if (listMatch?.length) {
-        const marker = listMatch[0].charAt(0);
-        return `${marker} ${translatedText.replace(/^[*\-+]\s*/, '')}`;
-    }
-
-    // Preservar listas ordenadas (1., 2., etc)
-    const orderedListMatch = originalText.match(/^\d+\.\s/);
-    if (orderedListMatch?.length) {
-        const number = orderedListMatch[0].match(/^\d+/)?.[0] || '1';
-        return `${number}. ${translatedText.replace(/^\d+\.\s*/, '')}`;
-    }
-
-    // Preservar citações (>)
-    if (originalText.startsWith('> ')) {
-        return `> ${translatedText.replace(/^>\s*/, '')}`;
-    }
-
-    // Preservar código inline (`code`)
-    const codeMatches = originalText.match(/`[^`]+`/g);
-    if (codeMatches) {
-        let result = translatedText;
-        codeMatches.forEach(match => {
-            const code = match.replace(/`/g, '');
-            result = result.replace(code, match);
-        });
-        return result;
-    }
-
-    // Preservar bold e italic (**bold**, *italic*, __bold__, _italic_)
-    const boldMatch = originalText.match(/(\*\*|__)[^*_]+(\*\*|__)/);
-    if (boldMatch) {
-        const markers = boldMatch[1];
-        return `${markers}${translatedText.replace(/(\*\*|__)/g, '')}${markers}`;
-    }
-
-    const italicMatch = originalText.match(/([*_])[^*_]+([*_])/);
-    if (italicMatch) {
-        const markers = italicMatch[1];
-        return `${markers}${translatedText.replace(/[*_]/g, '')}${markers}`;
-    }
-
-    // Preservar links [texto](url)
-    const linkMatch = originalText.match(/\[([^\]]+)\]\(([^)]+)\)/);
-    if (linkMatch) {
-        const url = linkMatch[2];
-        return `[${translatedText.replace(/\[([^\]]+)\]\(([^)]+)\)/, '$1')}](${url})`;
-    }
-
-    // Preservar imagens ![alt](url)
-    const imageMatch = originalText.match(/!\[([^\]]+)\]\(([^)]+)\)/);
-    if (imageMatch) {
-        const url = imageMatch[2];
-        return `![${translatedText.replace(/!\[([^\]]+)\]\(([^)]+)\)/, '$1')}](${url})`;
-    }
-
-    return translatedText;
+    // Preservar espaços iniciais e finais
+    const originalSpacesBefore = originalText.match(/^\s*/)?.[0] || '';
+    const originalSpacesAfter = originalText.match(/\s*$/)?.[0] || '';
+    return `${originalSpacesBefore}${translatedText.trim()}${originalSpacesAfter}`;
 };
 
 // Função para traduzir mantendo a formatação
@@ -377,6 +376,12 @@ const translateChunkWithFormatting = async (
         })
     );
     return translatedLines.join('\n');
+};
+
+// Função para gerar nome do arquivo traduzido
+const generateTranslatedFileName = (originalName: string, outputFormat: string): string => {
+    const nameWithoutExt = originalName.replace(/\.[^/.]+$/, '');
+    return `${nameWithoutExt}_traduzido.${outputFormat}`;
 };
 
 // Função principal de tradução
@@ -431,9 +436,18 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             }
         }
 
+        // Gerar nome do arquivo traduzido
+        const translatedFileName = generateTranslatedFileName(
+            params.originalName || 'documento',
+            params.outputFormat || 'pdf'
+        );
+
         // Salvar resultado
-        const uniqueFileName = generateUniqueFileName(params.filePath);
-        const savedFile = await saveTranslatedFile(translatedChunks.join('\n'), uniqueFileName, params.outputFormat);
+        const savedFile = await saveTranslatedFile(
+            translatedChunks.join('\n'),
+            translatedFileName,
+            params.outputFormat
+        );
 
         // Finalizar tradução e emitir evento de conclusão
         const updatedTranslation = await prisma.translation.update({

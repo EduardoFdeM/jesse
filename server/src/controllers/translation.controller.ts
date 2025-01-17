@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { ValidationError, NotFoundError } from '../utils/errors.js';
+import { ValidationError, NotFoundError, BadRequestError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import fs from 'fs';
 import path from 'path';
@@ -41,7 +41,17 @@ export const createTranslation = authenticatedHandler(async (req, res) => {
         const { sourceLanguage, targetLanguage, outputFormat = 'pdf' } = req.body;
         const file = req.file;
         
-        if (!file || !sourceLanguage || !targetLanguage || !req.user?.id) {
+        if (!file) {
+            throw new BadRequestError('Nenhum arquivo foi enviado');
+        }
+
+        // Validar formato de saída
+        const validFormats = ['pdf', 'txt', 'docx'];
+        if (!validFormats.includes(outputFormat)) {
+            throw new BadRequestError('Formato de saída inválido');
+        }
+
+        if (!sourceLanguage || !targetLanguage || !req.user?.id) {
             throw new ValidationError('Dados inválidos para tradução');
         }
 
@@ -80,7 +90,8 @@ export const createTranslation = authenticatedHandler(async (req, res) => {
             targetLanguage,
             userId: req.user.id,
             translationId: translation.id,
-            outputFormat
+            outputFormat,
+            originalName
         }).catch(error => {
             console.error('Erro na tradução em background:', error);
         });

@@ -13,6 +13,12 @@ export class BaseError extends Error {
     }
 }
 
+export class BadRequestError extends BaseError {
+    constructor(message: string = 'Requisição inválida') {
+        super(message, 400, 'BAD_REQUEST');
+    }
+}
+
 export class CustomError extends Error {
   constructor(
     public message: string,
