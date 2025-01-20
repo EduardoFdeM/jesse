@@ -7,8 +7,8 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-./src/.env
-./server/.env
+src/.env
+erver/.env
 *.env
 .env
 .env.local
