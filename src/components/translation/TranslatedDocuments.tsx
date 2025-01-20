@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Download, Clock, CheckCircle, XCircle, Edit, Trash2 } from 'lucide-react';
 import { Translation } from '../../types/index';
 import { api } from '../../services/api';
 import { FileUpload } from '../upload/FileUpload';
@@ -12,6 +12,13 @@ export function TranslatedDocuments() {
     const [sourceLanguage, setSourceLanguage] = useState('');
     const [targetLanguage, setTargetLanguage] = useState('');
     const socket = useSocket();
+    const [dateFilter, setDateFilter] = useState<string>('all'); // all, week, month
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [selectedTranslation, setSelectedTranslation] = useState<Translation | null>(null);
+    const [editedContent, setEditedContent] = useState('');
+    const [selectedItems, setSelectedItems] = useState<string[]>([]);
+    const [isSelectionMode, setIsSelectionMode] = useState(false);
+    const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]) => {
@@ -28,7 +35,15 @@ export function TranslatedDocuments() {
             setError(null);
         } catch (err) {
             console.error('Erro ao carregar traduções:', err);
-            setError('Erro ao carregar traduções');
+            // Não definir erro se for um erro de timeout ou autenticação
+            // pois o interceptor já vai lidar com isso
+            if (
+                err.message !== 'timeout of 10000ms exceeded' &&
+                err.message !== 'Network Error' &&
+                err.response?.status !== 401
+            ) {
+                setError('Erro ao carregar traduções');
+            }
         }
     }, []);
 
@@ -184,6 +199,150 @@ export function TranslatedDocuments() {
         }
     };
 
+    // Função para filtrar por data
+    const getFilteredTranslations = useCallback(() => {
+        return translations.filter(translation => {
+            if (dateFilter === 'all') return true;
+            
+            const date = new Date(translation.createdAt);
+            const now = new Date();
+            
+            if (dateFilter === 'today') {
+                return date.toDateString() === now.toDateString();
+            }
+            
+            if (dateFilter === 'week') {
+                const weekAgo = new Date(now.setDate(now.getDate() - 7));
+                return date >= weekAgo;
+            }
+            
+            if (dateFilter === 'month') {
+                const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
+                return date >= monthAgo;
+            }
+            
+            return true;
+        });
+    }, [translations, dateFilter]);
+
+    // Função para deletar tradução
+    const handleDelete = async (id: string) => {
+        if (!window.confirm('Tem certeza que deseja deletar esta tradução?')) return;
+        
+        try {
+            await api.delete(`/api/translations/${id}`);
+            toast.success('Tradução deletada com sucesso');
+            loadTranslations();
+        } catch (error) {
+            toast.error('Erro ao deletar tradução');
+        }
+    };
+
+    // Função para editar e salvar tradução
+    const handleSaveEdit = async () => {
+        if (!selectedTranslation) return;
+        try {
+            await api.put(`/api/translations/${selectedTranslation.id}/content`, {
+                content: editedContent
+            });
+            toast.success('Tradução atualizada com sucesso');
+            setShowEditModal(false);
+            loadTranslations();
+        } catch (error) {
+            toast.error('Erro ao atualizar tradução');
+        }
+    };
+
+    const handleEdit = async (translation: Translation) => {
+        try {
+            const response = await api.get(`/api/translations/${translation.id}/content`);
+            if (response.data.content) {
+                setEditedContent(response.data.content);
+                setSelectedTranslation(translation);
+                setShowEditModal(true);
+            } else {
+                toast.error('Conteúdo do arquivo não disponível');
+            }
+        } catch (error: any) {
+            console.error('Erro ao carregar conteúdo:', error);
+            const errorMessage = error.response?.data?.error || 'Erro ao carregar conteúdo do arquivo';
+            toast.error(errorMessage);
+        }
+    };
+
+    // Função para formatar o custo
+    const formatCost = (cost: string | null) => {
+        if (!cost) return 'N/A';
+        return `US$ ${cost}`;
+    };
+
+    // Função para selecionar itens entre dois índices
+    const selectItemsBetween = (translations: Translation[], startId: string, endId: string) => {
+        const startIndex = translations.findIndex(t => t.id === startId);
+        const endIndex = translations.findIndex(t => t.id === endId);
+        
+        if (startIndex === -1 || endIndex === -1) return [];
+        
+        const start = Math.min(startIndex, endIndex);
+        const end = Math.max(startIndex, endIndex);
+        
+        return translations.slice(start, end + 1).map(t => t.id);
+    };
+
+    // Função para manipular seleção de itens
+    const handleSelectItem = (id: string, event: React.MouseEvent) => {
+        if (!isSelectionMode) return;
+
+        if (event.shiftKey && lastSelectedId) {
+            const filteredTranslations = getFilteredTranslations();
+            const itemsBetween = selectItemsBetween(filteredTranslations, lastSelectedId, id);
+            
+            setSelectedItems(prev => {
+                const newSelection = new Set(prev);
+                itemsBetween.forEach(itemId => newSelection.add(itemId));
+                return Array.from(newSelection);
+            });
+        } else {
+            setSelectedItems(prev => {
+                if (prev.includes(id)) {
+                    return prev.filter(item => item !== id);
+                }
+                return [...prev, id];
+            });
+        }
+        
+        setLastSelectedId(id);
+    };
+
+    // Função para ações em massa
+    const handleBulkAction = async (action: 'download' | 'delete') => {
+        if (selectedItems.length === 0) return;
+
+        if (action === 'delete') {
+            if (!window.confirm(`Tem certeza que deseja deletar ${selectedItems.length} traduções?`)) return;
+            
+            try {
+                await Promise.all(selectedItems.map(id => api.delete(`/api/translations/${id}`)));
+                toast.success('Traduções deletadas com sucesso');
+                setSelectedItems([]);
+                setIsSelectionMode(false);
+                loadTranslations();
+            } catch (error) {
+                toast.error('Erro ao deletar traduções');
+            }
+        } else if (action === 'download') {
+            try {
+                const translations = getFilteredTranslations().filter(t => selectedItems.includes(t.id));
+                for (const translation of translations) {
+                    await handleDownload(translation.id, translation.originalName || translation.fileName);
+                }
+                toast.success('Downloads iniciados');
+            } catch (error) {
+                toast.error('Erro ao baixar arquivos');
+            }
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="bg-white shadow rounded-lg p-6">
@@ -255,32 +414,130 @@ export function TranslatedDocuments() {
                     </div>
                 )}
 
-                <div className="space-y-4">
-                    {translations.map((translation) => (
+                <div className="mb-4 flex justify-between items-center">
+                    <select
+                        value={dateFilter}
+                        onChange={(e) => setDateFilter(e.target.value)}
+                        className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                    >
+                        <option value="all">Todas as datas</option>
+                        <option value="today">Hoje</option>
+                        <option value="week">Última semana</option>
+                        <option value="month">Último mês</option>
+                    </select>
+
+                    <div className="flex gap-2">
+                        {isSelectionMode && (
+                            <>
+                                <button
+                                    onClick={() => handleBulkAction('download')}
+                                    disabled={selectedItems.length === 0}
+                                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                                >
+                                    Baixar ({selectedItems.length})
+                                </button>
+                                <button
+                                    onClick={() => handleBulkAction('delete')}
+                                    disabled={selectedItems.length === 0}
+                                    className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                                >
+                                    Deletar ({selectedItems.length})
+                                </button>
+                            </>
+                        )}
+                        <button
+                            onClick={() => {
+                                setIsSelectionMode(!isSelectionMode);
+                                setSelectedItems([]);
+                                setLastSelectedId(null);
+                            }}
+                            className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                        >
+                            {isSelectionMode ? 'Cancelar' : 'Selecionar'}
+                        </button>
+                    </div>
+                </div>
+
+                <div className="space-y-4 select-none">
+                    {getFilteredTranslations().map((translation) => (
                         <div
                             key={translation.id}
-                            className="p-4 bg-white rounded-lg border border-gray-200 space-y-3"
+                            className={`p-4 bg-white rounded-lg border ${
+                                isSelectionMode && selectedItems.includes(translation.id)
+                                    ? 'border-blue-500'
+                                    : 'border-gray-200'
+                            } space-y-3`}
                         >
                             <div className="flex justify-between items-start">
-                                <div>
-                                    <h3 className="font-medium">{translation.originalName || translation.fileName}</h3>
-                                    <div className="text-sm text-gray-500">
-                                        {translation.sourceLanguage} → {translation.targetLanguage}
-                                    </div>
-                                    <div className="text-sm text-gray-500">
-                                        {new Date(translation.createdAt).toLocaleString()}
+                                <div className="flex items-center gap-3">
+                                    {isSelectionMode && (
+                                        <div 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleSelectItem(translation.id, e);
+                                            }}
+                                            className="cursor-pointer"
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedItems.includes(translation.id)}
+                                                onChange={() => {}}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2">
+                                            {getStatusIcon(translation.status)}
+                                            <span className="font-medium">
+                                                {translation.originalName || translation.fileName}
+                                            </span>
+                                        </div>
+                                        <div className="text-sm text-gray-500">
+                                            {translation.sourceLanguage} → {translation.targetLanguage}
+                                        </div>
+                                        <div className="text-sm text-gray-500">
+                                            {new Date(translation.createdAt).toLocaleString()}
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    {getStatusIcon(translation.status)}
-                                    {(translation.status === 'completed' || translation.status.includes('100%')) && (
-                                        <button
-                                            onClick={() => handleDownload(translation.id, translation.originalName || translation.fileName)}
-                                            className="p-2 text-gray-400 hover:text-blue-500 transition-colors"
-                                            title="Baixar tradução"
-                                        >
-                                            <Download className="h-5 w-5" />
-                                        </button>
+
+                                <div className="flex items-center space-x-2">
+                                    {!isSelectionMode && (
+                                        <>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDownload(translation.id, translation.fileName);
+                                                }}
+                                                className="p-1 hover:bg-gray-100 rounded"
+                                                title="Download"
+                                            >
+                                                <Download className="h-5 w-5 text-gray-600" />
+                                            </button>
+                                            {translation.status === 'completed' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleEdit(translation);
+                                                    }}
+                                                    className="p-1 hover:bg-gray-100 rounded"
+                                                    title="Editar"
+                                                >
+                                                    <Edit className="h-5 w-5 text-gray-600" />
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDelete(translation.id);
+                                                }}
+                                                className="p-1 hover:bg-gray-100 rounded"
+                                                title="Deletar"
+                                            >
+                                                <Trash2 className="h-5 w-5 text-gray-600" />
+                                            </button>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -289,6 +546,11 @@ export function TranslatedDocuments() {
                                 <div>
                                     Tamanho: {(translation.fileSize / 1024).toFixed(2)} KB
                                 </div>
+                                {translation.costData && (
+                                    <div className="text-sm text-gray-600">
+                                        Custo: {formatCost(translation.costData)}
+                                    </div>
+                                )}
                                 {translation.status.includes('processing') && (
                                     <div className="text-blue-600">
                                         Status: {translation.status}
@@ -315,6 +577,34 @@ export function TranslatedDocuments() {
                     )}
                 </div>
             </div>
+
+            {/* Modal de edição */}
+            {showEditModal && selectedTranslation && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                    <div className="bg-white p-6 rounded-lg w-3/4 max-h-[80vh] overflow-y-auto">
+                        <h3 className="text-lg font-medium mb-4">Editar Tradução</h3>
+                        <textarea
+                            value={editedContent}
+                            onChange={(e) => setEditedContent(e.target.value)}
+                            className="w-full h-64 p-2 border rounded"
+                        />
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button
+                                onClick={() => setShowEditModal(false)}
+                                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleSaveEdit}
+                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                                Salvar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

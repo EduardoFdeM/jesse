@@ -64,20 +64,29 @@ api.interceptors.response.use(
         return response;
     },
     (error) => {
-        console.error('Erro na resposta:', {
-            message: error.message,
-            response: error.response?.data,
-            status: error.response?.status,
-            config: error.config
-        });
+        console.error('Erro na resposta:', error);
 
-        if (error.response?.status === 401) {
-            console.log('Erro de autenticação, limpando dados do usuário');
+        // Lista de erros que devem causar redirecionamento
+        const redirectErrors = [
+            'timeout of 10000ms exceeded',
+            'Network Error',
+            'Request failed with status code 401'
+        ];
+
+        if (
+            redirectErrors.includes(error.message) || 
+            error.response?.status === 401
+        ) {
+            console.log('Erro de autenticação ou conexão, redirecionando para login...');
             localStorage.removeItem('jwtToken');
             localStorage.removeItem('userEmail');
             localStorage.removeItem('userId');
             localStorage.removeItem('userName');
-            window.location.href = '/login';
+            
+            // Redirecionar apenas se não estiver já na página de login
+            if (!window.location.pathname.includes('/login')) {
+                window.location.href = '/login';
+            }
         }
         return Promise.reject(error);
     }

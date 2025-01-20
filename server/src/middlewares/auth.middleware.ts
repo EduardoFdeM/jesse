@@ -16,6 +16,14 @@ declare global {
     }
 }
 
+export interface AuthenticatedRequest extends Request {
+    user?: {
+        id: string;
+        email: string;
+        name: string;
+    };
+}
+
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
     try {
         console.log('🔒 Headers recebidos:', req.headers);

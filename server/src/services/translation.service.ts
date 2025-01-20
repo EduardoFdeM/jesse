@@ -1,11 +1,9 @@
 import fs from 'fs';
-import path from 'path';
 import OpenAI from 'openai';
 import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
-import { validateOpenAIConnection } from '../config/openai.js';
 import { Server } from 'socket.io';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
 
@@ -50,41 +48,39 @@ declare global {
     var io: Server | undefined;
 }
 
-// Função otimizada para dividir o texto em chunks muito maiores
+// Função otimizada para dividir o texto mantendo a formatação
 const splitTextIntoChunks = (text: string, maxChunkSize: number = 24000): string[] => {
-    // Remover quebras de linha extras e espaços em branco
-    text = text.replace(/\s+/g, ' ')
-        .replace(/\n\s*\n/g, '\n')
-        .replace(/[^\S\n]+/g, ' ')
-        .replace(/\s*\n\s*/g, '\n')
-        .trim();
-    
-    // Dividir em parágrafos primeiro
-    const paragraphs = text.split(/\n\s*\n/);
+    const lines = text.split(/\r?\n/);
     const chunks: string[] = [];
     let currentChunk = '';
 
-    for (const paragraph of paragraphs) {
-        // Se o parágrafo sozinho é maior que o tamanho máximo, dividir em sentenças
-        if (paragraph.length > maxChunkSize) {
-            const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [];
-            for (const sentence of sentences) {
-                if ((currentChunk + sentence).length <= maxChunkSize) {
-                    currentChunk += sentence;
-                } else {
-                    if (currentChunk) chunks.push(currentChunk.trim());
-                    currentChunk = sentence;
-                }
+    for (const line of lines) {
+        if (line.length > maxChunkSize) {
+            if (currentChunk) {
+                chunks.push(currentChunk);
+                currentChunk = '';
             }
-        } else if ((currentChunk + paragraph).length <= maxChunkSize) {
-            currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-        } else {
-            chunks.push(currentChunk.trim());
-            currentChunk = paragraph;
+            
+            let remainingLine = line;
+            while (remainingLine.length > 0) {
+                const chunk = remainingLine.slice(0, maxChunkSize);
+                chunks.push(chunk);
+                remainingLine = remainingLine.slice(maxChunkSize);
+            }
+        } 
+        else if ((currentChunk + line + '\n').length > maxChunkSize) {
+            chunks.push(currentChunk);
+            currentChunk = line + '\n';
+        } 
+        else {
+            currentChunk += line + '\n';
         }
     }
-    
-    if (currentChunk) chunks.push(currentChunk.trim());
+
+    if (currentChunk) {
+        chunks.push(currentChunk);
+    }
+
     return chunks;
 };
 
@@ -108,21 +104,21 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
                     )
                     .join('\n');
                 resolve(decodeURIComponent(text));
-            } catch (error) {
+            } catch (parseError) {
                 reject(new Error('Erro ao processar texto do PDF'));
             }
         });
         
-        pdfParser.on('pdfParser_dataError', (error: Error) => {
+        pdfParser.on('pdfParser_dataError', (parseError: Error) => {
             clearTimeout(timeout);
-            reject(error);
+            reject(parseError);
         });
         
         try {
             pdfParser.loadPDF(filePath);
-        } catch (error) {
+        } catch (loadError) {
             clearTimeout(timeout);
-            reject(error);
+            reject(loadError);
         }
     });
 };
@@ -134,131 +130,94 @@ interface TranslationCost {
     totalTokens: number;
 }
 
-// Função para traduzir um chunk com retry
-const translateChunkWithRetry = async (
-    chunk: string,
-    params: TranslateFileParams,
-    knowledgeBaseContent: string,
-    retries = 3
-): Promise<{ text: string; costLog: TranslationCost }> => {
-    // Validar conexão com OpenAI antes de tentar traduzir
-    const isValid = await validateOpenAIConnection();
-    if (!isValid) {
-        throw new Error('Não foi possível conectar com o serviço OpenAI. Verifique a chave API.');
-    }
+// Função para preservar a formatação
+const preserveFormatting = (originalText: string, translatedText: string): string => {
+    const originalLines = originalText.split(/\r?\n/);
+    const translatedParts = translatedText.split(/(?<=[.!?])\s+/);
+    
+    const result: string[] = [];
+    let translatedIndex = 0;
+    
+    for (const originalLine of originalLines) {
+        if (!originalLine.trim()) {
+            result.push(originalLine);
+            continue;
+        }
 
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const prompt = `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${chunk}`;
+        // Preservar indentação
+        const indentMatch = originalLine.match(/^[\s\t]*/);
+        const indentation = indentMatch ? indentMatch[0] : '';
+        
+        // Verificar padrões de formatação
+        const patterns = {
+            numbered: /^(\d+[.|)]\s*)/,
+            bullet: /^([-•*]\s*)/,
+            specialChar: /^([→—-]\s*)/
+        };
 
-            const completion = await openai.chat.completions.create({
-                model: "gpt-3.5-turbo",
-                messages: [
-                    {
-                        role: "system",
-                        content: "Você é um tradutor profissional. Traduza o texto mantendo o formato e estilo original."
-                    },
-                    {
-                        role: "user",
-                        content: prompt
-                    }
-                ],
-                temperature: 0.3,
-                max_tokens: 4000
-            });
-
-            const translatedText = completion.choices[0]?.message?.content || '';
-
-            if (!translatedText) {
-                throw new Error('Resposta vazia da OpenAI');
+        let prefix = '';
+        for (const [, pattern] of Object.entries(patterns)) {
+            const match = originalLine.match(pattern);
+            if (match) {
+                prefix = match[1];
+                break;
             }
+        }
 
-            return {
-                text: translatedText,
-                costLog: {
-                    inputTokens: completion.usage?.prompt_tokens || 0,
-                    outputTokens: completion.usage?.completion_tokens || 0,
-                    totalTokens: completion.usage?.total_tokens || 0
-                }
-            };
-        } catch (err) {
-            if (err instanceof Error && 'status' in err && err.status === 401) {
-                // Erro de autenticação - não tentar novamente
-                await prisma.translation.update({
-                    where: { id: params.translationId },
-                    data: {
-                        status: 'error',
-                        errorMessage: 'Erro de autenticação com OpenAI. Contate o administrador.'
-                    }
-                });
-                throw new Error('Erro de autenticação com OpenAI');
-            }
-
-            if (attempt === retries) {
-                throw err;
-            }
-
-            // Delay exponencial entre tentativas
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+        if (translatedIndex < translatedParts.length) {
+            const translatedLine = translatedParts[translatedIndex].trim();
+            result.push(`${indentation}${prefix}${translatedLine}`);
+            translatedIndex++;
         }
     }
-    throw new Error('Falha após todas as tentativas de tradução');
+    
+    return result.join('\n');
 };
 
-interface TranslateFileParams {
-    filePath: string;
-    sourceLanguage: string;
-    targetLanguage: string;
-    userId: string;
-    knowledgeBasePath?: string;
-    translationId: string;
-    outputFormat: string;
-    originalName: string;
-}
-
-export type ChatCompletionMessageParam = {
-    role: 'user' | 'assistant' | 'system';
-    content: string;
+// Função para calcular custo
+const calculateCost = (inputTokens: number, outputTokens: number): string => {
+    const COST_PER_1K_INPUT_TOKENS = 0.001;  // $0.001 por 1K tokens de entrada
+    const COST_PER_1K_OUTPUT_TOKENS = 0.002; // $0.002 por 1K tokens de saída
+    
+    const inputCost = (inputTokens / 1000) * COST_PER_1K_INPUT_TOKENS;
+    const outputCost = (outputTokens / 1000) * COST_PER_1K_OUTPUT_TOKENS;
+    const totalCost = inputCost + outputCost;
+    
+    // Formatar para manter dígitos significativos
+    if (totalCost < 0.01) {
+        return totalCost.toFixed(5);
+    }
+    return totalCost.toFixed(2);
 };
 
-// Função para salvar texto como PDF e fazer upload para o Spaces
-const saveTextAsPDF = async (text: string, fileName: string): Promise<{ filePath: string; fileSize: number }> => {
+// Função para traduzir um chunk com retry
+const translateChunkWithRetry = async (chunk: string, params: TranslateFileParams): Promise<{ text: string; cost: number }> => {
     try {
-        return new Promise((resolve, reject) => {
-            const doc = new PDFDocument({
-                margin: 50,
-                size: 'A4'
-            });
-
-            const chunks: Buffer[] = [];
-            
-            doc.on('data', chunk => chunks.push(chunk));
-            
-            doc.on('end', async () => {
-                try {
-                    const fileBuffer = Buffer.concat(chunks);
-                    const fileUrl = await uploadToS3(fileBuffer, fileName);
-                    
-                    resolve({
-                        filePath: fileUrl,
-                        fileSize: fileBuffer.length
-                    });
-                } catch (err) {
-                    reject(err);
+        const completion = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [
+                { 
+                    role: "system", 
+                    content: `Você é um tradutor profissional de ${params.sourceLanguage} para ${params.targetLanguage}.` 
+                },
+                { 
+                    role: "user", 
+                    content: `Traduza o seguinte texto mantendo a formatação:\n\n${chunk}` 
                 }
-            });
-
-            doc.fontSize(12);
-            doc.text(text, {
-                align: 'left',
-                lineGap: 5
-            });
-
-            doc.end();
+            ]
         });
-    } catch (err) {
-        console.error('Erro ao gerar ou fazer upload do PDF:', err);
-        throw err;
+
+        const inputTokens = completion.usage?.prompt_tokens || 0;
+        const outputTokens = completion.usage?.completion_tokens || 0;
+        const cost = (inputTokens * 0.001 + outputTokens * 0.002) / 1000;
+
+        return {
+            text: completion.choices[0]?.message?.content || '',
+            cost
+        };
+    } catch (error) {
+        console.error('Erro na tradução:', error);
+        throw error;
     }
 };
 
@@ -281,26 +240,26 @@ const saveTranslatedFile = async (
                 const doc = new Document({
                     sections: [{
                         properties: {},
-                        children: [
+                        children: text.split('\n').map(line => 
                             new Paragraph({
-                                children: [new TextRun(text)]
+                                children: [new TextRun(line)],
+                                spacing: { before: 200, after: 200 }
                             })
-                        ]
+                        )
                     }]
                 });
                 fileBuffer = await Packer.toBuffer(doc);
                 break;
             }
-            case 'pdf':
-            default: {
+            case 'pdf': {
                 const pdfDoc = new PDFDocument({
                     margin: 50,
                     size: 'A4'
                 });
                 const chunks: Buffer[] = [];
-                pdfDoc.on('data', chunk => chunks.push(chunk));
                 
                 return new Promise((resolve, reject) => {
+                    pdfDoc.on('data', chunk => chunks.push(chunk));
                     pdfDoc.on('end', async () => {
                         try {
                             fileBuffer = Buffer.concat(chunks);
@@ -315,13 +274,19 @@ const saveTranslatedFile = async (
                         }
                     });
 
-                    pdfDoc.fontSize(12);
-                    pdfDoc.text(text, {
-                        align: 'left',
-                        lineGap: 5
+                    // Preservar quebras de linha no PDF
+                    text.split('\n').forEach(line => {
+                        pdfDoc.text(line, {
+                            align: 'left',
+                            continued: false
+                        });
                     });
+                    
                     pdfDoc.end();
                 });
+            }
+            default: {
+                throw new Error(`Formato de saída '${outputFormat}' não suportado`);
             }
         }
 
@@ -338,102 +303,54 @@ const saveTranslatedFile = async (
     }
 };
 
-// Função para preservar a formatação do texto
-const preserveFormatting = (originalText: string, translatedText: string): string => {
-    // Preservar quebras de linha
-    if (originalText.includes('\n')) {
-        const originalLines = originalText.split('\n');
-        const translatedLines = translatedText.split('\n');
-        return translatedLines.map((line, index) => {
-            // Preservar indentação
-            const originalIndentation = originalLines[index]?.match(/^\s*/)?.[0] || '';
-            return `${originalIndentation}${line}`;
-        }).join('\n');
-    }
-
-    // Preservar espaços iniciais e finais
-    const originalSpacesBefore = originalText.match(/^\s*/)?.[0] || '';
-    const originalSpacesAfter = originalText.match(/\s*$/)?.[0] || '';
-    return `${originalSpacesBefore}${translatedText.trim()}${originalSpacesAfter}`;
-};
-
-// Função para traduzir mantendo a formatação
-const translateChunkWithFormatting = async (
-    chunk: string, 
-    params: TranslateFileParams,
-    knowledgeBaseContent?: string
-): Promise<string> => {
-    const lines = chunk.split('\n');
-    const translatedLines = await Promise.all(
-        lines.map(async (line) => {
-            if (!line.trim()) return line;
-            const result = await translateChunkWithRetry(
-                line, 
-                params, 
-                knowledgeBaseContent || ''
-            );
-            return preserveFormatting(line, result.text);
-        })
-    );
-    return translatedLines.join('\n');
-};
-
 // Função para gerar nome do arquivo traduzido
 const generateTranslatedFileName = (originalName: string, outputFormat: string): string => {
     const nameWithoutExt = originalName.replace(/\.[^/.]+$/, '');
     return `${nameWithoutExt}_traduzido.${outputFormat}`;
 };
 
+interface TranslateFileParams {
+    filePath: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    userId: string;
+    knowledgeBasePath?: string;
+    translationId: string;
+    outputFormat: string;
+    originalName: string;
+}
+
+export type ChatCompletionMessageParam = {
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+};
+
 // Função principal de tradução
 export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
     try {
-        // Verificar e atualizar status
-        const translation = await prisma.translation.findUnique({
-            where: { id: params.translationId }
-        });
-
-        if (!translation) {
-            throw new Error('Tradução não encontrada');
-        }
-
-        if (translation.status !== 'pending') {
-            throw new Error('Tradução já está em andamento ou finalizada');
-        }
-
-        // Atualizar status para processing
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: { 
-                status: 'processing',
-                errorMessage: null
-            }
-        });
-
-        // Processar tradução
         const fileContent = params.filePath.endsWith('.pdf')
             ? await extractTextFromPDF(params.filePath)
             : fs.readFileSync(params.filePath, 'utf-8');
 
         const chunks = splitTextIntoChunks(fileContent);
         const translatedChunks: string[] = [];
+        let totalCost = 0;
 
         for (let i = 0; i < chunks.length; i++) {
-            const translatedText = await translateChunkWithFormatting(chunks[i], params);
-            translatedChunks.push(translatedText);
+            const result = await translateChunkWithRetry(chunks[i], params);
+            translatedChunks.push(result.text);
+            totalCost += result.cost;
             
-            // Emitir progresso via socket
-            const progress = Math.round((i + 1) / chunks.length * 100);
+            const progress = Math.round(((i + 1) / chunks.length) * 100);
             await prisma.translation.update({
                 where: { id: params.translationId },
                 data: { status: `processing (${progress}%)` }
             });
             
-            if (global.io) {
-                global.io.emit('translation:progress', { 
-                    id: params.translationId, 
-                    progress 
-                });
-            }
+            global.io?.emit('translation:progress', { 
+                id: params.translationId, 
+                progress 
+            });
         }
 
         // Gerar nome do arquivo traduzido
@@ -456,7 +373,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 status: 'completed',
                 filePath: savedFile.filePath,
                 fileSize: savedFile.fileSize,
-                fileName: savedFile.fileName
+                fileName: savedFile.fileName,
+                costData: totalCost.toFixed(totalCost < 0.01 ? 5 : 2)
             }
         });
 
@@ -466,8 +384,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         }
 
         return updatedTranslation;
-    } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    } catch (processError) {
+        const errorMessage = processError instanceof Error ? processError.message : 'Erro desconhecido';
         await prisma.translation.update({
             where: { id: params.translationId },
             data: {
@@ -476,14 +394,12 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             }
         });
         
-        if (global.io) {
-            global.io.emit('translation:error', { 
-                id: params.translationId, 
-                error: errorMessage
-            });
-        }
+        global.io?.emit('translation:error', { 
+            id: params.translationId, 
+            error: errorMessage
+        });
         
-        throw error;
+        throw processError;
     }
 };
 

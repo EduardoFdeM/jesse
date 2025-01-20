@@ -1,4 +1,4 @@
-import { S3 } from '@aws-sdk/client-s3';
+import { S3, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl as awsGetSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -72,4 +72,19 @@ export const generateSignedUrl = async (key: string): Promise<string> => {
 
     // URL válida por 15 minutos
     return await awsGetSignedUrl(s3Client, command, { expiresIn: 900 });
+};
+
+// Função para deletar arquivo do S3
+export const deleteFromS3 = async (key: string): Promise<void> => {
+    try {
+        const command = new DeleteObjectCommand({
+            Bucket: process.env.AWS_S3_BUCKET || '',
+            Key: key
+        });
+
+        await s3Client.send(command);
+    } catch (error) {
+        console.error('Erro ao deletar arquivo do S3:', error);
+        throw new Error('Falha ao deletar arquivo');
+    }
 };
