@@ -38,12 +38,16 @@ api.interceptors.request.use(
             config.headers.Authorization = `Bearer ${token}`;
         }
 
-        console.log('Requisição sendo enviada:', {
-            url: config.url,
-            method: config.method,
-            headers: config.headers,
-            data: config.data instanceof FormData ? 'FormData' : config.data
-        });
+        // Log apenas se não for uma requisição de polling do socket ou knowledge-bases
+        if (!config.url?.includes('socket.io') && 
+            !(config.method === 'get' && config.url === '/api/knowledge-bases')) {
+            console.log('Requisição sendo enviada:', {
+                url: config.url,
+                method: config.method,
+                headers: config.headers,
+                data: config.data instanceof FormData ? 'FormData' : config.data
+            });
+        }
 
         return config;
     },

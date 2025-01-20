@@ -29,11 +29,12 @@ export interface Translation {
   sourceLanguage: string;
   targetLanguage: string;
   status: string;
-  errorMessage?: string | null;
+  errorMessage?: string;
   translatedUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   userId: string;
   knowledgeBaseId?: string | null;
   knowledgeBase?: KnowledgeBase | null;
+  costData?: string;
 }

@@ -104,21 +104,21 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
                     )
                     .join('\n');
                 resolve(decodeURIComponent(text));
-            } catch (parseError) {
+            } catch {
                 reject(new Error('Erro ao processar texto do PDF'));
             }
         });
         
-        pdfParser.on('pdfParser_dataError', (parseError: Error) => {
+        pdfParser.on('pdfParser_dataError', () => {
             clearTimeout(timeout);
-            reject(parseError);
+            reject(new Error('Erro ao processar PDF'));
         });
         
         try {
             pdfParser.loadPDF(filePath);
-        } catch (loadError) {
+        } catch (error) {
             clearTimeout(timeout);
-            reject(loadError);
+            reject(error);
         }
     });
 };
@@ -140,7 +140,7 @@ const preserveFormatting = (originalText: string, translatedText: string): strin
     
     for (const originalLine of originalLines) {
         if (!originalLine.trim()) {
-            result.push(originalLine);
+            result.push(originalLine); // Preserva linhas em branco
             continue;
         }
 
@@ -152,7 +152,11 @@ const preserveFormatting = (originalText: string, translatedText: string): strin
         const patterns = {
             numbered: /^(\d+[.|)]\s*)/,
             bullet: /^([-•*]\s*)/,
-            specialChar: /^([→—-]\s*)/
+            specialChar: /^([→—-]\s*)/,
+            heading: /^(#{1,6}\s*)/,
+            quote: /^(>\s*)/,
+            table: /^(\|[^|]+\|)/,
+            codeBlock: /^(```|\s{4})/
         };
 
         let prefix = '';
@@ -176,11 +180,12 @@ const preserveFormatting = (originalText: string, translatedText: string): strin
 
 // Função para calcular custo
 const calculateCost = (inputTokens: number, outputTokens: number): string => {
-    const COST_PER_1K_INPUT_TOKENS = 0.001;  // $0.001 por 1K tokens de entrada
-    const COST_PER_1K_OUTPUT_TOKENS = 0.002; // $0.002 por 1K tokens de saída
+    const COST_PER_1M_INPUT_TOKENS = 0.01;   // $0.01 por 1K tokens de entrada
+    const COST_PER_1M_OUTPUT_TOKENS = 0.03;  // $0.03 por 1K tokens de saída
     
-    const inputCost = (inputTokens / 1000) * COST_PER_1K_INPUT_TOKENS;
-    const outputCost = (outputTokens / 1000) * COST_PER_1K_OUTPUT_TOKENS;
+    // Converter para milhares de tokens
+    const inputCost = (inputTokens / 1000) * COST_PER_1M_INPUT_TOKENS;
+    const outputCost = (outputTokens / 1000) * COST_PER_1M_OUTPUT_TOKENS;
     const totalCost = inputCost + outputCost;
     
     // Formatar para manter dígitos significativos
@@ -191,29 +196,44 @@ const calculateCost = (inputTokens: number, outputTokens: number): string => {
 };
 
 // Função para traduzir um chunk com retry
-const translateChunkWithRetry = async (chunk: string, params: TranslateFileParams): Promise<{ text: string; cost: number }> => {
+const translateChunkWithRetry = async (
+    chunk: string,
+    params: TranslateFileParams,
+    _knowledgeBaseContent: string
+): Promise<{ text: string; costLog: TranslationCost }> => {
     try {
         const completion = await openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
+            model: "gpt-4-0125-preview",
             messages: [
                 { 
                     role: "system", 
-                    content: `Você é um tradutor profissional de ${params.sourceLanguage} para ${params.targetLanguage}.` 
+                    content: `Você é um tradutor profissional de ${params.sourceLanguage} para ${params.targetLanguage}. 
+                             Mantenha EXATAMENTE a mesma formatação do texto original, incluindo:
+                             - Espaçamentos e indentação
+                             - Quebras de linha
+                             - Bullets e numeração
+                             - Títulos e subtítulos
+                             - Tabelas e colunas
+                             - Parágrafos e alinhamento
+                             - Qualquer caractere especial ou símbolo
+                             Traduza apenas o conteúdo textual, mantendo todos os elementos de formatação intactos.` 
                 },
                 { 
                     role: "user", 
-                    content: `Traduza o seguinte texto mantendo a formatação:\n\n${chunk}` 
+                    content: chunk 
                 }
             ]
         });
 
-        const inputTokens = completion.usage?.prompt_tokens || 0;
-        const outputTokens = completion.usage?.completion_tokens || 0;
-        const cost = (inputTokens * 0.001 + outputTokens * 0.002) / 1000;
+        const translatedText = completion.choices[0]?.message?.content || '';
 
         return {
-            text: completion.choices[0]?.message?.content || '',
-            cost
+            text: translatedText,
+            costLog: {
+                inputTokens: completion.usage?.prompt_tokens || 0,
+                outputTokens: completion.usage?.completion_tokens || 0,
+                totalTokens: completion.usage?.total_tokens || 0
+            }
         };
     } catch (error) {
         console.error('Erro na tradução:', error);
@@ -337,9 +357,9 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         let totalCost = 0;
 
         for (let i = 0; i < chunks.length; i++) {
-            const result = await translateChunkWithRetry(chunks[i], params);
+            const result = await translateChunkWithRetry(chunks[i], params, '');
             translatedChunks.push(result.text);
-            totalCost += result.cost;
+            totalCost += result.costLog.totalTokens;
             
             const progress = Math.round(((i + 1) / chunks.length) * 100);
             await prisma.translation.update({

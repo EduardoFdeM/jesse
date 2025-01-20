@@ -8,23 +8,26 @@ import { KnowledgeBaseForm } from './components/knowledge/KnowledgeBaseForm';
 import { GlossaryEditor } from './components/knowledge/GlossaryEditor';
 import { TranslatedDocuments } from './components/translation/TranslatedDocuments';
 import { PrivateRoute } from './components/auth/PrivateRoute';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 export default function App() {
     return (
-        <Router>
-            <Toaster position="top-right" />
-            <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/register" element={<Register />} />
-                <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>}>
-                    <Route index element={<Navigate to="/translations" replace />} />
-                    <Route path="translations" element={<TranslatedDocuments />} />
-                    <Route path="knowledge-bases" element={<KnowledgeBaseList />} />
-                    <Route path="knowledge-bases/new" element={<KnowledgeBaseForm />} />
-                    <Route path="knowledge-bases/:id/edit" element={<KnowledgeBaseForm />} />
-                    <Route path="knowledge-bases/:id/glossary" element={<GlossaryEditor />} />
-                </Route>
-            </Routes>
-        </Router>
+        <ThemeProvider>
+            <Router>
+                <Toaster position="top-right" />
+                <Routes>
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/register" element={<Register />} />
+                    <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>}>
+                        <Route index element={<Navigate to="/translations" replace />} />
+                        <Route path="translations" element={<TranslatedDocuments />} />
+                        <Route path="knowledge-bases" element={<KnowledgeBaseList />} />
+                        <Route path="knowledge-bases/new" element={<KnowledgeBaseForm />} />
+                        <Route path="knowledge-bases/:id/edit" element={<KnowledgeBaseForm />} />
+                        <Route path="knowledge-bases/:id/glossary" element={<GlossaryEditor />} />
+                    </Route>
+                </Routes>
+            </Router>
+        </ThemeProvider>
     );
 }

@@ -18,12 +18,9 @@ export interface KnowledgeBase {
     fileType: string;
     sourceLanguage: string;
     targetLanguage: string;
-    entries: GlossaryEntry[];
-    createdAt: Date;
-    updatedAt: Date;
-    _count?: {
-        entries: number;
-    };
+    createdAt: string;
+    updatedAt: string;
+    entries?: string[];
 }
 
 export interface TranslationJob {

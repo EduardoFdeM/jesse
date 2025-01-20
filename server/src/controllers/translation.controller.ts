@@ -51,35 +51,52 @@ const generateUpdatedFile = async (content: string, fileType: string): Promise<s
 
     try {
         if (fileType.includes('pdf')) {
-            const doc = new PDFDocument();
+            const doc = new PDFDocument({
+                margin: 50,
+                size: 'A4'
+            });
+            
             return new Promise((resolve, reject) => {
                 const writeStream = fs.createWriteStream(filePath);
                 doc.pipe(writeStream);
-                doc.text(content);
-                doc.end();
                 
+                // Preservar quebras de linha e formatação no PDF
+                content.split('\n').forEach(line => {
+                    doc.text(line, {
+                        align: 'left',
+                        continued: false
+                    });
+                });
+                
+                doc.end();
                 writeStream.on('finish', () => resolve(filePath));
                 writeStream.on('error', reject);
             });
         } else if (fileType.includes('docx')) {
+            const paragraphs = content.split('\n').map(line => {
+                // Preservar indentação e formatação
+                const indentMatch = line.match(/^[\s\t]*/);
+                const indent = (indentMatch ? indentMatch[0].length : 0) * 240; // 240 twips = 1/4 inch
+                
+                return new Paragraph({
+                    children: [new TextRun(line.trimLeft())],
+                    spacing: { before: 200, after: 200 },
+                    indent: { left: indent }
+                });
+            });
+
             const doc = new Document({
                 sections: [{
                     properties: {},
-                    children: [
-                        new Paragraph({
-                            children: [
-                                new TextRun(content)
-                            ],
-                        }),
-                    ],
-                }],
+                    children: paragraphs
+                }]
             });
             
             const buffer = await Packer.toBuffer(doc);
             await fs.promises.writeFile(filePath, buffer);
             return filePath;
         } else {
-            // Para arquivos txt
+            // Para arquivos txt, mantém a formatação original
             await fs.promises.writeFile(filePath, content, 'utf-8');
             return filePath;
         }

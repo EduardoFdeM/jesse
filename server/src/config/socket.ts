@@ -1,6 +1,7 @@
 // socket.ts
 import { Server } from 'socket.io';
 import { Server as HttpServer } from 'http';
+import { Socket } from 'socket.io';
 import corsOptions from '../config/cors.js';
 
 let io: Server;
@@ -27,16 +28,15 @@ export const initializeSocket = (httpServer: HttpServer) => {
         connectTimeout: 45000
     });
 
-    io.on('connection', (socket) => {
+    io.on('connection', (socket: Socket) => {
         console.log('👤 Cliente conectado:', socket.id);
 
-        console.log('🤝 Handshake:', {
-            headers: socket.handshake.headers,
-            query: socket.handshake.query,
-            auth: socket.handshake.auth
-        });
-
         socket.on('disconnect', (reason) => {
+            // Ignorar desconexões normais durante navegação
+            if (reason === 'client namespace disconnect' || 
+                reason === 'transport close') {
+                return;
+            }
             console.log('👋 Cliente desconectado:', socket.id, 'Razão:', reason);
         });
 

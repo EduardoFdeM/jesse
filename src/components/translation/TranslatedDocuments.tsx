@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2 } from 'lucide-react';
-import { Translation } from '../../types/index';
+import { Translation, KnowledgeBase } from '../../types/index';
 import { api } from '../../services/api';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
@@ -21,6 +21,7 @@ export function TranslatedDocuments() {
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [formatFilter, setFormatFilter] = useState('all');
+    const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]) => {
@@ -49,10 +50,21 @@ export function TranslatedDocuments() {
         }
     }, []);
 
+    // Função para carregar bases de conhecimento
+    const loadKnowledgeBases = useCallback(async () => {
+        try {
+            const response = await api.get('/api/knowledge-bases');
+            setKnowledgeBases(response.data.data);
+        } catch (err) {
+            console.error('Erro ao carregar bases de conhecimento:', err);
+        }
+    }, []);
+
     // Efeito para carregar traduções inicialmente
     useEffect(() => {
         loadTranslations();
-    }, [loadTranslations]);
+        loadKnowledgeBases();
+    }, [loadTranslations, loadKnowledgeBases]);
 
     // Efeito para configurar eventos do Socket.IO
     useEffect(() => {
@@ -109,6 +121,20 @@ export function TranslatedDocuments() {
             clearInterval(interval);
         };
     }, [socket, loadTranslations]);
+
+    useEffect(() => {
+        if (socket) {
+            // Reconectar se desconectado
+            socket.on('disconnect', () => {
+                console.log('Reconectando socket...');
+                socket.connect();
+            });
+
+            return () => {
+                socket.off('disconnect');
+            };
+        }
+    }, [socket]);
 
     const handleFileSelect = async (files: File[]) => {
         for (const file of files) {
@@ -289,7 +315,9 @@ export function TranslatedDocuments() {
     // Função para formatar o custo
     const formatCost = (cost: string | null) => {
         if (!cost) return 'N/A';
-        return `US$ ${cost}`;
+        // Remover o "US$ " se já estiver presente
+        const cleanCost = cost.replace('US$ ', '');
+        return cleanCost;
     };
 
     // Função para selecionar itens entre dois índices
@@ -361,8 +389,10 @@ export function TranslatedDocuments() {
 
     return (
         <div className="space-y-6">
-            <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-medium mb-4">Nova Tradução</h2>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-4">
+                    Nova Tradução
+                </h2>
                 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
@@ -418,49 +448,55 @@ export function TranslatedDocuments() {
                     onFileSelect={handleFileSelect}
                     sourceLanguage={sourceLanguage}
                     targetLanguage={targetLanguage}
+                    knowledgeBases={knowledgeBases}
                 />
             </div>
 
-            <div className="bg-white shadow rounded-lg p-6">
-                <h2 className="text-lg font-medium mb-4">Documentos Traduzidos</h2>
+            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <h2 className="text-xl font-medium text-gray-900 dark:text-white">
+                        Documentos Traduzidos
+                    </h2>
 
-                {error && (
-                    <div className="p-3 text-red-600 bg-red-50 rounded-md mb-4">
-                        {error}
-                    </div>
-                )}
-
-                <div className="mb-4 flex justify-between items-center gap-4">
-                    <div className="flex gap-4 flex-1">
-                        <input
-                            type="text"
-                            placeholder="Pesquisar por nome..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 flex-1"
-                        />
-                        
-                        <select
-                            value={formatFilter}
-                            onChange={(e) => setFormatFilter(e.target.value)}
-                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                            <option value="all">Todos os formatos</option>
-                            <option value="pdf">PDF</option>
-                            <option value="docx">DOCX</option>
-                            <option value="txt">TXT</option>
-                        </select>
-
-                        <select
-                            value={dateFilter}
-                            onChange={(e) => setDateFilter(e.target.value)}
-                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                        >
-                            <option value="all">Todas as datas</option>
-                            <option value="today">Hoje</option>
-                            <option value="week">Última semana</option>
-                            <option value="month">Último mês</option>
-                        </select>
+                    <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                        <div className="flex-1">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Pesquisar por nome..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                />
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex gap-4">
+                            <select
+                                value={formatFilter}
+                                onChange={(e) => setFormatFilter(e.target.value)}
+                                className="border rounded-lg px-4 py-2"
+                            >
+                                <option value="all">Todos os formatos</option>
+                                <option value="pdf">PDF</option>
+                                <option value="docx">DOCX</option>
+                                <option value="txt">TXT</option>
+                            </select>
+                            <select
+                                value={dateFilter}
+                                onChange={(e) => setDateFilter(e.target.value)}
+                                className="border rounded-lg px-4 py-2"
+                            >
+                                <option value="all">Todas as datas</option>
+                                <option value="today">Hoje</option>
+                                <option value="week">Última semana</option>
+                                <option value="month">Último mês</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div className="flex gap-2">
@@ -495,15 +531,11 @@ export function TranslatedDocuments() {
                     </div>
                 </div>
 
-                <div className="space-y-4 select-none">
+                <div className="space-y-4">
                     {getFilteredTranslations().map((translation) => (
                         <div
                             key={translation.id}
-                            className={`p-4 bg-white rounded-lg border ${
-                                isSelectionMode && selectedItems.includes(translation.id)
-                                    ? 'border-blue-500'
-                                    : 'border-gray-200'
-                            } space-y-3`}
+                            className="p-4 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-700"
                         >
                             <div className="flex justify-between items-start">
                                 <div className="flex items-center gap-3">
@@ -527,18 +559,18 @@ export function TranslatedDocuments() {
                                         <div className="flex items-center gap-2">
                                             {getStatusIcon(translation.status)}
                                             <span className="font-medium">
-                                                <div className="text-sm text-gray-900">
+                                                <div className="text-sm text-gray-900 dark:text-white">
                                                     {translation.fileName}
-                                                    <span className="ml-2 text-xs text-gray-500">
+                                                    <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">
                                                         ({translation.fileName.split('.').pop()?.toUpperCase()})
                                                     </span>
                                                 </div>
                                             </span>
                                         </div>
-                                        <div className="text-sm text-gray-500">
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">
                                             {translation.sourceLanguage} → {translation.targetLanguage}
                                         </div>
-                                        <div className="text-sm text-gray-500">
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">
                                             {new Date(translation.createdAt).toLocaleString()}
                                         </div>
                                     </div>
@@ -556,7 +588,7 @@ export function TranslatedDocuments() {
                                                     className="p-1 hover:bg-gray-100 rounded"
                                                     title="Download"
                                                 >
-                                                    <Download className="h-5 w-5 text-gray-600" />
+                                                    <Download className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                                                 </button>
                                             )}
                                             {translation.status === 'completed' && (
@@ -568,7 +600,7 @@ export function TranslatedDocuments() {
                                                     className="p-1 hover:bg-gray-100 rounded"
                                                     title="Editar"
                                                 >
-                                                    <Edit className="h-5 w-5 text-gray-600" />
+                                                    <Edit className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                                                 </button>
                                             )}
                                             <button
@@ -579,34 +611,34 @@ export function TranslatedDocuments() {
                                                 className="p-1 hover:bg-gray-100 rounded"
                                                 title="Deletar"
                                             >
-                                                <Trash2 className="h-5 w-5 text-gray-600" />
+                                                <Trash2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
                                             </button>
                                         </>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="text-sm text-gray-500 space-y-1">
+                            <div className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
                                 <div>
                                     Tamanho: {(translation.fileSize / 1024).toFixed(2)} KB
                                 </div>
                                 {translation.costData && (
-                                    <div className="text-sm text-gray-600">
-                                        Custo: {formatCost(translation.costData)}
+                                    <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                                        Custo: US$ {formatCost(translation.costData)}
                                     </div>
                                 )}
                                 {translation.status.includes('processing') && (
-                                    <div className="text-blue-600">
+                                    <div className="text-blue-600 dark:text-blue-400">
                                         Status: {translation.status}
                                     </div>
                                 )}
                                 {translation.knowledgeBase && (
-                                    <div>
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">
                                         Base de Conhecimento: {translation.knowledgeBase.name}
                                     </div>
                                 )}
                                 {translation.errorMessage && (
-                                    <div className="text-red-600">
+                                    <div className="text-red-600 dark:text-red-400">
                                         Erro: {translation.errorMessage}
                                     </div>
                                 )}
@@ -615,7 +647,7 @@ export function TranslatedDocuments() {
                     ))}
 
                     {translations.length === 0 && (
-                        <div className="text-center py-12 text-gray-500">
+                        <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                             Nenhuma tradução encontrada
                         </div>
                     )}
