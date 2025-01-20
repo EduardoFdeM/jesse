@@ -29,7 +29,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [outputFormat, setOutputFormat] = useState('pdf');
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
 
   // Limpar recursos ao desmontar
   useEffect(() => {
@@ -42,6 +42,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
       }
       clearControllers();
     };
+  }, []);
+
+  // Adicionar useEffect para carregar as bases de conhecimento
+  useEffect(() => {
+    const loadKnowledgeBases = async () => {
+      try {
+        const response = await api.get('/api/knowledge-bases');
+        setKnowledgeBases(response.data.data);
+      } catch (error) {
+        console.error('Erro ao carregar bases de conhecimento:', error);
+      }
+    };
+    
+    loadKnowledgeBases();
   }, []);
 
   // Processador de fila de upload
@@ -117,7 +131,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
     formData.append('file', selectedFile);
     formData.append('sourceLanguage', sourceLanguage);
     formData.append('targetLanguage', targetLanguage);
-    formData.append('outputFormat', outputFormat);
     formData.append('originalname', selectedFile.name);
 
     try {
@@ -163,9 +176,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
       </div>
 
       {useKnowledgeBase && (
-        <div className="mb-4">
-          <label htmlFor="knowledgeBase" className="block text-sm font-medium text-gray-700 mb-1">
-            Selecione a base de conhecimento
+        <div>
+          <label htmlFor="knowledgeBase" className="block text-sm font-medium text-gray-700">
+            Base de Conhecimento
           </label>
           <select
             id="knowledgeBase"
@@ -173,8 +186,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
             onChange={(e) => setSelectedKnowledgeBase(e.target.value)}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
           >
-            <option value="">Selecione uma base de conhecimento</option>
-            {[].map((kb: KnowledgeBase) => (
+            <option value="">Selecione uma base...</option>
+            {knowledgeBases.map((kb) => (
               <option key={kb.id} value={kb.id}>
                 {kb.name} ({kb.sourceLanguage} → {kb.targetLanguage})
               </option>
@@ -201,26 +214,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
         )}
       </div>
 
-      <div className="flex space-x-4 items-center">
-        <select
-          value={outputFormat}
-          onChange={(e) => setOutputFormat(e.target.value)}
-          className="mt-1 block rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+      <div className="flex justify-end">
+        <button
+          onClick={handleSubmit}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+          disabled={!sourceLanguage || !targetLanguage}
         >
-          <option value="pdf">PDF</option>
-          <option value="docx">DOCX</option>
-          <option value="txt">TXT</option>
-        </select>
-
-        {selectedFile && (
-          <button
-            onClick={handleSubmit}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-            disabled={!sourceLanguage || !targetLanguage}
-          >
-            Iniciar Tradução
-          </button>
-        )}
+          Iniciar Tradução
+        </button>
       </div>
 
       {selectedFile && (

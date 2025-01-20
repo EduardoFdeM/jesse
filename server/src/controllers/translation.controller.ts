@@ -12,17 +12,81 @@ import { s3Client } from '../config/storage.js';
 import PDFParser from 'pdf2json';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import { authenticatedHandler } from '../utils/asyncHandler.js';
+import { Readable } from 'stream';
+import PDFDocument from 'pdfkit';
+import { Document, Paragraph, TextRun, Packer } from 'docx';
+
+// Interfaces para o PDF Parser
+interface PDFTextR {
+    T: string;
+}
+
+interface PDFText {
+    R: PDFTextR[];
+}
+
+interface PDFPage {
+    Texts: PDFText[];
+}
+
+interface PDFData {
+    Pages: PDFPage[];
+}
 
 // Função para gerar arquivo atualizado
 const generateUpdatedFile = async (content: string, fileType: string): Promise<string> => {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(7);
-    const ext = fileType === 'application/pdf' ? '.pdf' : 
-                fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? '.docx' : '.txt';
+    const tempDir = path.join(process.cwd(), 'temp');
     
-    const filePath = path.join(process.cwd(), 'temp', `updated_${timestamp}_${random}${ext}`);
-    await fs.promises.writeFile(filePath, content);
-    return filePath;
+    // Garantir que o diretório temp existe
+    if (!fs.existsSync(tempDir)) {
+        await fs.promises.mkdir(tempDir, { recursive: true });
+    }
+    
+    const ext = fileType.includes('pdf') ? '.pdf' : 
+                fileType.includes('docx') ? '.docx' : '.txt';
+    
+    const filePath = path.join(tempDir, `updated_${timestamp}_${random}${ext}`);
+
+    try {
+        if (fileType.includes('pdf')) {
+            const doc = new PDFDocument();
+            return new Promise((resolve, reject) => {
+                const writeStream = fs.createWriteStream(filePath);
+                doc.pipe(writeStream);
+                doc.text(content);
+                doc.end();
+                
+                writeStream.on('finish', () => resolve(filePath));
+                writeStream.on('error', reject);
+            });
+        } else if (fileType.includes('docx')) {
+            const doc = new Document({
+                sections: [{
+                    properties: {},
+                    children: [
+                        new Paragraph({
+                            children: [
+                                new TextRun(content)
+                            ],
+                        }),
+                    ],
+                }],
+            });
+            
+            const buffer = await Packer.toBuffer(doc);
+            await fs.promises.writeFile(filePath, buffer);
+            return filePath;
+        } else {
+            // Para arquivos txt
+            await fs.promises.writeFile(filePath, content, 'utf-8');
+            return filePath;
+        }
+    } catch (error) {
+        console.error('Erro ao gerar arquivo atualizado:', error);
+        throw new Error('Falha ao gerar arquivo atualizado');
+    }
 };
 
 // Criar tradução
@@ -204,6 +268,10 @@ export const updateTranslationContent = authenticatedHandler(async (req, res) =>
     const { id } = req.params;
     const { content } = req.body;
     
+    if (!content) {
+        throw new ValidationError('Conteúdo não fornecido');
+    }
+
     try {
         const translation = await prisma.translation.findUnique({
             where: { id }
@@ -217,58 +285,63 @@ export const updateTranslationContent = authenticatedHandler(async (req, res) =>
         const newFilePath = await generateUpdatedFile(content, translation.fileType);
         
         // Fazer upload do novo arquivo para S3
-        const newUrl = await uploadToS3(
-            fs.readFileSync(newFilePath),
-            path.basename(newFilePath)
-        );
+        const fileBuffer = await fs.promises.readFile(newFilePath);
+        const fileName = path.basename(newFilePath);
+        const newUrl = await uploadToS3(fileBuffer, fileName);
+
+        // Deletar arquivo antigo do S3
+        const oldS3Key = translation.filePath.split('.amazonaws.com/')[1];
+        if (oldS3Key) {
+            try {
+                await deleteFromS3(oldS3Key);
+            } catch (deleteError) {
+                console.error('Erro ao deletar arquivo antigo:', deleteError);
+            }
+        }
 
         // Atualizar registro no banco
-        await prisma.translation.update({
+        const updatedTranslation = await prisma.translation.update({
             where: { id },
             data: {
                 filePath: newUrl,
-                status: 'completed'
+                status: 'completed',
+                fileSize: fileBuffer.length
             }
         });
 
         // Limpar arquivo temporário
         await fs.promises.unlink(newFilePath);
 
-        res.json({ success: true, url: newUrl });
+        res.json({ 
+            success: true, 
+            translation: updatedTranslation 
+        });
     } catch (error) {
         console.error('Erro ao atualizar tradução:', error);
         throw error;
     }
 });
 
-// Rota para obter o conteúdo de uma tradução
-export const getTranslationContent = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
+// Rota para obter conteúdo da tradução
+export const getTranslationContent = authenticatedHandler(async (req, res) => {
     const { id } = req.params;
     
     try {
         const translation = await prisma.translation.findUnique({
-            where: { id },
-            include: {
-                knowledgeBase: true
-            }
+            where: { id }
         });
 
         if (!translation) {
             throw new NotFoundError('Tradução não encontrada');
         }
 
-        // Verificar se filePath existe
-        if (!translation.filePath) {
-            throw new NotFoundError('Arquivo não encontrado');
+        const s3Key = translation.filePath.split(`${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/`)[1];
+        
+        if (!s3Key) {
+            throw new Error('Caminho do arquivo inválido');
         }
 
         try {
-            // Extrair a chave do S3 da URL completa
-            const s3Key = translation.filePath.includes('.amazonaws.com/') 
-                ? translation.filePath.split('.amazonaws.com/')[1]
-                : translation.filePath;
-
-            // Buscar o arquivo do S3
             const command = new GetObjectCommand({
                 Bucket: process.env.AWS_S3_BUCKET || '',
                 Key: s3Key
@@ -278,33 +351,70 @@ export const getTranslationContent = authenticatedHandler(async (req: Authentica
             let content = '';
 
             if (translation.fileType === 'application/pdf') {
-                // Se for PDF, extrair texto usando PDFParser
-                const pdfParser = new PDFParser();
-                const buffer = await response.Body?.transformToByteArray();
-                
-                if (buffer) {
-                    content = await new Promise((resolve, reject) => {
-                        pdfParser.on('pdfParser_dataReady', (pdfData) => {
-                            try {
-                                const text = pdfData.Pages
-                                    .map(page => page.Texts
-                                        .map(text => text.R
-                                            .map(r => r.T)
-                                            .join(' '))
-                                        .join('\n'))
-                                    .join('\n\n');
-                                resolve(decodeURIComponent(text));
-                            } catch (error) {
-                                reject(new Error('Erro ao processar PDF'));
-                            }
-                        });
-                        
-                        pdfParser.on('pdfParser_dataError', reject);
-                        (pdfParser as any).parseBuffer(Buffer.from(buffer));
-                    });
-                }
+                content = await new Promise<string>((resolve, reject) => {
+                    const chunks: Buffer[] = [];
+                    
+                    if (response.Body instanceof Readable) {
+                        response.Body
+                            .on('data', (chunk: Buffer) => chunks.push(chunk))
+                            .on('end', async () => {
+                                try {
+                                    const buffer = Buffer.concat(chunks);
+                                    const tempDir = path.join(process.cwd(), 'temp');
+                                    
+                                    // Garantir que o diretório temp existe
+                                    if (!fs.existsSync(tempDir)) {
+                                        await fs.promises.mkdir(tempDir, { recursive: true });
+                                    }
+                                    
+                                    // Criar arquivo temporário
+                                    const tempFile = path.join(tempDir, `temp_${Date.now()}.pdf`);
+                                    await fs.promises.writeFile(tempFile, buffer);
+                                    
+                                    const pdfParser = new PDFParser();
+                                    
+                                    pdfParser.on('pdfParser_dataReady', (pdfData: PDFData) => {
+                                        try {
+                                            const text = pdfData.Pages
+                                                .map((page: PDFPage) => 
+                                                    page.Texts.map((text: PDFText) => 
+                                                        text.R.map((r: PDFTextR) => r.T)
+                                                            .join(' '))
+                                                        .join('\n'))
+                                                    .join('\n\n');
+                                            
+                                            // Limpar arquivo temporário
+                                            fs.unlink(tempFile, (err) => {
+                                                if (err) console.error('Erro ao deletar arquivo temporário:', err);
+                                            });
+                                            
+                                            resolve(decodeURIComponent(text));
+                                        } catch {
+                                            reject(new Error('Erro ao processar PDF'));
+                                        }
+                                    });
+                                    
+                                    pdfParser.on('pdfParser_dataError', () => {
+                                        // Limpar arquivo temporário em caso de erro
+                                        fs.unlink(tempFile, (err) => {
+                                            if (err) console.error('Erro ao deletar arquivo temporário:', err);
+                                        });
+                                        reject(new Error('Erro ao processar PDF'));
+                                    });
+
+                                    pdfParser.loadPDF(tempFile);
+                                } catch (error) {
+                                    reject(new Error('Erro ao processar buffer do PDF'));
+                                }
+                            })
+                            .on('error', (error: Error) => {
+                                reject(error);
+                            });
+                    } else {
+                        reject(new Error('Formato de resposta inválido do S3'));
+                    }
+                });
             } else {
-                // Se não for PDF, retornar conteúdo como texto
                 content = await response.Body?.transformToString() || '';
             }
 
@@ -318,11 +428,7 @@ export const getTranslationContent = authenticatedHandler(async (req: Authentica
         }
     } catch (error) {
         console.error('Erro ao obter conteúdo:', error);
-        if (error instanceof NotFoundError) {
-            res.status(404).json({ error: error.message });
-        } else {
-            res.status(500).json({ error: 'Erro interno ao obter conteúdo' });
-        }
+        throw error;
     }
 });
 

@@ -353,17 +353,16 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             });
         }
 
-        // Gerar nome do arquivo traduzido
+        // Forçar formato de saída como PDF
         const translatedFileName = generateTranslatedFileName(
             params.originalName || 'documento',
-            params.outputFormat || 'pdf'
+            'pdf'
         );
-
-        // Salvar resultado
+        
         const savedFile = await saveTranslatedFile(
             translatedChunks.join('\n'),
             translatedFileName,
-            params.outputFormat
+            'pdf' // Forçar PDF
         );
 
         // Finalizar tradução e emitir evento de conclusão

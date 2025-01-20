@@ -21,9 +21,10 @@ export const initializeSocket = (httpServer: HttpServer) => {
             credentials: true
         },
         allowEIO3: true,
-        pingTimeout: 60000,
-        pingInterval: 25000,
-        transports: ['polling', 'websocket']
+        pingTimeout: 120000,
+        pingInterval: 30000,
+        transports: ['websocket', 'polling'],
+        connectTimeout: 45000
     });
 
     io.on('connection', (socket) => {

@@ -19,6 +19,8 @@ export function TranslatedDocuments() {
     const [selectedItems, setSelectedItems] = useState<string[]>([]);
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [formatFilter, setFormatFilter] = useState('all');
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]) => {
@@ -202,28 +204,40 @@ export function TranslatedDocuments() {
     // Função para filtrar por data
     const getFilteredTranslations = useCallback(() => {
         return translations.filter(translation => {
-            if (dateFilter === 'all') return true;
-            
-            const date = new Date(translation.createdAt);
-            const now = new Date();
-            
-            if (dateFilter === 'today') {
-                return date.toDateString() === now.toDateString();
+            // Filtro por data
+            if (dateFilter !== 'all') {
+                const date = new Date(translation.createdAt);
+                const now = new Date();
+                
+                if (dateFilter === 'today' && date.toDateString() !== now.toDateString()) {
+                    return false;
+                }
+                
+                if (dateFilter === 'week') {
+                    const weekAgo = new Date(now.setDate(now.getDate() - 7));
+                    if (date < weekAgo) return false;
+                }
+                
+                if (dateFilter === 'month') {
+                    const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
+                    if (date < monthAgo) return false;
+                }
             }
-            
-            if (dateFilter === 'week') {
-                const weekAgo = new Date(now.setDate(now.getDate() - 7));
-                return date >= weekAgo;
+
+            // Filtro por nome
+            if (searchTerm && !translation.fileName.toLowerCase().includes(searchTerm.toLowerCase())) {
+                return false;
             }
-            
-            if (dateFilter === 'month') {
-                const monthAgo = new Date(now.setMonth(now.getMonth() - 1));
-                return date >= monthAgo;
+
+            // Filtro por formato
+            if (formatFilter !== 'all') {
+                const fileExt = translation.fileName.split('.').pop()?.toLowerCase();
+                if (fileExt !== formatFilter) return false;
             }
-            
+
             return true;
         });
-    }, [translations, dateFilter]);
+    }, [translations, dateFilter, searchTerm, formatFilter]);
 
     // Função para deletar tradução
     const handleDelete = async (id: string) => {
@@ -255,13 +269,15 @@ export function TranslatedDocuments() {
 
     const handleEdit = async (translation: Translation) => {
         try {
+            console.log('Iniciando edição da tradução:', translation.id);
             const response = await api.get(`/api/translations/${translation.id}/content`);
-            if (response.data.content) {
+            
+            if (response.data?.content) {
                 setEditedContent(response.data.content);
                 setSelectedTranslation(translation);
                 setShowEditModal(true);
             } else {
-                toast.error('Conteúdo do arquivo não disponível');
+                throw new Error('Conteúdo do arquivo não disponível');
             }
         } catch (error: any) {
             console.error('Erro ao carregar conteúdo:', error);
@@ -414,17 +430,38 @@ export function TranslatedDocuments() {
                     </div>
                 )}
 
-                <div className="mb-4 flex justify-between items-center">
-                    <select
-                        value={dateFilter}
-                        onChange={(e) => setDateFilter(e.target.value)}
-                        className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                    >
-                        <option value="all">Todas as datas</option>
-                        <option value="today">Hoje</option>
-                        <option value="week">Última semana</option>
-                        <option value="month">Último mês</option>
-                    </select>
+                <div className="mb-4 flex justify-between items-center gap-4">
+                    <div className="flex gap-4 flex-1">
+                        <input
+                            type="text"
+                            placeholder="Pesquisar por nome..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 flex-1"
+                        />
+                        
+                        <select
+                            value={formatFilter}
+                            onChange={(e) => setFormatFilter(e.target.value)}
+                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                            <option value="all">Todos os formatos</option>
+                            <option value="pdf">PDF</option>
+                            <option value="docx">DOCX</option>
+                            <option value="txt">TXT</option>
+                        </select>
+
+                        <select
+                            value={dateFilter}
+                            onChange={(e) => setDateFilter(e.target.value)}
+                            className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                            <option value="all">Todas as datas</option>
+                            <option value="today">Hoje</option>
+                            <option value="week">Última semana</option>
+                            <option value="month">Último mês</option>
+                        </select>
+                    </div>
 
                     <div className="flex gap-2">
                         {isSelectionMode && (
@@ -490,7 +527,12 @@ export function TranslatedDocuments() {
                                         <div className="flex items-center gap-2">
                                             {getStatusIcon(translation.status)}
                                             <span className="font-medium">
-                                                {translation.originalName || translation.fileName}
+                                                <div className="text-sm text-gray-900">
+                                                    {translation.fileName}
+                                                    <span className="ml-2 text-xs text-gray-500">
+                                                        ({translation.fileName.split('.').pop()?.toUpperCase()})
+                                                    </span>
+                                                </div>
                                             </span>
                                         </div>
                                         <div className="text-sm text-gray-500">
@@ -505,16 +547,18 @@ export function TranslatedDocuments() {
                                 <div className="flex items-center space-x-2">
                                     {!isSelectionMode && (
                                         <>
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDownload(translation.id, translation.fileName);
-                                                }}
-                                                className="p-1 hover:bg-gray-100 rounded"
-                                                title="Download"
-                                            >
-                                                <Download className="h-5 w-5 text-gray-600" />
-                                            </button>
+                                            {translation.status === 'completed' && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDownload(translation.id, translation.fileName);
+                                                    }}
+                                                    className="p-1 hover:bg-gray-100 rounded"
+                                                    title="Download"
+                                                >
+                                                    <Download className="h-5 w-5 text-gray-600" />
+                                                </button>
+                                            )}
                                             {translation.status === 'completed' && (
                                                 <button
                                                     onClick={(e) => {
