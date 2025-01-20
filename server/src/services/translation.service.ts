@@ -180,19 +180,14 @@ const preserveFormatting = (originalText: string, translatedText: string): strin
 
 // Função para calcular custo
 const calculateCost = (inputTokens: number, outputTokens: number): string => {
-    const COST_PER_1M_INPUT_TOKENS = 0.01;   // $0.01 por 1K tokens de entrada
-    const COST_PER_1M_OUTPUT_TOKENS = 0.03;  // $0.03 por 1K tokens de saída
+    const COST_PER_1K_INPUT_TOKENS = 0.0015;   // $0.0015 por 1K tokens de entrada
+    const COST_PER_1K_OUTPUT_TOKENS = 0.002;   // $0.002 por 1K tokens de saída
     
-    // Converter para milhares de tokens
-    const inputCost = (inputTokens / 1000) * COST_PER_1M_INPUT_TOKENS;
-    const outputCost = (outputTokens / 1000) * COST_PER_1M_OUTPUT_TOKENS;
+    const inputCost = (inputTokens / 1000) * COST_PER_1K_INPUT_TOKENS;
+    const outputCost = (outputTokens / 1000) * COST_PER_1K_OUTPUT_TOKENS;
     const totalCost = inputCost + outputCost;
     
-    // Formatar para manter dígitos significativos
-    if (totalCost < 0.01) {
-        return totalCost.toFixed(5);
-    }
-    return totalCost.toFixed(2);
+    return totalCost.toFixed(4); // Sempre usar 4 casas decimais para consistência
 };
 
 // Função para traduzir um chunk com retry
@@ -203,7 +198,7 @@ const translateChunkWithRetry = async (
 ): Promise<{ text: string; costLog: TranslationCost }> => {
     try {
         const completion = await openai.chat.completions.create({
-            model: "gpt-4-0125-preview",
+            model: "gpt-4o-mini",
             messages: [
                 { 
                     role: "system", 
@@ -393,7 +388,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 filePath: savedFile.filePath,
                 fileSize: savedFile.fileSize,
                 fileName: savedFile.fileName,
-                costData: totalCost.toFixed(totalCost < 0.01 ? 5 : 2)
+                costData: calculateCost(totalCost, 0)
             }
         });
 

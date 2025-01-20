@@ -20,7 +20,6 @@ export function TranslatedDocuments() {
     const [isSelectionMode, setIsSelectionMode] = useState(false);
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [formatFilter, setFormatFilter] = useState('all');
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
 
     // Função para ordenar traduções
@@ -255,15 +254,9 @@ export function TranslatedDocuments() {
                 return false;
             }
 
-            // Filtro por formato
-            if (formatFilter !== 'all') {
-                const fileExt = translation.fileName.split('.').pop()?.toLowerCase();
-                if (fileExt !== formatFilter) return false;
-            }
-
             return true;
         });
-    }, [translations, dateFilter, searchTerm, formatFilter]);
+    }, [translations, dateFilter, searchTerm]);
 
     // Função para deletar tradução
     const handleDelete = async (id: string) => {
@@ -315,9 +308,12 @@ export function TranslatedDocuments() {
     // Função para formatar o custo
     const formatCost = (cost: string | null) => {
         if (!cost) return 'N/A';
-        // Remover o "US$ " se já estiver presente
-        const cleanCost = cost.replace('US$ ', '');
-        return cleanCost;
+        
+        const numericCost = parseFloat(cost);
+        if (isNaN(numericCost)) return 'N/A';
+        
+        // O custo já vem calculado corretamente do backend, só precisamos formatar
+        return `US$ ${numericCost.toFixed(4)}`;
     };
 
     // Função para selecionar itens entre dois índices
@@ -477,16 +473,6 @@ export function TranslatedDocuments() {
                         </div>
                         <div className="flex gap-4">
                             <select
-                                value={formatFilter}
-                                onChange={(e) => setFormatFilter(e.target.value)}
-                                className="border rounded-lg px-4 py-2"
-                            >
-                                <option value="all">Todos os formatos</option>
-                                <option value="pdf">PDF</option>
-                                <option value="docx">DOCX</option>
-                                <option value="txt">TXT</option>
-                            </select>
-                            <select
                                 value={dateFilter}
                                 onChange={(e) => setDateFilter(e.target.value)}
                                 className="border rounded-lg px-4 py-2"
@@ -624,7 +610,7 @@ export function TranslatedDocuments() {
                                 </div>
                                 {translation.costData && (
                                     <div className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
-                                        Custo: US$ {formatCost(translation.costData)}
+                                        Custo: {formatCost(translation.costData)}
                                     </div>
                                 )}
                                 {translation.status.includes('processing') && (
