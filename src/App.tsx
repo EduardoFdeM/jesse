@@ -9,6 +9,7 @@ import { GlossaryEditor } from './components/knowledge/GlossaryEditor';
 import { TranslatedDocuments } from './components/translation/TranslatedDocuments';
 import { PrivateRoute } from './components/auth/PrivateRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { Editor } from './pages/Editor';
 
 export default function App() {
     return (
@@ -26,6 +27,7 @@ export default function App() {
                         <Route path="knowledge-bases/:id/edit" element={<KnowledgeBaseForm />} />
                         <Route path="knowledge-bases/:id/glossary" element={<GlossaryEditor />} />
                     </Route>
+                    <Route path="/editor/:id" element={<Editor />} />
                 </Routes>
             </Router>
         </ThemeProvider>

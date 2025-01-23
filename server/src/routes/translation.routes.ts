@@ -26,8 +26,27 @@ router.get('/:id/download', downloadTranslation);
 router.delete('/clear-history', clearTranslationHistory);
 
 // Novas rotas para edição e deleção
-router.get('/:id/content', authenticate, getTranslationContent);
-router.put('/:id/content', authenticate, updateTranslationContent);
+router.get('/:id/content', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const content = await getTranslationContent(id);
+    res.json({ content });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao carregar conteúdo' });
+  }
+});
+
+router.put('/:id/content', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { content } = req.body;
+    await updateTranslationContent(id, content);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao salvar conteúdo' });
+  }
+});
+
 router.delete('/:id', authenticate, deleteTranslation);
 
 export default router;

@@ -287,22 +287,14 @@ export function TranslatedDocuments() {
         }
     };
 
-    const handleEdit = async (translation: Translation) => {
+    const handleEdit = async (translationId: string) => {
         try {
-            console.log('Iniciando edição da tradução:', translation.id);
-            const response = await api.get(`/api/translations/${translation.id}/content`);
-            
-            if (response.data?.content) {
-                setEditedContent(response.data.content);
-                setSelectedTranslation(translation);
-                setShowEditModal(true);
-            } else {
-                throw new Error('Conteúdo do arquivo não disponível');
-            }
-        } catch (error: any) {
-            console.error('Erro ao carregar conteúdo:', error);
-            const errorMessage = error.response?.data?.error || 'Erro ao carregar conteúdo do arquivo';
-            toast.error(errorMessage);
+            // Abrir em nova aba
+            const editorUrl = `/editor/${translationId}`;
+            window.open(editorUrl, '_blank');
+        } catch (error) {
+            console.error('Erro ao abrir editor:', error);
+            toast.error('Erro ao abrir editor');
         }
     };
 
@@ -574,7 +566,7 @@ export function TranslatedDocuments() {
                                                 <button
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        handleEdit(translation);
+                                                        handleEdit(translation.id);
                                                     }}
                                                     className="p-1 hover:bg-gray-100 rounded"
                                                     title="Editar"
