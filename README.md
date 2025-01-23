@@ -7,15 +7,18 @@ Uma aplicação web para tradução automática de documentos PDF utilizando a A
 - Upload de arquivos PDF
 - Tradução automática entre múltiplos idiomas
 - Suporte para os seguintes idiomas:
-  - Português
+  - Árabe
+  - Chinês
   - Inglês
-  - Espanhol
+  - Persa
   - Francês
   - Alemão
   - Italiano
   - Japonês
-  - Chinês
+  - Coreano
+  - Português
   - Russo
+  - Espanhol
 - Acompanhamento em tempo real do progresso da tradução
 - Download do documento traduzido
 - Interface intuitiva e responsiva
@@ -23,6 +26,7 @@ Uma aplicação web para tradução automática de documentos PDF utilizando a A
 ## 💻 Tecnologias
 
 ### Frontend
+
 - React
 - TypeScript
 - TailwindCSS
@@ -30,6 +34,7 @@ Uma aplicação web para tradução automática de documentos PDF utilizando a A
 - Axios
 
 ### Backend
+
 - Node.js
 - Express
 - TypeScript
@@ -40,6 +45,7 @@ Uma aplicação web para tradução automática de documentos PDF utilizando a A
 ## 🛠️ Instalação
 
 ### Pré-requisitos
+
 - Node.js 18+
 - npm ou yarn
 - PostgreSQL
@@ -47,33 +53,40 @@ Uma aplicação web para tradução automática de documentos PDF utilizando a A
 ### Configuração do Backend
 
 1. Clone o repositório:
+
 ```bash
 git clone https://github.com/IASantaFeAgroInstituto/PDF-tradutor.git
 cd PDF-tradutor
 ```
 
 2. Instale as dependências do backend:
+
 ```bash
 cd server
 npm install
 ```
 
 3. Configure as variáveis de ambiente:
+
 ```bash
 cp .env.example .env
 ```
+
 Edite o arquivo `.env` com suas configurações:
+
 - `DATABASE_URL`: URL de conexão com o PostgreSQL
 - `OPENAI_API_KEY`: Sua chave da API da OpenAI
 - `JWT_SECRET`: Chave secreta para autenticação
 - `PORT`: Porta do servidor (padrão: 3000)
 
 4. Execute as migrações do banco de dados:
+
 ```bash
 npx prisma migrate dev
 ```
 
 5. Inicie o servidor:
+
 ```bash
 npm run dev
 ```
@@ -81,20 +94,24 @@ npm run dev
 ### Configuração do Frontend
 
 1. Em outro terminal, instale as dependências do frontend:
+
 ```bash
 cd ../
 npm install
 ```
 
 2. Configure as variáveis de ambiente do frontend:
+
 ```bash
 cp .env.example .env
 ```
 
 3. Inicie o servidor de desenvolvimento:
+
 ```bash
 npm run dev
 ```
+
 ## Estrutura do código:
 
 JESSE
@@ -102,50 +119,50 @@ JESSE
 ├── knowledge_bases/
 ├── node_modules/
 ├── server/
-│   ├── knowledge_bases/
-│   ├── prisma/
-│   │   ├── migrations/
-│   │   └── schema.prisma
-│   ├── server/
-│   └── src/
-│       ├── config/
-│       │   ├── database.ts
-│       │   ├── env.ts
-│       │   ├── openai.ts
-│       │   ├── security.ts
-│       │   └── socket.ts
-│       ├── controllers/
-│       ├── middlewares/
-│       ├── routes/
-│       ├── scripts/
-│       ├── services/
-│       ├── test/
-│       ├── types/
-│       └── utils/
-│       ├── app.ts
-│       ├── index.ts
-│       └── server.ts
-│   ├── test/
-│   ├── uploads/
-│   ├── .env
-│   ├── .npmrc
-│   └── tsconfig.json
+│ ├── knowledge_bases/
+│ ├── prisma/
+│ │ ├── migrations/
+│ │ └── schema.prisma
+│ ├── server/
+│ └── src/
+│ ├── config/
+│ │ ├── database.ts
+│ │ ├── env.ts
+│ │ ├── openai.ts
+│ │ ├── security.ts
+│ │ └── socket.ts
+│ ├── controllers/
+│ ├── middlewares/
+│ ├── routes/
+│ ├── scripts/
+│ ├── services/
+│ ├── test/
+│ ├── types/
+│ └── utils/
+│ ├── app.ts
+│ ├── index.ts
+│ └── server.ts
+│ ├── test/
+│ ├── uploads/
+│ ├── .env
+│ ├── .npmrc
+│ └── tsconfig.json
 ├── src/
-│   ├── @types/
-│   ├── components/
-│   ├── hooks/
-│   ├── pages/
-│   ├── services/
-│   ├── types/
-│   ├── utils/
-│   ├── .env
-│   ├── App.tsx
-│   ├── axiosConfig.ts
-│   ├── index.css
-│   ├── main.tsx
-│   ├── socketConfig.ts
-│   ├── vite-env.d.ts
-│   ├── types.ts
+│ ├── @types/
+│ ├── components/
+│ ├── hooks/
+│ ├── pages/
+│ ├── services/
+│ ├── types/
+│ ├── utils/
+│ ├── .env
+│ ├── App.tsx
+│ ├── axiosConfig.ts
+│ ├── index.css
+│ ├── main.tsx
+│ ├── socketConfig.ts
+│ ├── vite-env.d.ts
+│ ├── types.ts
 ├── test
 ├── uploads
 ├── .eslintrc.json
@@ -201,8 +218,8 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 ## 👥 Autores
 
-- **Instituto Agro Santa Fé** - *Desenvolvimento inicial* - [IASantaFeAgroInstituto](https://github.com/IASantaFeAgroInstituto)
+- **Instituto Agro Santa Fé** - _Desenvolvimento inicial_ - [IASantaFeAgroInstituto](https://github.com/IASantaFeAgroInstituto)
 
 ## 📞 Suporte
 
-Para suporte, envie um email para [EMAIL] ou abra uma issue no GitHub. 
+Para suporte, envie um email para [EMAIL] ou abra uma issue no GitHub.

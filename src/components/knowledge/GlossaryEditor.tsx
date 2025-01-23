@@ -45,6 +45,8 @@ export function GlossaryEditor() {
         }
     };
 
+    const isRTL = (language: string) => ['ar', 'fa'].includes(language);
+
     if (!knowledgeBase) {
         return (
             <div className="flex items-center justify-center p-4">
@@ -79,6 +81,7 @@ export function GlossaryEditor() {
                         value={content}
                         onChange={(e) => setContent(e.target.value)}
                         rows={20}
+                        dir={isRTL(knowledgeBase.sourceLanguage) ? 'rtl' : 'ltr'}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 font-mono"
                     />
                 </div>

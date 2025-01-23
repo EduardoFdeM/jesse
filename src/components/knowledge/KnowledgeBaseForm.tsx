@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Save, Upload, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../services/api';
+import { LANGUAGES } from '../../constants/languages';
 
 interface KnowledgeBaseFormProps {
     initialData?: {
@@ -109,9 +110,11 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                             required
                         >
                             <option value="">Selecione...</option>
-                            <option value="pt">Português</option>
-                            <option value="en">Inglês</option>
-                            <option value="es">Espanhol</option>
+                            {LANGUAGES.map((lang) => (
+                                <option key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
@@ -127,9 +130,11 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                             required
                         >
                             <option value="">Selecione...</option>
-                            <option value="pt">Português</option>
-                            <option value="en">Inglês</option>
-                            <option value="es">Espanhol</option>
+                            {LANGUAGES.map((lang) => (
+                                <option key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 </div>

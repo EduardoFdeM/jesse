@@ -5,6 +5,7 @@ import { api } from '../../services/api';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
 import { useSocket } from '../../hooks/useSocket';
+import { LANGUAGES } from '../../constants/languages';
 
 export function TranslatedDocuments() {
     const [translations, setTranslations] = useState<Translation[]>([]);
@@ -402,16 +403,12 @@ export function TranslatedDocuments() {
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             required
                         >
-                             <option value="">Selecione...</option>
-                             <option value="pt">Português</option>
-                             <option value="en">Inglês</option>
-                             <option value="es">Espanhol</option>
-                             <option value="fr">Francês</option>
-                             <option value="de">Alemão</option>
-                             <option value="it">Italiano</option>
-                             <option value="ja">Japonês</option>
-                             <option value="zh">Chinês</option>
-                             <option value="ru">Russo</option>
+                            <option value="">Selecione...</option>
+                            {LANGUAGES.map(lang => (
+                                <option key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
 
@@ -427,15 +424,11 @@ export function TranslatedDocuments() {
                             required
                         >
                             <option value="">Selecione...</option>
-                             <option value="pt">Português</option>
-                             <option value="en">Inglês</option>
-                             <option value="es">Espanhol</option>
-                             <option value="fr">Francês</option>
-                             <option value="de">Alemão</option>
-                             <option value="it">Italiano</option>
-                             <option value="ja">Japonês</option>
-                             <option value="zh">Chinês</option>
-                             <option value="ru">Russo</option>
+                            {LANGUAGES.map(lang => (
+                                <option key={lang.code} value={lang.code}>
+                                    {lang.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
                 </div>

@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, FileText } from 'lucide-react';
 import { KnowledgeBase } from '../../types';
 import { api } from '../../services/api';
 import { Link } from 'react-router-dom';
+import { LANGUAGES } from '../../constants/languages';
 
 export function KnowledgeBaseList() {
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -43,6 +44,11 @@ export function KnowledgeBaseList() {
             console.error('Erro ao excluir base de conhecimento:', error);
             setError('Erro ao excluir base de conhecimento');
         }
+    };
+
+    const getLanguageName = (code: string) => {
+        const language = LANGUAGES.find(lang => lang.code === code);
+        return language ? language.name : code;
     };
 
     return (
@@ -108,7 +114,7 @@ export function KnowledgeBaseList() {
                                     {kb.fileName}
                                 </div>
                                 <div>
-                                    Idiomas: {kb.sourceLanguage} → {kb.targetLanguage}
+                                    Idiomas: {getLanguageName(kb.sourceLanguage)} → {getLanguageName(kb.targetLanguage)}
                                 </div>
                                 <div>
                                     Tamanho: {(kb.fileSize / 1024).toFixed(2)} KB

@@ -211,7 +211,9 @@ const translateChunkWithRetry = async (
                              - Tabelas e colunas
                              - Parágrafos e alinhamento
                              - Qualquer caractere especial ou símbolo
-                             Traduza apenas o conteúdo textual, mantendo todos os elementos de formatação intactos.` 
+                             - Para idiomas RTL (árabe e persa), mantenha a direção correta do texto
+                             - Preserve caracteres especiais e diacríticos
+                             - Mantenha a formatação específica de cada idioma`
                 },
                 { 
                     role: "user", 
