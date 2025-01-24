@@ -13,15 +13,25 @@ import TableRow from '@tiptap/extension-table-row';
 import TableCell from '@tiptap/extension-table-cell';
 import TableHeader from '@tiptap/extension-table-header';
 import CharacterCount from '@tiptap/extension-character-count';
+import FontSize from '../extensions/fontSize';
+import BulletList from '@tiptap/extension-bullet-list';
+import OrderedList from '@tiptap/extension-ordered-list';
+import ListItem from '@tiptap/extension-list-item';
+import { Indent } from '../extensions/indent';
+import { CustomHorizontalRule } from '../extensions/horizontalRule';
 import { 
   Save, Undo, Redo, Bold, Italic, Underline as UnderlineIcon, 
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Table as TableIcon, Minus, Type, 
+  Table as TableIcon, Minus, Type, List, ListOrdered,
   Eraser, Rows, Trash2, Columns,
   Highlighter, Palette, Maximize, Minimize,
-  ChevronDown
+  ChevronDown, Languages,
+  ChevronsRight, ChevronsLeft, MinusSquare, FileText, ChevronLeft
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface DocumentEditorProps {
   translationId: string;
@@ -43,23 +53,40 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
     left: '20mm'
   });
   const [showMarginSettings, setShowMarginSettings] = useState(false);
+  const navigate = useNavigate();
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [hasChanges, setHasChanges] = useState(false);
 
-  const fontSizes = ['12px', '14px', '16px', '18px', '20px', '24px', '28px', '32px'];
-  const symbols = ['©', '®', '™', '€', '£', '¥', '§', '¶', '†', '‡', '•', '·', '‰', '°', '±', '≠', '≈', '∞', '≤', '≥'];
+  const fontSizes = ['12', '14', '16', '18', '20', '24', '28', '32'];
+  const symbols = [
+    { group: 'Comum', chars: ['©', '®', '™', '°', '±', '×', '÷', '≠', '≈', '∞'] },
+    { group: 'Moedas', chars: ['€', '£', '¥', '¢', '₹', '₽', '₿'] },
+    { group: 'Matemáticos', chars: ['π', '∑', '√', '∫', '∏', '∆', '∂', 'ƒ'] },
+    { group: 'Gregos', chars: ['α', 'β', 'γ', 'δ', 'ε', 'θ', 'λ', 'μ', 'π', 'σ', 'φ', 'ω'] }
+  ];
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        horizontalRule: false,
+        bulletList: false,
+        orderedList: false,
+      }),
       Document,
       Paragraph,
       Text,
       TextStyle,
+      Indent.configure({
+        types: ['paragraph', 'heading', 'listItem'],
+        minLevel: 0,
+        maxLevel: 8,
+      }),
+      CustomHorizontalRule,
       Underline,
-      Highlight.configure({ multicolor: true }),
+      Highlight,
       Color,
       TextAlign.configure({
-        types: ['paragraph', 'heading'],
-        alignments: ['left', 'center', 'right', 'justify'],
+        types: ['heading', 'paragraph'],
       }),
       Table.configure({
         resizable: true,
@@ -70,46 +97,83 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
       TableRow,
       TableCell,
       TableHeader,
-      CharacterCount
+      CharacterCount,
+      FontSize,
+      BulletList.configure({
+        HTMLAttributes: {
+          class: 'list-disc ml-4',
+        },
+      }),
+      OrderedList.configure({
+        HTMLAttributes: {
+          class: 'list-decimal ml-4',
+        },
+      }),
+      ListItem,
     ],
     content: initialContent,
     editorProps: {
       attributes: {
         class: 'prose max-w-none focus:outline-none min-h-[500px]',
-        style: `font-size: ${fontSize}`,
       },
     },
   });
 
-  // Cores disponíveis em grupos
+  // Cores organizadas em grupos menores
   const textColors = {
-    'Cores do tema': ['#000000', '#666666', '#0000FF', '#009688'],
-    'Cores personalizadas': ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF'],
+    'Cores': ['#000000', '#434343', '#666666', '#999999', '#b7b7b7', '#cccccc', '#d9d9d9', '#efefef', '#f3f3f3', '#ffffff'],
+    'Principais': ['#980000', '#ff0000', '#ff9900', '#ffff00', '#00ff00', '#00ffff', '#4a86e8', '#0000ff', '#9900ff', '#ff00ff'],
+    'Tons': ['#e6b8af', '#f4cccc', '#fce5cd', '#fff2cc', '#d9ead3', '#d0e0e3', '#c9daf8', '#cfe2f3', '#d9d2e9', '#ead1dc'],
   };
 
   const highlightColors = {
-    'Cores de destaque': ['#FFFF00', '#00FF00', '#FF69B4', '#87CEEB', '#DDA0DD'],
-    'Cores personalizadas': ['#FFE0B2', '#F5F5F5', '#E1F5FE', '#E8F5E9', '#FFF3E0'],
+    'Destaque': ['#ffff00', '#00ff00', '#ff00ff', '#00ffff', '#ff9900', '#ff0000'],
+    'Suaves': ['#ffd700', '#98fb98', '#dda0dd', '#87ceeb', '#ffa07a', '#f08080'],
   };
 
+  // Estado único para controlar menus
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+
+  // Função para gerenciar abertura/fechamento dos menus
+  const handleMenuClick = (menuName: string) => {
+    setActiveMenu(activeMenu === menuName ? null : menuName);
+  };
+
+  // Fechar menu ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.menu-button') && !target.closest('.menu-content')) {
+        setActiveMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Atualizar hasChanges quando o editor mudar
+  useEffect(() => {
+    if (editor) {
+      editor.on('update', () => {
+        setHasChanges(true);
+      });
+    }
+  }, [editor]);
+
   const handleSave = async () => {
-    if (!editor) return;
+    if (!hasChanges) return;
+    
     setIsSaving(true);
     try {
-      await onSave(editor.getHTML());
+      await onSave(editor?.getHTML() || '');
+      setLastSaved(new Date());
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Erro ao salvar:', error);
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const handleColorPickerClick = () => {
-    setShowColorPicker(!showColorPicker);
-    if (showHighlightPicker) setShowHighlightPicker(false);
-  };
-
-  const handleHighlightPickerClick = () => {
-    setShowHighlightPicker(!showHighlightPicker);
-    if (showColorPicker) setShowColorPicker(false);
   };
 
   const updateMargins = (margin: keyof typeof pageMargins, value: string) => {
@@ -154,11 +218,64 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
     setShowTableOptions(false);
   };
 
+  // Função para alterar tamanho da fonte
+  const handleFontSize = (size: string) => {
+    editor?.chain().focus().setFontSize(size).run();
+    setActiveMenu(null);
+  };
+
+  // Funções auxiliares para verificar se pode indentar/recuar
+  const canIndent = () => {
+    if (!editor) return false;
+    const { selection } = editor.state;
+    const { from, to } = selection;
+    let canIndentMore = false;
+
+    editor.state.doc.nodesBetween(from, to, (node) => {
+      if (editor.isActive('paragraph') || editor.isActive('heading') || editor.isActive('listItem')) {
+        const currentIndent = node.attrs.indent || 0;
+        if (currentIndent < 8) { // maxLevel definido no indent.ts
+          canIndentMore = true;
+        }
+      }
+    });
+
+    return canIndentMore;
+  };
+
+  const canOutdent = () => {
+    if (!editor) return false;
+    const { selection } = editor.state;
+    const { from, to } = selection;
+    let canOutdentMore = false;
+
+    editor.state.doc.nodesBetween(from, to, (node) => {
+      if (editor.isActive('paragraph') || editor.isActive('heading') || editor.isActive('listItem')) {
+        const currentIndent = node.attrs.indent || 0;
+        if (currentIndent > 0) { // minLevel definido no indent.ts
+          canOutdentMore = true;
+        }
+      }
+    });
+
+    return canOutdentMore;
+  };
+
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Barra de ferramentas principal */}
       <div className="border-b border-gray-200 p-2">
         <div className="flex items-center justify-between">
+          {/* Botão Voltar */}
+          <button
+            onClick={() => navigate('/translations')}
+            className="flex items-center gap-2 px-3 py-1.5 text-gray-600 hover:bg-gray-100 rounded-md mr-4"
+            title="Voltar para traduções"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <FileText className="w-5 h-5 text-blue-600" />
+          </button>
+
           <div className="flex items-center gap-2">
             {/* Desfazer/Refazer */}
             <div className="flex items-center gap-1">
@@ -179,15 +296,59 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
             <div className="border-l border-gray-300 h-6 mx-2" />
 
             {/* Fonte e Tamanho */}
-            <select
-              value={fontSize}
-              onChange={(e) => setFontSize(e.target.value)}
-              className="px-2 py-1 border rounded hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {fontSizes.map(size => (
-                <option key={size} value={size}>{parseInt(size)}pt</option>
-              ))}
-            </select>
+            <div className="relative">
+              <button
+                onClick={() => handleMenuClick('fontSize')}
+                className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                title="Tamanho da fonte"
+              >
+                <span className="text-sm">{editor?.isActive('fontSize') ? editor?.getAttributes('fontSize').size : '16px'}</span>
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {activeMenu === 'fontSize' && (
+                <div className="menu-content absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-50">
+                  {['12px', '14px', '16px', '18px', '20px', '24px', '30px'].map((size) => (
+                    <button
+                      key={size}
+                      className={`w-full text-left px-4 py-2 hover:bg-gray-100 ${
+                        editor?.isActive('fontSize', { size }) ? 'bg-gray-100' : ''
+                      }`}
+                      onClick={() => handleFontSize(size)}
+                    >
+                      <span style={{ fontSize: size }}>{size}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-l border-gray-300 h-6 mx-2" />
+
+            {/* Indentação com estado disabled */}
+            <div className="flex items-center gap-1">
+              <ToolbarButton
+                icon={<ChevronsLeft className="w-4 h-4" />}
+                onClick={() => editor?.chain().focus().outdent().run()}
+                disabled={!canOutdent()}
+                tooltip="Diminuir recuo"
+              />
+              <ToolbarButton
+                icon={<ChevronsRight className="w-4 h-4" />}
+                onClick={() => editor?.chain().focus().indent().run()}
+                disabled={!canIndent()}
+                tooltip="Aumentar recuo"
+              />
+            </div>
+
+            <div className="border-l border-gray-300 h-6 mx-2" />
+
+            {/* Linha horizontal com tooltip melhorado */}
+            <ToolbarButton
+              icon={<MinusSquare className="w-4 h-4" />}
+              onClick={() => editor?.chain().focus().setHorizontalRule().run()}
+              tooltip="Inserir linha horizontal"
+              className="hover:bg-gray-100"
+            />
 
             <div className="border-l border-gray-300 h-6 mx-2" />
 
@@ -215,37 +376,33 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
 
             <div className="border-l border-gray-300 h-6 mx-2" />
 
-            {/* Cores - Layout melhorado */}
+            {/* Cores - Layout do grid ajustado */}
             <div className="flex items-center gap-1">
               <div className="relative">
                 <button
-                  onClick={handleColorPickerClick}
-                  className="flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                  onClick={() => handleMenuClick('textColor')}
+                  className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
                   title="Cor do texto"
                 >
                   <Palette className="w-4 h-4" />
                   <ChevronDown className="w-3 h-3" />
                 </button>
-                {showColorPicker && (
-                  <div className="absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-20 min-w-[180px]">
+                {activeMenu === 'textColor' && (
+                  <div className="menu-content absolute top-full left-0 mt-1 p-2 bg-white shadow-lg rounded-md border border-gray-200 z-[100] min-w-[200px]">
                     {Object.entries(textColors).map(([group, colors]) => (
-                      <div key={group} className="p-2">
+                      <div key={group} className="mb-3 last:mb-0">
                         <div className="text-xs text-gray-500 mb-1">{group}</div>
-                        <div className="grid grid-cols-4 gap-1">
+                        <div className="grid grid-cols-5 gap-1">
                           {colors.map((color) => (
                             <button
                               key={color}
-                              className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:border-gray-400"
+                              className="w-8 h-8 rounded border border-gray-200 hover:border-gray-400"
                               style={{ backgroundColor: color }}
                               onClick={() => {
                                 editor?.chain().focus().setColor(color).run();
-                                setShowColorPicker(false);
+                                setActiveMenu(null);
                               }}
-                            >
-                              {editor?.isActive('textStyle', { color }) && (
-                                <div className="w-2 h-2 bg-white rounded-full shadow-sm" />
-                              )}
-                            </button>
+                            />
                           ))}
                         </div>
                       </div>
@@ -256,33 +413,29 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
 
               <div className="relative">
                 <button
-                  onClick={handleHighlightPickerClick}
-                  className="flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                  onClick={() => handleMenuClick('highlight')}
+                  className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
                   title="Realce"
                 >
                   <Highlighter className="w-4 h-4" />
                   <ChevronDown className="w-3 h-3" />
                 </button>
-                {showHighlightPicker && (
-                  <div className="absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-20 min-w-[180px]">
+                {activeMenu === 'highlight' && (
+                  <div className="menu-content absolute top-full left-0 mt-1 p-2 bg-white shadow-lg rounded-md border border-gray-200 z-[100] min-w-[200px]">
                     {Object.entries(highlightColors).map(([group, colors]) => (
-                      <div key={group} className="p-2">
+                      <div key={group} className="mb-3 last:mb-0">
                         <div className="text-xs text-gray-500 mb-1">{group}</div>
-                        <div className="grid grid-cols-4 gap-1">
+                        <div className="grid grid-cols-5 gap-1">
                           {colors.map((color) => (
                             <button
                               key={color}
-                              className="w-8 h-8 rounded border border-gray-300 flex items-center justify-center hover:border-gray-400"
+                              className="w-8 h-8 rounded border border-gray-200 hover:border-gray-400"
                               style={{ backgroundColor: color }}
                               onClick={() => {
                                 editor?.chain().focus().toggleHighlight({ color }).run();
-                                setShowHighlightPicker(false);
+                                setActiveMenu(null);
                               }}
-                            >
-                              {editor?.isActive('highlight', { color }) && (
-                                <div className="w-2 h-2 bg-white rounded-full shadow-sm" />
-                              )}
-                            </button>
+                            />
                           ))}
                         </div>
                       </div>
@@ -326,13 +479,16 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
 
             {/* Tabela */}
             <div className="relative">
-              <ToolbarButton
-                icon={<TableIcon className="w-4 h-4" />}
-                onClick={() => setShowTableOptions(!showTableOptions)}
-                tooltip="Inserir tabela"
-              />
-              {showTableOptions && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-white shadow-lg rounded-md border border-gray-200 py-1 z-20">
+              <button
+                onClick={() => handleMenuClick('table')}
+                className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                title="Tabela"
+              >
+                <TableIcon className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {activeMenu === 'table' && (
+                <div className="menu-content absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-50 min-w-[200px]">
                   <button
                     onClick={insertTable}
                     className="w-full text-left px-3 py-1 hover:bg-gray-100 flex items-center gap-2"
@@ -391,14 +547,16 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
             {/* Margens */}
             <div className="relative">
               <button
-                onClick={() => setShowMarginSettings(!showMarginSettings)}
-                className="px-3 py-1 border rounded hover:bg-gray-50 flex items-center gap-1"
+                onClick={() => handleMenuClick('margins')}
+                className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                title="Margens"
               >
-                Margens <ChevronDown className="w-4 h-4" />
+                <Maximize className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
               </button>
-              {showMarginSettings && (
-                <div className="absolute top-full left-0 mt-1 p-4 bg-white shadow-lg rounded-md border border-gray-200 z-20 w-64">
-                  <div className="space-y-3">
+              {activeMenu === 'margins' && (
+                <div className="menu-content absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-50 p-4 min-w-[250px]">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <label className="text-sm">Superior:</label>
                       <input
@@ -447,17 +605,82 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
                 </div>
               )}
             </div>
+
+            {/* Listas */}
+            <div className="flex items-center gap-1">
+              <ToolbarButton
+                icon={<List className="w-4 h-4" />}
+                onClick={() => editor?.chain().focus().toggleBulletList().run()}
+                isActive={editor?.isActive('bulletList')}
+                tooltip="Lista com marcadores"
+              />
+              <ToolbarButton
+                icon={<ListOrdered className="w-4 h-4" />}
+                onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+                isActive={editor?.isActive('orderedList')}
+                tooltip="Lista numerada"
+              />
+            </div>
+
+            <div className="border-l border-gray-300 h-6 mx-2" />
+
+            {/* Símbolos */}
+            <div className="relative">
+              <button
+                onClick={() => handleMenuClick('symbols')}
+                className="menu-button flex items-center gap-1 p-1 hover:bg-gray-100 rounded"
+                title="Símbolos"
+              >
+                <Type className="w-4 h-4" />
+                <ChevronDown className="w-3 h-3" />
+              </button>
+              {activeMenu === 'symbols' && (
+                <div className="menu-content absolute top-full left-0 mt-1 bg-white shadow-lg rounded-md border border-gray-200 z-50 max-h-[400px] overflow-y-auto min-w-[300px]">
+                  {symbols.map(({ group, chars }) => (
+                    <div key={group} className="p-3 border-b border-gray-100">
+                      <div className="text-sm font-medium text-gray-700 mb-2">{group}</div>
+                      <div className="grid grid-cols-8 gap-1">
+                        {chars.map((symbol) => (
+                          <button
+                            key={symbol}
+                            className="w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded text-sm"
+                            onClick={() => {
+                              editor?.chain().focus().insertContent(symbol).run();
+                              setActiveMenu(null);
+                            }}
+                          >
+                            {symbol}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Botão Salvar à direita */}
-          <button
-            onClick={handleSave}
-            disabled={isSaving}
-            className="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            {isSaving ? 'Salvando...' : 'Salvar'}
-          </button>
+          {/* Área de salvamento */}
+          <div className="flex items-center gap-4">
+            {lastSaved && (
+              <span className="text-sm text-gray-500">
+                Última alteração: {format(lastSaved, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              </span>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={isSaving || !hasChanges}
+              className={`
+                px-4 py-1.5 rounded flex items-center gap-2
+                ${hasChanges 
+                  ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'}
+              `}
+            >
+              <Save className="w-4 h-4" />
+              {isSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -499,7 +722,7 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
   );
 }
 
-// Componente ToolbarButton melhorado com tooltip
+// Componente ToolbarButton atualizado para lidar melhor com disabled
 function ToolbarButton({ icon, onClick, isActive = false, disabled = false, tooltip = '' }) {
   return (
     <div className="relative group">
@@ -509,12 +732,12 @@ function ToolbarButton({ icon, onClick, isActive = false, disabled = false, tool
         className={`
           p-1.5 rounded hover:bg-gray-100 
           ${isActive ? 'bg-gray-200' : ''} 
-          ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+          ${disabled ? 'opacity-40 cursor-not-allowed hover:bg-transparent' : ''}
         `}
       >
         {icon}
       </button>
-      {tooltip && (
+      {tooltip && !disabled && (
         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 text-xs text-white bg-gray-800 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
           {tooltip}
         </div>
