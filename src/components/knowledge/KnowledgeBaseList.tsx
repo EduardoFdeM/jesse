@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, FileText } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Clock } from 'lucide-react';
 import { KnowledgeBase } from '../../types';
 import { api } from '../../services/api';
 import { Link } from 'react-router-dom';
 import { LANGUAGES } from '../../constants/languages';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 export function KnowledgeBaseList() {
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -49,6 +51,12 @@ export function KnowledgeBaseList() {
     const getLanguageName = (code: string) => {
         const language = LANGUAGES.find(lang => lang.code === code);
         return language ? language.name : code;
+    };
+
+    const formatDate = (date: string) => {
+        return format(new Date(date), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { 
+            locale: ptBR 
+        });
     };
 
     return (
@@ -115,6 +123,13 @@ export function KnowledgeBaseList() {
                                 </div>
                                 <div>
                                     Idiomas: {getLanguageName(kb.sourceLanguage)} → {getLanguageName(kb.targetLanguage)}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Clock className="h-4 w-4" />
+                                    {kb.updatedAt 
+                                        ? `Atualizado em ${formatDate(kb.updatedAt)}`
+                                        : `Criado em ${formatDate(kb.createdAt)}`
+                                    }
                                 </div>
                                 <div>
                                     Tamanho: {(kb.fileSize / 1024).toFixed(2)} KB

@@ -12,6 +12,7 @@ import {
 } from '../controllers/translation.controller.js';
 import { upload } from '../middlewares/upload.middleware.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
+import { Request, Response, NextFunction } from 'express';
 
 const router = Router();
 
@@ -25,28 +26,23 @@ router.get('/:id', getTranslation);
 router.get('/:id/download', downloadTranslation);
 router.delete('/clear-history', clearTranslationHistory);
 
-// Novas rotas para edição e deleção
-router.get('/:id/content', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const content = await getTranslationContent(id);
-    res.json({ content });
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao carregar conteúdo' });
-  }
+// Rotas para edição e deleção
+router.get('/:id/content', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await getTranslationContent(req, res, next);
+    } catch (error) {
+        next(error);
+    }
 });
 
-router.put('/:id/content', authenticate, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { content } = req.body;
-    await updateTranslationContent(id, content);
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: 'Erro ao salvar conteúdo' });
-  }
+router.put('/:id/content', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await updateTranslationContent(req, res, next);
+    } catch (error) {
+        next(error);
+    }
 });
 
-router.delete('/:id', authenticate, deleteTranslation);
+router.delete('/:id', deleteTranslation);
 
 export default router;

@@ -8,6 +8,8 @@ export function Editor() {
   const { id } = useParams<{ id: string }>();
   const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(true);
+  const [sourceLanguage, setSourceLanguage] = useState('');
+  const [targetLanguage, setTargetLanguage] = useState('');
 
   useEffect(() => {
     loadDocument();
@@ -15,8 +17,14 @@ export function Editor() {
 
   const loadDocument = async () => {
     try {
-      const response = await api.get(`/api/translations/${id}/content`);
-      setContent(response.data.content);
+      const [contentResponse, translationResponse] = await Promise.all([
+        api.get(`/api/translations/${id}/content`),
+        api.get(`/api/translations/${id}`)
+      ]);
+
+      setContent(contentResponse.data.content);
+      setSourceLanguage(translationResponse.data.sourceLanguage);
+      setTargetLanguage(translationResponse.data.targetLanguage);
     } catch (error) {
       console.error('Erro ao carregar documento:', error);
       toast.error('Erro ao carregar documento');
@@ -49,6 +57,8 @@ export function Editor() {
         translationId={id!}
         initialContent={content}
         onSave={handleSave}
+        sourceLanguage={sourceLanguage}
+        targetLanguage={targetLanguage}
       />
     </div>
   );

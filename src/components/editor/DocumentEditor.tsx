@@ -1,4 +1,4 @@
-import { useEditor, EditorContent, BubbleMenu, FloatingMenu } from '@tiptap/react';
+import { useEditor, EditorContent, BubbleMenu } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
@@ -22,24 +22,34 @@ import { CustomHorizontalRule } from '../extensions/horizontalRule';
 import { 
   Save, Undo, Redo, Bold, Italic, Underline as UnderlineIcon, 
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Table as TableIcon, Minus, Type, List, ListOrdered,
-  Eraser, Rows, Trash2, Columns,
-  Highlighter, Palette, Maximize, Minimize,
-  ChevronDown, Languages,
-  ChevronsRight, ChevronsLeft, MinusSquare, FileText, ChevronLeft
+  Table as TableIcon, Type, List, ListOrdered,
+  Rows, Trash2, Columns,
+  Highlighter, Palette, Maximize,
+  ChevronDown, ChevronLeft, ChevronRight,
+  ChevronsLeft, ChevronsRight, MinusSquare,
+  FileText
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { EditorFooter } from './EditorFooter';
 
 interface DocumentEditorProps {
   translationId: string;
   initialContent: string;
   onSave: (content: string) => Promise<void>;
+  sourceLanguage: string;
+  targetLanguage: string;
 }
 
-export function DocumentEditor({ translationId, initialContent, onSave }: DocumentEditorProps) {
+export function DocumentEditor({ 
+  translationId, 
+  initialContent, 
+  onSave,
+  sourceLanguage,
+  targetLanguage 
+}: DocumentEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [fontSize, setFontSize] = useState('16px');
   const [showTableOptions, setShowTableOptions] = useState(false);
@@ -56,6 +66,8 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
   const navigate = useNavigate();
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [zoom, setZoom] = useState(100);
+  const [pages, setPages] = useState<HTMLElement[]>([]);
 
   const fontSizes = ['12', '14', '16', '18', '20', '24', '28', '32'];
   const symbols = [
@@ -72,7 +84,9 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
         bulletList: false,
         orderedList: false,
       }),
-      Document,
+      Document.configure({
+        pageBreak: true,
+      }),
       Paragraph,
       Text,
       TextStyle,
@@ -110,12 +124,67 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
         },
       }),
       ListItem,
+      Document.extend({
+        addGlobalAttributes() {
+          return [
+            {
+              types: ['textStyle'],
+              attributes: {
+                spellcheck: {
+                  default: true,
+                  parseHTML: element => element.getAttribute('spellcheck'),
+                  renderHTML: attributes => {
+                    return { spellcheck: attributes.spellcheck }
+                  }
+                },
+                lang: {
+                  default: targetLanguage,
+                  parseHTML: element => element.getAttribute('lang'),
+                  renderHTML: attributes => {
+                    return { lang: attributes.lang }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      })
     ],
     content: initialContent,
     editorProps: {
       attributes: {
-        class: 'prose max-w-none focus:outline-none min-h-[500px]',
+        class: 'prose max-w-none focus:outline-none h-full',
+        spellcheck: 'true',
+        lang: targetLanguage
       },
+    },
+    onUpdate: ({ editor }) => {
+      setHasChanges(true);
+      
+      // Atualiza o conteúdo mantendo a formatação A4
+      const content = editor.getHTML();
+      const editorContent = editor.view.dom as HTMLElement;
+      const totalPages = Math.ceil(editorContent.scrollHeight / (297 * 3.7795275591));
+      
+      // Atualiza o container de páginas se necessário
+      const container = document.querySelector('.editor-content');
+      if (!container) return;
+
+      // Ajusta o número de páginas
+      const currentPages = container.querySelectorAll('.editor-page').length;
+      if (currentPages !== totalPages) {
+        // Mantém a primeira página
+        const firstPage = container.firstElementChild;
+        container.innerHTML = '';
+        if (firstPage) container.appendChild(firstPage);
+
+        // Adiciona páginas adicionais se necessário
+        for (let i = 1; i < totalPages; i++) {
+          const newPage = document.createElement('div');
+          newPage.className = 'editor-page';
+          container.appendChild(newPage);
+        }
+      }
     },
   });
 
@@ -261,8 +330,108 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
     return canOutdentMore;
   };
 
+  useEffect(() => {
+    if (editor) {
+      const updatePages = () => {
+        const content = editor.view.dom;
+        const pageHeight = 297 * 3.7795275591; // 297mm em pixels @ 96dpi
+        const pages = [];
+        let currentPage = document.createElement('div');
+        
+        Array.from(content.children).forEach((child) => {
+          const childHeight = (child as HTMLElement).offsetHeight;
+          const currentPageHeight = currentPage.offsetHeight;
+
+          if (currentPageHeight + childHeight > pageHeight) {
+            pages.push(currentPage);
+            currentPage = document.createElement('div');
+          }
+
+          currentPage.appendChild(child.cloneNode(true));
+        });
+
+        if (currentPage.children.length > 0) {
+          pages.push(currentPage);
+        }
+
+        setPages(pages);
+      };
+
+      editor.on('update', updatePages);
+      return () => editor.off('update', updatePages);
+    }
+  }, [editor]);
+
+  // Atualizar o idioma quando o editor ou targetLanguage mudar
+  useEffect(() => {
+    if (editor && targetLanguage) {
+      const editorElement = document.querySelector('.ProseMirror');
+      if (editorElement) {
+        editorElement.setAttribute('lang', targetLanguage);
+        editorElement.setAttribute('spellcheck', 'true');
+      }
+    }
+  }, [editor, targetLanguage]);
+
+  // Corrigir o useEffect do editor
+  useEffect(() => {
+    if (editor) {
+      const cleanup = () => {
+        editor.destroy();
+      };
+      return cleanup;
+    }
+  }, [editor]);
+
+  // Corrigir os comandos indent/outdent
+  const handleIndent = () => {
+    editor?.chain().focus().updateAttributes('paragraph', {
+      indent: (editor.getAttributes('paragraph').indent || 0) + 1
+    }).run();
+  };
+
+  const handleOutdent = () => {
+    editor?.chain().focus().updateAttributes('paragraph', {
+      indent: Math.max(0, (editor.getAttributes('paragraph').indent || 0) - 1)
+    }).run();
+  };
+
+  // Função para calcular o número de páginas necessárias
+  const calculatePages = (content: HTMLElement) => {
+    const pageHeight = 297 * 3.7795275591; // 297mm em pixels
+    const marginTop = parseFloat(pageMargins.top);
+    const marginBottom = parseFloat(pageMargins.bottom);
+    const availableHeight = pageHeight - (marginTop + marginBottom);
+    
+    const contentHeight = content.scrollHeight;
+    return Math.ceil(contentHeight / availableHeight);
+  };
+
+  useEffect(() => {
+    if (editor) {
+      const editorContent = editor.view.dom as HTMLElement;
+      const totalPages = calculatePages(editorContent);
+      
+      // Atualiza o container de páginas
+      const container = document.querySelector('.editor-content');
+      if (!container) return;
+
+      // Mantém apenas a primeira página se já existir
+      while (container.children.length > 1) {
+        container.removeChild(container.lastChild!);
+      }
+
+      // Adiciona páginas necessárias
+      for (let i = 1; i < totalPages; i++) {
+        const newPage = document.createElement('div');
+        newPage.className = 'editor-page';
+        container.appendChild(newPage);
+      }
+    }
+  }, [editor?.state.doc.content, pageMargins]);
+
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-screen">
       {/* Barra de ferramentas principal */}
       <div className="border-b border-gray-200 p-2">
         <div className="flex items-center justify-between">
@@ -684,46 +853,54 @@ export function DocumentEditor({ translationId, initialContent, onSave }: Docume
         </div>
       </div>
 
-      {/* Área do editor com formato A4 */}
+      {/* Área do editor */}
       <div className="flex-grow overflow-auto bg-gray-100 p-8">
-        <div className="mx-auto bg-white shadow-lg" style={{
-          width: '210mm',
-          minHeight: '297mm',
-          padding: `${pageMargins.top} ${pageMargins.right} ${pageMargins.bottom} ${pageMargins.left}`,
-          boxSizing: 'border-box',
-        }}>
-          <EditorContent editor={editor} />
+        <div 
+          className="bg-white shadow-lg mx-auto"
+          style={{
+            width: '210mm', // Largura A4
+            minHeight: '297mm', // Altura mínima A4
+            padding: `${pageMargins.top} ${pageMargins.right} ${pageMargins.bottom} ${pageMargins.left}`,
+            transform: `scale(${zoom / 100})`,
+            transformOrigin: 'top center',
+            border: '1px solid #e5e7eb',
+          }}
+        >
+          <EditorContent 
+            editor={editor}
+            className="min-h-full prose max-w-none focus:outline-none"
+          />
         </div>
       </div>
 
-      {/* Menu flutuante para formatação rápida */}
-      {editor && (
-        <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
-          <div className="flex items-center gap-1 bg-white shadow-lg rounded-md border border-gray-200 p-1">
-            <ToolbarButton
-              icon={<Bold className="w-4 h-4" />}
-              isActive={editor.isActive('bold')}
-              onClick={() => editor.chain().focus().toggleBold().run()}
-            />
-            <ToolbarButton
-              icon={<Italic className="w-4 h-4" />}
-              isActive={editor.isActive('italic')}
-              onClick={() => editor.chain().focus().toggleItalic().run()}
-            />
-            <ToolbarButton
-              icon={<UnderlineIcon className="w-4 h-4" />}
-              isActive={editor.isActive('underline')}
-              onClick={() => editor.chain().focus().toggleUnderline().run()}
-            />
-          </div>
-        </BubbleMenu>
-      )}
+      <EditorFooter
+        editor={editor}
+        sourceLanguage={sourceLanguage}
+        targetLanguage={targetLanguage}
+        zoom={zoom}
+        onZoomChange={setZoom}
+      />
     </div>
   );
 }
 
-// Componente ToolbarButton atualizado para lidar melhor com disabled
-function ToolbarButton({ icon, onClick, isActive = false, disabled = false, tooltip = '' }) {
+// Definir interface para o ToolbarButton
+interface ToolbarButtonProps {
+  icon: React.ReactNode;
+  onClick: () => void;
+  isActive?: boolean;
+  disabled?: boolean;
+  tooltip?: string;
+}
+
+// Atualizar o ToolbarButton com a interface
+function ToolbarButton({ 
+  icon, 
+  onClick, 
+  isActive = false, 
+  disabled = false, 
+  tooltip = '' 
+}: ToolbarButtonProps) {
   return (
     <div className="relative group">
       <button
