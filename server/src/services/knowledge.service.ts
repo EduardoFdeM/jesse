@@ -10,6 +10,7 @@ interface CreateKnowledgeBaseParams {
     sourceLanguage: string;
     targetLanguage: string;
     userId: string;
+    originalFileName?: string;
 }
 
 export const processKnowledgeBaseFile = async (filePath: string, params: CreateKnowledgeBaseParams): Promise<KnowledgeBase> => {
@@ -24,7 +25,8 @@ export const processKnowledgeBaseFile = async (filePath: string, params: CreateK
         // Ler o arquivo
         console.log('📖 [2/5] Lendo arquivo');
         const fileContent = await fs.promises.readFile(filePath);
-        const fileName = `kb_${Date.now()}_${path.basename(filePath)}`;
+        const uniqueFileName = `kb_${Date.now()}_${path.basename(filePath)}`;
+        const displayFileName = params.originalFileName || path.basename(filePath);
         const fileSize = fileContent.length;
         const fileType = path.extname(filePath).slice(1);
 
@@ -34,17 +36,21 @@ export const processKnowledgeBaseFile = async (filePath: string, params: CreateK
             throw new Error(`Tipo de arquivo não suportado. Tipos permitidos: ${allowedTypes.join(', ')}`);
         }
 
-        // Fazer upload para o Spaces
+        // Fazer upload para o S3 com nome único
         console.log('☁️ [3/5] Enviando para o Spaces');
-        const spacesUrl = await uploadToS3(fileContent, fileName, 'knowledge');
+        const spacesUrl = await uploadToS3(fileContent, uniqueFileName, 'knowledge');
         console.log('✅ [4/5] Upload concluído:', spacesUrl);
 
-        // Criar a base de conhecimento no banco
+        // Criar/Atualizar a base de conhecimento no banco
         console.log('💾 [5/5] Salvando no banco de dados');
         const knowledgeBase = await prisma.knowledgeBase.create({
             data: {
-                ...params,
-                fileName,
+                name: params.name,
+                description: params.description,
+                sourceLanguage: params.sourceLanguage,
+                targetLanguage: params.targetLanguage,
+                userId: params.userId,
+                fileName: displayFileName,
                 filePath: spacesUrl,
                 fileType,
                 fileSize

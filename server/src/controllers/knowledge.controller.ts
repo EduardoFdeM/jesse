@@ -5,13 +5,24 @@ import { NotFoundError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import fs from 'fs';
 import { KnowledgeBase } from '@prisma/client';
+import { deleteFromS3 } from '../config/storage.js';
 
 // Criar base de conhecimento
 export const createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-    console.log('📥 Recebendo requisição para criar base de conhecimento');
-    
     const { name, description, sourceLanguage, targetLanguage } = req.body;
     const file = req.file;
+
+    // Verificar se já existe uma base com o mesmo nome
+    const existingBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            name,
+            userId: req.user!.id
+        }
+    });
+
+    if (existingBase) {
+        throw new Error('Já existe uma base de conhecimento com este nome');
+    }
 
     if (!file) {
         throw new Error('Nenhum arquivo enviado');
@@ -23,18 +34,15 @@ export const createKnowledgeBase = asyncHandler(async (req: Request, res: Respon
             description,
             sourceLanguage,
             targetLanguage,
-            userId: req.user!.id
+            userId: req.user!.id,
+            originalFileName: file.originalname
         });
 
-        console.log('✅ Base de conhecimento criada com sucesso:', knowledgeBase.id);
-        
         res.status(201).json({
             status: 'success',
             data: knowledgeBase
         });
     } catch (error) {
-        console.error('❌ Erro ao criar base de conhecimento:', error);
-        // Garantir que o arquivo temporário seja removido em caso de erro
         if (file && fs.existsSync(file.path)) {
             await fs.promises.unlink(file.path).catch(console.error);
         }
@@ -78,28 +86,92 @@ export const getKnowledgeBase = asyncHandler(async (req: Request, res: Response)
 // Atualizar base de conhecimento
 export const updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, sourceLanguage, targetLanguage } = req.body;
+    const file = req.file;
 
-    const knowledgeBase = await prisma.knowledgeBase.findFirst({
-        where: {
-            id,
-            userId: req.user!.id
+    try {
+        // Verificar se existe e pertence ao usuário
+        const existingBase = await prisma.knowledgeBase.findFirst({
+            where: {
+                id,
+                userId: req.user!.id
+            }
+        });
+
+        if (!existingBase) {
+            throw new NotFoundError('Base de conhecimento não encontrada');
         }
-    });
 
-    if (!knowledgeBase) {
-        throw new NotFoundError('Base de conhecimento não encontrada');
+        // Verificar nome duplicado
+        if (name !== existingBase.name) {
+            const nameExists = await prisma.knowledgeBase.findFirst({
+                where: {
+                    name,
+                    userId: req.user!.id,
+                    id: { not: id }
+                }
+            });
+
+            if (nameExists) {
+                throw new Error('Já existe uma base de conhecimento com este nome');
+            }
+        }
+
+        let updateData: any = {
+            name,
+            description,
+            sourceLanguage,
+            targetLanguage,
+            updatedAt: new Date()
+        };
+
+        // Se tiver novo arquivo, processar
+        if (file) {
+            // Deletar arquivo antigo do S3 se existir
+            if (existingBase.filePath) {
+                try {
+                    const s3Key = existingBase.filePath.split('.amazonaws.com/')[1];
+                    if (s3Key) {
+                        await deleteFromS3(s3Key);
+                    }
+                } catch (error) {
+                    console.error('Erro ao deletar arquivo antigo:', error);
+                }
+            }
+
+            const processedFile = await processKnowledgeBaseFile(file.path, {
+                name,
+                description,
+                sourceLanguage,
+                targetLanguage,
+                userId: req.user!.id,
+                originalFileName: file.originalname
+            });
+
+            updateData = {
+                ...updateData,
+                fileName: file.originalname,
+                filePath: processedFile.filePath,
+                fileType: processedFile.fileType,
+                fileSize: processedFile.fileSize
+            };
+        }
+
+        const updatedKnowledgeBase = await prisma.knowledgeBase.update({
+            where: { id },
+            data: updateData
+        });
+
+        res.json({
+            status: 'success',
+            data: updatedKnowledgeBase
+        });
+    } catch (error) {
+        if (file && fs.existsSync(file.path)) {
+            await fs.promises.unlink(file.path).catch(console.error);
+        }
+        throw error;
     }
-
-    const updatedKnowledgeBase = await prisma.knowledgeBase.update({
-        where: { id },
-        data: { name, description }
-    });
-
-    res.json({
-        status: 'success',
-        data: updatedKnowledgeBase
-    });
 });
 
 // Excluir base de conhecimento
