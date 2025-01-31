@@ -34,6 +34,7 @@ import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { EditorFooter } from './EditorFooter';
+import Typography from '@tiptap/extension-typography';
 
 interface DocumentEditorProps {
   translationId: string;
@@ -68,6 +69,7 @@ export function DocumentEditor({
   const [hasChanges, setHasChanges] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [pages, setPages] = useState<HTMLElement[]>([]);
+  const [columnLayout, setColumnLayout] = useState<'single' | 'double' | 'triple'>('single');
 
   const fontSizes = ['12', '14', '16', '18', '20', '24', '28', '32'];
   const symbols = [
@@ -79,85 +81,20 @@ export function DocumentEditor({
 
   const editor = useEditor({
     extensions: [
-      StarterKit.configure({
-        horizontalRule: false,
-        bulletList: false,
-        orderedList: false,
-      }),
-      Document.configure({
-        pageBreak: true,
-      }),
+      StarterKit,
+      Document,
       Paragraph,
       Text,
-      TextStyle,
-      Indent.configure({
-        types: ['paragraph', 'heading', 'listItem'],
-        minLevel: 0,
-        maxLevel: 8,
-      }),
-      CustomHorizontalRule,
-      Underline,
-      Highlight,
-      Color,
-      TextAlign.configure({
-        types: ['heading', 'paragraph'],
-      }),
-      Table.configure({
-        resizable: true,
-        HTMLAttributes: {
-          class: 'border-collapse table-fixed w-full',
-        },
-      }),
-      TableRow,
-      TableCell,
-      TableHeader,
-      CharacterCount,
-      FontSize,
-      BulletList.configure({
-        HTMLAttributes: {
-          class: 'list-disc ml-4',
-        },
-      }),
-      OrderedList.configure({
-        HTMLAttributes: {
-          class: 'list-decimal ml-4',
-        },
-      }),
-      ListItem,
-      Document.extend({
-        addGlobalAttributes() {
-          return [
-            {
-              types: ['textStyle'],
-              attributes: {
-                spellcheck: {
-                  default: true,
-                  parseHTML: element => element.getAttribute('spellcheck'),
-                  renderHTML: attributes => {
-                    return { spellcheck: attributes.spellcheck }
-                  }
-                },
-                lang: {
-                  default: targetLanguage,
-                  parseHTML: element => element.getAttribute('lang'),
-                  renderHTML: attributes => {
-                    return { lang: attributes.lang }
-                  }
-                }
-              }
-            }
-          ]
-        }
-      })
+      TextStyle.configure(),
+      TextAlign.configure({ types: ['paragraph', 'heading'] }),
+      Typography,
     ],
-    content: initialContent,
     editorProps: {
       attributes: {
-        class: 'prose max-w-none focus:outline-none h-full',
-        spellcheck: 'true',
-        lang: targetLanguage
-      },
+        class: 'prose max-w-none focus:outline-none min-h-[500px]',
+      }
     },
+    content: initialContent,
     onUpdate: ({ editor }) => {
       setHasChanges(true);
       
@@ -430,8 +367,38 @@ export function DocumentEditor({
     }
   }, [editor?.state.doc.content, pageMargins]);
 
+  // Função atualizada para aplicar layout de colunas
+  const applyColumnLayout = (layout: 'single' | 'double' | 'triple') => {
+    if (!editor) return;
+    
+    const contentDiv = editor.view.dom.closest('.editor-content') as HTMLElement;
+    if (contentDiv) {
+      contentDiv.style.columnCount = layout === 'single' ? '1' : 
+                                   layout === 'double' ? '2' : '3';
+      contentDiv.style.columnGap = '2em';
+      contentDiv.style.columnRule = '1px solid #e5e7eb';
+    }
+    setColumnLayout(layout);
+  };
+
+  // Adicione estes estilos ao seu CSS global ou inline
+  const editorStyles = `
+    [data-columns="double"] {
+      column-count: 2;
+      column-gap: 2em;
+      column-rule: 1px solid #e5e7eb;
+    }
+    
+    [data-columns="triple"] {
+      column-count: 3;
+      column-gap: 2em;
+      column-rule: 1px solid #e5e7eb;
+    }
+  `;
+
   return (
     <div className="flex flex-col h-screen">
+      <style>{editorStyles}</style>
       {/* Barra de ferramentas principal */}
       <div className="border-b border-gray-200 p-2">
         <div className="flex items-center justify-between">
@@ -827,6 +794,19 @@ export function DocumentEditor({
                 </div>
               )}
             </div>
+
+            {/* Controle de colunas */}
+            <div className="flex items-center gap-2">
+              <select
+                value={columnLayout}
+                onChange={(e) => applyColumnLayout(e.target.value as 'single' | 'double' | 'triple')}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="single">Uma coluna</option>
+                <option value="double">Duas colunas</option>
+                <option value="triple">Três colunas</option>
+              </select>
+            </div>
           </div>
 
           {/* Área de salvamento */}
@@ -858,18 +838,20 @@ export function DocumentEditor({
         <div 
           className="bg-white shadow-lg mx-auto"
           style={{
-            width: '210mm', // Largura A4
-            minHeight: '297mm', // Altura mínima A4
+            width: '210mm',
+            minHeight: '297mm',
             padding: `${pageMargins.top} ${pageMargins.right} ${pageMargins.bottom} ${pageMargins.left}`,
             transform: `scale(${zoom / 100})`,
             transformOrigin: 'top center',
             border: '1px solid #e5e7eb',
           }}
         >
-          <EditorContent 
-            editor={editor}
-            className="min-h-full prose max-w-none focus:outline-none"
-          />
+          <div className="editor-content">
+            <EditorContent 
+              editor={editor}
+              className="min-h-full prose max-w-none focus:outline-none"
+            />
+          </div>
         </div>
       </div>
 

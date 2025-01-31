@@ -1,3 +1,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  .editor-content {
+    column-gap: 2em;
+    column-rule: 1px solid #e5e7eb;
+  }
+
+  .editor-content[data-columns="double"] {
+    column-count: 2;
+  }
+
+  .editor-content[data-columns="triple"] {
+    column-count: 3;
+  }
+}
