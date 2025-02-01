@@ -8,59 +8,37 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 
 // Login
 export const login = asyncHandler(async (req: Request, res: Response) => {
-    console.log('📝 Tentativa de login:', {
-        email: req.body.email,
-        hasPassword: !!req.body.password
-    });
-
     const { email, password } = req.body;
 
-    // Validar campos obrigatórios
+    console.log('📝 Tentativa de login:', { email });
+
     if (!email || !password) {
-        console.log('❌ Email ou senha não fornecidos');
         throw new UnauthorizedError('Email e senha são obrigatórios');
     }
 
-    // Buscar usuário
     const user = await prisma.user.findUnique({
         where: { email }
     });
 
-    console.log('🔍 Usuário encontrado:', {
-        found: !!user,
-        userId: user?.id,
-        userEmail: user?.email
-    });
-
     if (!user) {
-        console.log('❌ Usuário não encontrado');
+        console.log('❌ Usuário não encontrado:', email);
         throw new UnauthorizedError('Credenciais inválidas');
     }
 
-    // Verificar senha
     const validPassword = await bcrypt.compare(password, user.password);
-    console.log('🔐 Verificação de senha:', {
-        valid: validPassword,
-        passwordLength: password.length,
-        hashedPasswordLength: user.password.length
-    });
-
+    
     if (!validPassword) {
-        console.log('❌ Senha inválida');
+        console.log('❌ Senha inválida para usuário:', email);
         throw new UnauthorizedError('Credenciais inválidas');
     }
 
-    // Gerar token
     const token = jwt.sign(
         { id: user.id },
-        process.env.JWT_SECRET!,
+        process.env.JWT_SECRET || 'default_secret_key',
         { expiresIn: '24h' }
     );
 
-    console.log('✅ Login bem-sucedido:', {
-        userId: user.id,
-        userEmail: user.email
-    });
+    console.log('✅ Login bem-sucedido para:', email);
 
     res.json({
         status: 'success',

@@ -11,14 +11,15 @@ datasource db {
 }
 
 model User {
-  id              String           @id @default(cuid())
-  name            String
-  email           String           @unique
-  password        String
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
-  translations    Translation[]
-  knowledgeBases  KnowledgeBase[]
+  id             String          @id @default(cuid())
+  name           String
+  email          String          @unique
+  password       String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  translations   Translation[]
+  knowledgeBases KnowledgeBase[]
+  prompts        Prompt[]
 }
 
 model Translation {
@@ -27,34 +28,69 @@ model Translation {
   filePath        String
   fileSize        Int
   fileType        String
-  originalName    String        @default("")
+  originalName    String         @default("")
   sourceLanguage  String
   targetLanguage  String
   status          String         @default("pending")
   errorMessage    String?
   translatedUrl   String?
-  costData        String?       @default("{}")
+  costData        String?        @default("{}")
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   userId          String
   user            User           @relation(fields: [userId], references: [id])
   knowledgeBaseId String?
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
+  promptId        String?
+  promptVersion   String?
+  prompt          Prompt?        @relation(fields: [promptId], references: [id])
 }
 
 model KnowledgeBase {
-  id              String        @id @default(cuid())
-  name            String
-  description     String
-  fileName        String
-  filePath        String
-  fileSize        Int
-  fileType        String
-  sourceLanguage  String
-  targetLanguage  String
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-  translations    Translation[]
+  id             String        @id @default(cuid())
+  name           String
+  description    String
+  fileName       String
+  filePath       String
+  fileSize       Int
+  fileType       String
+  sourceLanguage String
+  targetLanguage String
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  translations   Translation[]
+}
+
+model Prompt {
+  id           String          @id @default(uuid())
+  name         String
+  description  String
+  content      String          @db.Text
+  tags         String[]        @default([])
+  version      String          @default("1.0.0")
+  userId       String
+  user         User            @relation(fields: [userId], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  translations Translation[]
+  versions     PromptVersion[] @relation("PromptVersions")
+
+  @@index([userId])
+}
+
+model PromptVersion {
+  id          String   @id @default(cuid())
+  version     String
+  content     String   @db.Text
+  description String?
+  tags        String[]
+  createdAt   DateTime @default(now())
+  promptId    String
+  prompt      Prompt   @relation("PromptVersions", fields: [promptId], references: [id])
+  userId      String
+
+  @@index([promptId])
+  @@index([userId])
 }

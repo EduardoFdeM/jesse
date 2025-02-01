@@ -11,7 +11,10 @@ const corsOptions = {
     'Content-Type', 
     'Authorization', 
     'Accept', 
-    'X-Requested-With'
+    'X-Requested-With',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers'
   ],
   exposedHeaders: ['set-cookie'],
   optionsSuccessStatus: 204

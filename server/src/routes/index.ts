@@ -14,4 +14,9 @@ router.use('/translations', translationRoutes);
 // Rotas de glossário
 router.use('/knowledge-bases', knowledgeRoutes);
 
-export default router; 
+export default router;
+
+export { default as promptRoutes } from './prompt.routes.js';
+export { default as authRoutes } from './auth.routes.js';
+export { default as translationRoutes } from './translation.routes.js';
+export { default as knowledgeRoutes } from './knowledge.routes.js'; 

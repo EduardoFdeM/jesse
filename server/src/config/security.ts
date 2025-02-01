@@ -5,8 +5,24 @@ import { Express } from 'express';
 import corsOptions from './cors.js';
 
 export const configureSecurityMiddleware = (app: Express) => {
-  // CORS configuration - única configuração de CORS
-  app.use(cors(corsOptions));
+  // Ajustar rate limit
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 200, // Aumentar limite
+    message: 'Muitas requisições, tente novamente mais tarde',
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  app.use('/api/', limiter); // Aplicar apenas em rotas da API
+
+  // Configurar CORS mais permissivo para desenvolvimento
+  app.use(cors({
+    origin: true,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
 
   // Basic security headers with Helmet
   app.use(
@@ -17,16 +33,6 @@ export const configureSecurityMiddleware = (app: Express) => {
       crossOriginOpenerPolicy: false
     })
   );
-
-  // Rate limiting
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: 'Too many requests from this IP, please try again later.',
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
-  app.use(limiter);
 
   app.use(helmet.hidePoweredBy());
 };

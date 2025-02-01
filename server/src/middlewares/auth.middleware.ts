@@ -25,45 +25,44 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
+    console.log('🔍 Autenticação iniciada:', {
+        path: req.path,
+        headers: {
+            authorization: req.headers.authorization,
+            origin: req.headers.origin
+        }
+    });
+    
     try {
-        console.log('🔒 Headers recebidos:', req.headers);
         const authHeader = req.headers.authorization;
         
-        if (!authHeader) {
-            console.log('❌ Header de autorização ausente');
-            throw new UnauthorizedError('Token não fornecido');
-        }
-
-        if (!authHeader.startsWith('Bearer ')) {
-            console.log('❌ Formato do token inválido');
-            throw new UnauthorizedError('Formato do token inválido');
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            console.log('❌ Token não fornecido ou formato inválido');
+            throw new UnauthorizedError('Token não fornecido ou formato inválido');
         }
 
         const token = authHeader.split(' ')[1];
-        console.log('🔑 Token extraído:', token.substring(0, 10) + '...');
         
-        try {
-            const decoded = jwt.verify(token, process.env.JWT_SECRET!) as { id: string };
-            console.log('✅ Token verificado para usuário:', decoded.id);
-            
-            const user = await prisma.user.findUnique({
-                where: { id: decoded.id },
-                select: { id: true, email: true, name: true }
-            });
+        console.log('🔑 Verificando token...');
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key') as { id: string };
+        
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            select: { id: true, email: true, name: true }
+        });
 
-            if (!user) {
-                console.log('❌ Usuário não encontrado:', decoded.id);
-                throw new UnauthorizedError('Usuário não encontrado');
-            }
-
-            req.user = user;
-            next();
-        } catch (jwtError) {
-            console.error('❌ Erro na verificação do token:', jwtError);
-            throw new UnauthorizedError('Token inválido ou expirado');
+        if (!user) {
+            console.log('❌ Usuário não encontrado para o token');
+            throw new UnauthorizedError('Usuário não encontrado');
         }
+
+        console.log('✅ Usuário autenticado:', user.email);
+        req.user = user;
+        next();
     } catch (error) {
-        console.error('❌ Erro de autenticação:', error);
-        next(error);
+        console.error('❌ Erro na autenticação:', error);
+        res.status(401).json({
+            error: error instanceof Error ? error.message : 'Erro de autenticação'
+        });
     }
 };

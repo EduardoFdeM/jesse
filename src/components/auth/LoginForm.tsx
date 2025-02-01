@@ -71,28 +71,11 @@ export function LoginForm() {
         console.error('Resposta inesperada do servidor:', response.data);
         throw new Error('Formato de resposta inválido');
       }
-    } catch (err: any) {
-      console.error('Erro detalhado:', {
-        message: err.message,
-        response: err.response?.data,
-        status: err.response?.status
-      });
-
-      let errorMessage = 'Erro ao fazer login. Tente novamente.';
+    } catch (error: any) {
+      console.error('Erro ao fazer login:', error);
       
-      if (err.response?.data?.errors) {
-        const errors = err.response.data.errors;
-        errorMessage = errors.map((error: any) => error.message).join(', ');
-      } else if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.response?.status === 401) {
-        errorMessage = 'Email ou senha incorretos';
-      } else if (!err.response) {
-        errorMessage = 'Não foi possível conectar ao servidor';
-      }
-
-      setError(errorMessage);
-      toast.error(errorMessage);
+      const message = error.response?.data?.message || 'Erro ao fazer login';
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }

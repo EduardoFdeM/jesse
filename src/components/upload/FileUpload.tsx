@@ -2,13 +2,14 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import api, { clearControllers } from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
-import { KnowledgeBase } from '../../types';
+import { KnowledgeBase, Prompt } from '../../types';
 
 interface FileUploadProps {
   sourceLanguage: string;
   targetLanguage: string;
   onFileSelect: (files: File[]) => Promise<void>;
   knowledgeBases: KnowledgeBase[];
+  prompts: Prompt[];
 }
 
 interface UploadQueueItem {
@@ -21,15 +22,18 @@ interface UploadQueueItem {
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 2000;
 // const DEBOUNCE_DELAY = 1000;
-export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLanguage, onFileSelect, knowledgeBases }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLanguage, onFileSelect, knowledgeBases = [], prompts = [] }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
+  const [useCustomPrompt, setUseCustomPrompt] = useState(false);
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>('');
+  const [selectedPrompt, setSelectedPrompt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const uploadQueueRef = useRef<UploadQueueItem[]>([]);
   const processingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const uploadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [availablePrompts, setAvailablePrompts] = useState<Prompt[]>([]);
 
   // Limpar recursos ao desmontar
   useEffect(() => {
@@ -93,6 +97,23 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
     }
   }, [processQueue]);
 
+  // Adicionar useEffect para carregar prompts
+  useEffect(() => {
+    const loadPrompts = async () => {
+      try {
+        const response = await api.get('/api/prompts');
+        setAvailablePrompts(response.data.data);
+      } catch (error) {
+        console.error('Erro ao carregar prompts:', error);
+        toast.error('Erro ao carregar prompts');
+      }
+    };
+
+    if (useCustomPrompt) {
+      loadPrompts();
+    }
+  }, [useCustomPrompt]);
+
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       if (acceptedFiles.length > 0) {
@@ -102,29 +123,43 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
     []
   );
 
+  // Função para validar seleção de prompt
+  const validatePromptSelection = () => {
+    if (useCustomPrompt && !selectedPrompt) {
+      toast.error('Selecione um prompt personalizado');
+      return false;
+    }
+    return true;
+  };
+
   const handleSubmit = async () => {
     if (!selectedFile) {
       toast.error('Selecione um arquivo primeiro');
       return;
     }
 
-    if (!sourceLanguage || !targetLanguage) {
-      toast.error('Selecione os idiomas de origem e destino');
-      return;
-    }
+    if (!validatePromptSelection()) return;
 
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('sourceLanguage', sourceLanguage);
     formData.append('targetLanguage', targetLanguage);
     formData.append('originalname', selectedFile.name);
+    
+    if (useKnowledgeBase && selectedKnowledgeBase) {
+      formData.append('knowledgeBaseId', selectedKnowledgeBase);
+    }
+
+    if (useCustomPrompt && selectedPrompt) {
+      formData.append('promptId', selectedPrompt);
+    }
 
     try {
-        await onFileSelect([selectedFile]);
-        setSelectedFile(null);
+      await onFileSelect([selectedFile]);
+      setSelectedFile(null);
     } catch (error) {
-        console.error('Erro no envio:', error);
-        toast.error('Erro ao enviar arquivo');
+      console.error('Erro no envio:', error);
+      toast.error('Erro ao enviar arquivo');
     }
   };
 
@@ -148,41 +183,73 @@ export const FileUpload: React.FC<FileUploadProps> = ({ sourceLanguage, targetLa
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          id="useKnowledgeBase"
-          checked={useKnowledgeBase}
-          onChange={(e) => setUseKnowledgeBase(e.target.checked)}
-          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-700"
-        />
-        <label htmlFor="useKnowledgeBase" className="text-sm text-gray-700 dark:text-gray-300">
-          Usar base de conhecimento para tradução
-        </label>
-      </div>
-
-      {useKnowledgeBase && (
-        <div className="mt-4">
-          <label className="block text-sm font-medium text-gray-700">
-            Base de Conhecimento (opcional)
+      {/* Seção de Base de Conhecimento */}
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="useKnowledgeBase"
+            checked={useKnowledgeBase}
+            onChange={(e) => setUseKnowledgeBase(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="useKnowledgeBase" className="text-sm text-gray-700">
+            Usar base de conhecimento para tradução
           </label>
+        </div>
+
+        {useKnowledgeBase && (
           <select
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            value={selectedKnowledgeBase}
+            onChange={(e) => setSelectedKnowledgeBase(e.target.value)}
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="">Nenhuma</option>
+            <option value="">Selecione uma base</option>
             {knowledgeBases.map(kb => (
               <option key={kb.id} value={kb.id}>
                 {kb.name}
               </option>
             ))}
           </select>
-        </div>
-      )}
+        )}
+      </div>
 
+      {/* Seção de Prompt */}
+      <div className="space-y-2">
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="useCustomPrompt"
+            checked={useCustomPrompt}
+            onChange={(e) => setUseCustomPrompt(e.target.checked)}
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="useCustomPrompt" className="text-sm text-gray-700">
+            Usar prompt personalizado
+          </label>
+        </div>
+
+        {useCustomPrompt && (
+          <select
+            value={selectedPrompt}
+            onChange={(e) => setSelectedPrompt(e.target.value)}
+            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">Selecione um prompt...</option>
+            {availablePrompts.map((prompt) => (
+              <option key={prompt.id} value={prompt.id}>
+                {prompt.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {/* Área de Upload */}
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer 
-          ${isDragActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-600'} 
+          ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'} 
           ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         <input {...getInputProps()} disabled={isLoading || processingRef.current} />

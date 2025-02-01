@@ -9,6 +9,8 @@ import { TranslatedDocuments } from './components/translation/TranslatedDocument
 import { PrivateRoute } from './components/auth/PrivateRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Editor } from './pages/Editor';
+import { PromptList } from './components/prompt/PromptList';
+import { PromptForm } from './components/prompt/PromptForm';
 
 export default function App() {
     return (
@@ -21,9 +23,16 @@ export default function App() {
                     <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>}>
                         <Route index element={<Navigate to="/translations" replace />} />
                         <Route path="translations" element={<TranslatedDocuments />} />
-                        <Route path="knowledge-bases" element={<KnowledgeBaseList />} />
-                        <Route path="knowledge-bases/new" element={<KnowledgeBaseForm />} />
-                        <Route path="knowledge-bases/:id/edit" element={<KnowledgeBaseForm />} />
+                        <Route path="knowledge-bases">
+                            <Route index element={<KnowledgeBaseList />} />
+                            <Route path="new" element={<KnowledgeBaseForm />} />
+                            <Route path=":id/edit" element={<KnowledgeBaseForm />} />
+                        </Route>
+                        <Route path="prompts">
+                            <Route index element={<PromptList />} />
+                            <Route path="new" element={<PromptForm />} />
+                            <Route path=":id/edit" element={<PromptForm />} />
+                        </Route>
                     </Route>
                     <Route path="/editor/:id" element={<Editor />} />
                 </Routes>

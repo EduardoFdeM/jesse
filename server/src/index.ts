@@ -10,6 +10,8 @@ import { initializeSocket } from './config/socket.js';
 import { configureSecurityMiddleware } from './config/security.js';
 import cors from 'cors';
 import corsOptions from './config/cors.js';
+import promptRoutes from './routes/prompt.routes.js';
+import { authenticate } from './middlewares/auth.middleware.js';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -73,8 +75,20 @@ app.use('/api/health', healthRoutes);
 
 // Rotas da API
 app.use('/api/auth', authRoutes);
-app.use('/api/translations', translationRoutes);
-app.use('/api/knowledge-bases', knowledgeRoutes);
+app.use('/api/translations', authenticate, translationRoutes);
+app.use('/api/knowledge-bases', authenticate, knowledgeRoutes);
+app.use('/api/prompts', authenticate, promptRoutes);
+
+// Adicionar log específico para debug de autenticação
+app.use((req, res, next) => {
+    console.log('🔒 Auth Debug:', {
+        hasAuthHeader: !!req.headers.authorization,
+        authHeader: req.headers.authorization,
+        path: req.path,
+        user: req.user
+    });
+    next();
+});
 
 // Tratamento de erros 404
 app.use((req, res) => {

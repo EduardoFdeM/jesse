@@ -6,13 +6,18 @@ import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
 import { Server } from 'socket.io';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
+import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
 
 interface PDFTextR {
     T: string;
+    x: number;
+    y: number;
 }
 
 interface PDFText {
     R: PDFTextR[];
+    x: number;
+    y: number;
 }
 
 interface PDFPage {
@@ -93,27 +98,51 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
 
         const pdfParser = new PDFParser();
         
-        pdfParser.on('pdfParser_dataReady', (pdfData: PDFData) => {
+        pdfParser.on('pdfParser_dataReady', (data: any) => {
             clearTimeout(timeout);
             try {
-                const text = pdfData.Pages
-                    .map((page: PDFPage) => 
-                        page.Texts.map((text: PDFText) => 
-                            text.R.map((r: PDFTextR) => r.T).join('')
-                        ).join(' ')
-                    )
-                    .join('\n');
-                resolve(decodeURIComponent(text));
-            } catch {
+                // Extrair texto mantendo a estrutura de colunas
+                const text = data.Pages.map((page: PDFPage) => {
+                    // Agrupar textos por posição X para identificar colunas
+                    const columnGroups: { [key: number]: PDFText[] } = {};
+                    
+                    page.Texts.forEach((text: PDFText) => {
+                        // Usar a posição X do primeiro elemento R se disponível
+                        const xPos = Math.round((text.x || text.R[0]?.x || 0) / 10) * 10;
+                        if (!columnGroups[xPos]) {
+                            columnGroups[xPos] = [];
+                        }
+                        columnGroups[xPos].push(text);
+                    });
+
+                    // Ordenar colunas da esquerda para direita
+                    const sortedColumns = Object.entries(columnGroups)
+                        .sort(([a], [b]) => Number(a) - Number(b));
+
+                    // Ordenar textos dentro de cada coluna por posição Y
+                    sortedColumns.forEach(([_, texts]) => {
+                        texts.sort((a, b) => (a.y || a.R[0]?.y || 0) - (b.y || b.R[0]?.y || 0));
+                    });
+
+                    // Montar texto por coluna
+                    return sortedColumns.map(([_, texts]) => 
+                        texts.map((text: PDFText) => 
+                            text.R.map((r: PDFTextR) => decodeURIComponent(r.T)).join('')
+                        ).join('\n')
+                    ).join('\n\n');
+                }).join('\n\n---PAGE---\n\n');
+
+                resolve(text);
+            } catch (error) {
                 reject(new Error('Erro ao processar texto do PDF'));
             }
         });
         
-        pdfParser.on('pdfParser_dataError', () => {
+        pdfParser.on('pdfParser_dataError', (error: Error) => {
             clearTimeout(timeout);
-            reject(new Error('Erro ao processar PDF'));
+            reject(error);
         });
-        
+
         try {
             pdfParser.loadPDF(filePath);
         } catch (error) {
@@ -190,6 +219,39 @@ const calculateCost = (inputTokens: number, outputTokens: number): string => {
     return totalCost.toFixed(4); // Sempre usar 4 casas decimais para consistência
 };
 
+// Função para buscar e preparar o prompt
+const getTranslationPrompt = async (params: TranslateFileParams): Promise<string> => {
+    if (!params.promptId) {
+        return DEFAULT_TRANSLATION_PROMPT;
+    }
+
+    const prompt = await prisma.prompt.findFirst({
+        where: { 
+            id: params.promptId,
+            userId: params.userId
+        },
+        include: {
+            versions: {
+                where: {
+                    version: params.promptVersion || undefined
+                },
+                orderBy: {
+                    createdAt: 'desc'
+                },
+                take: 1
+            }
+        }
+    });
+
+    if (!prompt) {
+        throw new Error('Prompt não encontrado');
+    }
+
+    // Usar a versão específica se fornecida, caso contrário usar a mais recente
+    const version = prompt.versions[0];
+    return version ? version.content : prompt.content;
+};
+
 // Função para traduzir um chunk com retry
 const translateChunkWithRetry = async (
     chunk: string,
@@ -197,23 +259,20 @@ const translateChunkWithRetry = async (
     _knowledgeBaseContent: string
 ): Promise<{ text: string; costLog: TranslationCost }> => {
     try {
+        const promptContent = await getTranslationPrompt(params);
+        
+        // Substitui as variáveis no prompt com os valores reais
+        const finalPrompt = promptContent
+            .replace('{sourceLanguage}', params.sourceLanguage)
+            .replace('{targetLanguage}', params.targetLanguage)
+            .replace('{text}', chunk);
+        
         const completion = await openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [
                 { 
                     role: "system", 
-                    content: `Você é um tradutor profissional de ${params.sourceLanguage} para ${params.targetLanguage}. 
-                             Mantenha EXATAMENTE a mesma formatação do texto original, incluindo:
-                             - Espaçamentos e indentação
-                             - Quebras de linha
-                             - Bullets e numeração
-                             - Títulos e subtítulos
-                             - Tabelas e colunas
-                             - Parágrafos e alinhamento
-                             - Qualquer caractere especial ou símbolo
-                             - Para idiomas RTL (árabe e persa), mantenha a direção correta do texto
-                             - Preserve caracteres especiais e diacríticos
-                             - Mantenha a formatação específica de cada idioma`
+                    content: finalPrompt
                 },
                 { 
                     role: "user", 
@@ -274,7 +333,7 @@ const saveTranslatedFile = async (
                     size: 'A4'
                 });
                 const chunks: Buffer[] = [];
-                
+
                 return new Promise((resolve, reject) => {
                     pdfDoc.on('data', chunk => chunks.push(chunk));
                     pdfDoc.on('end', async () => {
@@ -291,14 +350,26 @@ const saveTranslatedFile = async (
                         }
                     });
 
-                    // Preservar quebras de linha no PDF
-                    text.split('\n').forEach(line => {
-                        pdfDoc.text(line, {
-                            align: 'left',
-                            continued: false
+                    // Configurar layout de colunas
+                    const pages = text.split('---PAGE---');
+                    pages.forEach((pageContent, pageIndex) => {
+                        if (pageIndex > 0) pdfDoc.addPage();
+
+                        const columns = pageContent.split('\n\n');
+                        const columnWidth = (pdfDoc.page.width - 100) / columns.length;
+
+                        columns.forEach((columnContent, columnIndex) => {
+                            pdfDoc.text(columnContent.trim(), {
+                                columns: columns.length,
+                                width: columnWidth,
+                                height: pdfDoc.page.height - 100,
+                                align: 'left',
+                                continued: false,
+                                indent: columnIndex * columnWidth + 50
+                            });
                         });
                     });
-                    
+
                     pdfDoc.end();
                 });
             }
@@ -335,6 +406,8 @@ interface TranslateFileParams {
     translationId: string;
     outputFormat: string;
     originalName: string;
+    promptId?: string;
+    promptVersion?: string;
 }
 
 export type ChatCompletionMessageParam = {

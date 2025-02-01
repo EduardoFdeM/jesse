@@ -2,6 +2,11 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { Request, Response, NextFunction } from 'express';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const uploadDir = path.join(process.cwd(), 'uploads');
 
@@ -78,28 +83,38 @@ const isFileAllowed = (mimetype: string, originalname: string): boolean => {
     return VALID_EXTENSIONS.includes(fileExtension);
 };
 
-// Configurar o multer com single upload
-export const upload = multer({
-    storage: multer.diskStorage({
-        destination: (req, file, cb) => {
-            cb(null, uploadDir);
-        },
-        filename: async (req, file, cb) => {
-            const uniqueSuffix = Date.now();
-            const ext = path.extname(file.originalname);
-            const fileName = `${uniqueSuffix}${ext}`;
-            cb(null, fileName);
-        }
-    }),
-    limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB
-        files: 1 // Permitir apenas um arquivo por vez
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadPath = path.join(__dirname, '../../uploads');
+        cb(null, uploadPath);
     },
-    fileFilter: (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-        if (isFileAllowed(file.mimetype, file.originalname)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Formato de arquivo não suportado. Os formatos permitidos são: PDF, TXT, XLSX, CSV e DOCX.'));
-        }
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const fileFilter = (req: any, file: any, cb: any) => {
+    // Incluir PDF na lista de tipos permitidos
+    const allowedTypes = [
+        'text/plain',
+        'text/csv',
+        'application/pdf',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+    
+    if (allowedTypes.includes(file.mimetype) || isFileAllowed(file.mimetype, file.originalname)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Tipo de arquivo não suportado. Use apenas PDF, TXT, CSV, XLS ou XLSX.'), false);
+    }
+};
+
+export const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter,
+    limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB
     }
 });

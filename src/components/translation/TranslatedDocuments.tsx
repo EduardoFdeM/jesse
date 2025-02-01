@@ -152,14 +152,6 @@ export function TranslatedDocuments() {
             formData.append('sourceLanguage', sourceLanguage || 'pt');
             formData.append('targetLanguage', targetLanguage || 'en');
 
-            // Adicionar logs detalhados
-            console.log('FormData criado:', {
-                fileName: file.name,
-                fileSize: file.size,
-                sourceLanguage: sourceLanguage || 'pt',
-                targetLanguage: targetLanguage || 'en'
-            });
-
             const response = await api.post('/api/translations', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
@@ -170,17 +162,15 @@ export function TranslatedDocuments() {
                 }
             });
 
-            console.log('Resposta do upload:', response.data);
-            
             if (response.data.error) {
                 throw new Error(response.data.error);
             }
 
             toast.success('Arquivo enviado com sucesso!');
             await loadTranslations();
-        } catch (error: Error | unknown) {
-            console.error('Erro ao fazer upload:', error);
-            toast.error(error instanceof Error ? error.message : 'Erro ao fazer upload do arquivo');
+        } catch (error: any) {
+            console.error('Erro detalhado no upload:', error.response?.data || error);
+            toast.error(error.response?.data?.message || error.message || 'Erro ao fazer upload do arquivo');
         }
     };
     
@@ -613,6 +603,25 @@ export function TranslatedDocuments() {
                                         Erro: {translation.errorMessage}
                                     </div>
                                 )}
+                            </div>
+
+                            <div className="flex gap-4 mt-2 text-sm text-gray-600">
+                                <div className="flex items-center">
+                                    <span className="mr-2">Base de Conhecimento:</span>
+                                    {translation.knowledgeBaseId ? (
+                                        <span className="text-green-600">✓</span>
+                                    ) : (
+                                        <span className="text-red-600">✗</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center">
+                                    <span className="mr-2">Prompt Personalizado:</span>
+                                    {translation.promptId ? (
+                                        <span className="text-green-600">✓</span>
+                                    ) : (
+                                        <span className="text-red-600">✗</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     ))}

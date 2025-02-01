@@ -71,64 +71,49 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
         setIsSubmitting(true);
         setError(null);
 
-        // Validar campos obrigatórios
-        if (!formData.name.trim()) {
-            setError('O nome é obrigatório');
-            setIsSubmitting(false);
-            return;
-        }
-
-        if (!formData.description.trim()) {
-            setError('A descrição é obrigatória');
-            setIsSubmitting(false);
-            return;
-        }
-
-        if (!formData.sourceLanguage) {
-            setError('O idioma de origem é obrigatório');
-            setIsSubmitting(false);
-            return;
-        }
-
-        if (!formData.targetLanguage) {
-            setError('O idioma de destino é obrigatório');
-            setIsSubmitting(false);
-            return;
-        }
-
-        // Validar arquivo apenas na criação
-        if (!id && !file) {
-            setError('O arquivo é obrigatório para criar uma nova base');
-            setIsSubmitting(false);
-            return;
-        }
-
         try {
+            // Validações
+            if (!formData.name.trim()) {
+                setError('O nome é obrigatório');
+                return;
+            }
+
             const data = new FormData();
             data.append('name', formData.name);
             data.append('description', formData.description);
             data.append('sourceLanguage', formData.sourceLanguage);
             data.append('targetLanguage', formData.targetLanguage);
 
+            // Verificar se tem arquivo
+            if (!id && !file) {
+                setError('O arquivo é obrigatório para criar uma nova base');
+                return;
+            }
+
+            // Adicionar arquivo ao FormData se existir
             if (file) {
                 data.append('file', file);
+                console.log('📎 Arquivo anexado:', file.name, file.type, file.size);
             }
 
             if (id) {
-                await api.put(`/api/knowledge-bases/${id}`, data);
+                await api.put(`/api/knowledge-bases/${id}`, data, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    }
+                });
             } else {
-                await api.post('/api/knowledge-bases', data);
+                await api.post('/api/knowledge-bases', data, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    }
+                });
             }
 
             navigate('/knowledge-bases');
         } catch (err: any) {
             console.error('Erro ao salvar base de conhecimento:', err);
-            const errorMessage = err.response?.data?.message;
-            if (errorMessage?.includes('mesmo nome')) {
-                setError('Já existe uma base de conhecimento com este nome');
-            } else {
-                setError(errorMessage || 'Erro ao salvar base de conhecimento');
-            }
+            setError(err.response?.data?.message || 'Erro ao salvar base de conhecimento');
         } finally {
             setIsSubmitting(false);
         }

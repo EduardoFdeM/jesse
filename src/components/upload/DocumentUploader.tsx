@@ -1,14 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileUpload } from './FileUpload';
 import { LanguageSelector } from '../translation/LanguageSelector';
 import api from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
+import { KnowledgeBase, Prompt } from '../../types';
 
 export function DocumentUploader() {
     const [sourceLanguage, setSourceLanguage] = useState('');
     const [targetLanguage, setTargetLanguage] = useState('');
     const [outputFormat, setOutputFormat] = useState('pdf');
-    
+    const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+    const [prompts, setPrompts] = useState<Prompt[]>([]);
+
+    useEffect(() => {
+        loadKnowledgeBases();
+        loadPrompts();
+    }, []);
+
+    const loadKnowledgeBases = async () => {
+        try {
+            const response = await api.get('/api/knowledge-bases');
+            setKnowledgeBases(response.data.data);
+        } catch (error) {
+            console.error('Erro ao carregar bases de conhecimento:', error);
+        }
+    };
+
+    const loadPrompts = async () => {
+        try {
+            const response = await api.get('/api/prompts');
+            setPrompts(response.data.data);
+        } catch (error) {
+            console.error('Erro ao carregar prompts:', error);
+        }
+    };
+
     const handleFileSelect = async (files: File[]) => {
         if (files.length === 0) {
             toast.error('Por favor, selecione um arquivo.');
@@ -58,6 +84,8 @@ export function DocumentUploader() {
                 onFileSelect={handleFileSelect}
                 sourceLanguage={sourceLanguage}
                 targetLanguage={targetLanguage}
+                knowledgeBases={knowledgeBases}
+                prompts={prompts}
             />
         </div>
     );

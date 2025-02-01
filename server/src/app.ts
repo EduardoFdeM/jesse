@@ -8,6 +8,9 @@ import authRoutes from './routes/auth.routes.js';
 import translationRoutes from './routes/translation.routes.js';
 import knowledgeRoutes from './routes/knowledge.routes.js';
 import corsOptions from './config/cors.js';
+import promptRoutes from './routes/prompt.routes.js';
+import { authenticate } from './middlewares/auth.middleware.js';
+import cookieParser from 'cookie-parser';
 
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +43,11 @@ app.use(express.urlencoded({ extended: true }));
 // Configuração do CORS
 app.use(cors(corsOptions));
 
+// Adicionar middleware para preflight requests
+app.options('*', cors(corsOptions));
+
+app.use(cookieParser());
+
 // Logging middleware
 app.use((req, _res, next) => {
     console.log(`📝 ${req.method} ${req.path}`, {
@@ -66,6 +74,7 @@ app.get('/', (_req, res) => {
             auth: '/api/auth',
             translations: '/api/translations',
             knowledgeBases: '/api/knowledge-bases',
+            prompts: '/api/prompts',
             socket: '/socket.io'
         }
     });
@@ -75,29 +84,67 @@ app.get('/', (_req, res) => {
 import healthRoutes from './routes/health.routes.js';
 app.use('/api/health', healthRoutes);
 
-// Rotas da API
-app.use('/api/auth', authRoutes);
-app.use('/api/translations', translationRoutes);
-app.use('/api/knowledge-bases', knowledgeRoutes);
+// Middleware de verificação de rotas
+const routeLogger = (prefix: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+    console.log(`📝 ${req.method} ${prefix}${req.path}`, {
+        headers: req.headers,
+        query: req.query,
+        body: req.method !== 'GET' ? req.body : undefined
+    });
+    next();
+};
 
-// Tratamento de erros 404
-app.use((req, res) => {
-    console.log('❌ Rota não encontrada:', {
+// Rotas públicas
+app.use('/api/auth', routeLogger('/api/auth'), authRoutes);
+
+// Middleware de autenticação
+app.use('/api', authenticate);
+
+// Rotas protegidas: registra autenticação apenas para a rota de prompts
+app.use('/api/prompts', authenticate, routeLogger('/api/prompts'), promptRoutes);
+app.use('/api/translations', routeLogger('/api/translations'), translationRoutes);
+app.use('/api/knowledge-bases', routeLogger('/api/knowledge-bases'), knowledgeRoutes);
+
+// Adicionar log para debug
+app.use((req, res, next) => {
+    console.log('🔍 Rota acessada:', {
         method: req.method,
         path: req.path,
-        headers: req.headers
+        baseUrl: req.baseUrl,
+        originalUrl: req.originalUrl,
+        user: req.user?.id
     });
+    next();
+});
+
+// Log após registro de rotas
+console.log('✅ Rotas registradas:', {
+    auth: '/api/auth',
+    translations: '/api/translations',
+    knowledgeBases: '/api/knowledge-bases',
+    prompts: '/api/prompts'
+});
+
+// Middleware para rotas não encontradas (404)
+app.use((req, res) => {
+    const error = {
+        method: req.method,
+        path: req.path,
+        message: 'Rota não encontrada',
+        availableRoutes: [
+            '/api/auth',
+            '/api/translations',
+            '/api/knowledge-bases',
+            '/api/prompts'
+        ]
+    };
+    
+    console.log('❌ Rota não encontrada:', error);
+    
     res.status(404).json({
         error: 'Rota não encontrada',
-        method: req.method,
-        path: req.path,
-        timestamp: new Date().toISOString(),
-        availableEndpoints: {
-            root: '/',
-            auth: '/api/auth',
-            translations: '/api/translations',
-            knowledgeBases: '/api/knowledge-bases'
-        }
+        details: error,
+        timestamp: new Date().toISOString()
     });
 });
 

@@ -15,6 +15,7 @@ import { authenticatedHandler } from '../utils/asyncHandler.js';
 import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
+import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
 
 // Interfaces para o PDF Parser
 interface PDFTextR {
@@ -107,19 +108,30 @@ const generateUpdatedFile = async (content: string, fileType: string): Promise<s
 };
 
 // Criar tradução
-export const createTranslation = authenticatedHandler(async (req, res) => {
+export const createTranslation = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
     try {
-        const { sourceLanguage, targetLanguage, outputFormat = 'pdf' } = req.body;
+        const { 
+            sourceLanguage, 
+            targetLanguage, 
+            outputFormat = 'pdf',
+            promptId 
+        } = req.body;
         const file = req.file;
         
-        console.log('Arquivo recebido:', {
-            nome: file?.originalname,
-            tamanho: file?.size,
-            tipo: file?.mimetype
+        console.log('Iniciando upload:', {
+            file: file?.originalname,
+            mimetype: file?.mimetype,
+            size: file?.size
         });
 
         if (!file) {
             throw new BadRequestError('Nenhum arquivo foi enviado');
+        }
+
+        // Verificar se o diretório de uploads existe
+        const uploadDir = path.join(process.cwd(), 'uploads');
+        if (!fs.existsSync(uploadDir)) {
+            await fs.promises.mkdir(uploadDir, { recursive: true });
         }
 
         // Validar formato de saída
@@ -139,15 +151,16 @@ export const createTranslation = authenticatedHandler(async (req, res) => {
         // Criar o registro no banco com status 'pending'
         const translation = await prisma.translation.create({
             data: {
-                fileName: path.basename(file.path),
+                fileName: originalName,
                 filePath: file.path,
                 originalName,
                 sourceLanguage,
                 targetLanguage,
+                status: 'processing',
                 userId: req.user.id,
                 fileSize: file.size,
                 fileType: file.mimetype,
-                status: 'pending'
+                promptId
             }
         });
 
@@ -161,24 +174,50 @@ export const createTranslation = authenticatedHandler(async (req, res) => {
         });
 
         // Iniciar processo de tradução em background
+        let promptContent = DEFAULT_TRANSLATION_PROMPT;
+        
+        // Se tiver promptId, busca o prompt
+        if (promptId) {
+            const customPrompt = await prisma.prompt.findFirst({
+                where: { 
+                    id: promptId,
+                    userId: req.user!.id
+                }
+            });
+            
+            if (customPrompt) {
+                promptContent = customPrompt.content;
+            }
+        }
+
         translateFile({
             filePath: file.path,
             sourceLanguage,
             targetLanguage,
-            userId: req.user.id,
+            userId: req.user!.id,
             translationId: translation.id,
             outputFormat,
-            originalName
+            originalName,
+            promptId
         }).catch(error => {
             console.error('Erro na tradução em background:', error);
         });
+
+        // Verificar se o arquivo foi salvo
+        if (!fs.existsSync(file.path)) {
+            throw new Error('Arquivo não foi salvo corretamente');
+        }
 
         // Verificar se o arquivo foi salvo corretamente
         const fileContent = await fs.promises.readFile(file.path, 'utf8');
         console.log('Conteúdo do arquivo recebido:', fileContent);
 
     } catch (error) {
-        console.error('Erro detalhado no controller:', error);
+        console.error('Erro detalhado no upload:', error);
+        // Limpar arquivo temporário se existir
+        if (req.file?.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
         throw error;
     }
 });

@@ -9,26 +9,35 @@ import { deleteFromS3 } from '../config/storage.js';
 
 // Criar base de conhecimento
 export const createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
+    console.log('📥 Recebendo requisição para criar base de conhecimento:', {
+        body: req.body,
+        file: req.file
+    });
+
     const { name, description, sourceLanguage, targetLanguage } = req.body;
     const file = req.file;
 
-    // Verificar se já existe uma base com o mesmo nome
-    const existingBase = await prisma.knowledgeBase.findFirst({
-        where: {
-            name,
-            userId: req.user!.id
-        }
-    });
-
-    if (existingBase) {
-        throw new Error('Já existe uma base de conhecimento com este nome');
-    }
-
     if (!file) {
-        throw new Error('Nenhum arquivo enviado');
+        console.error('❌ Nenhum arquivo recebido na requisição');
+        return res.status(400).json({
+            status: 'error',
+            message: 'Nenhum arquivo enviado'
+        });
     }
 
     try {
+        // Verificar se já existe uma base com o mesmo nome
+        const existingBase = await prisma.knowledgeBase.findFirst({
+            where: {
+                name,
+                userId: req.user!.id
+            }
+        });
+
+        if (existingBase) {
+            throw new Error('Já existe uma base de conhecimento com este nome');
+        }
+
         const knowledgeBase = await processKnowledgeBaseFile(file.path, {
             name,
             description,
@@ -43,6 +52,7 @@ export const createKnowledgeBase = asyncHandler(async (req: Request, res: Respon
             data: knowledgeBase
         });
     } catch (error) {
+        // Limpar arquivo temporário em caso de erro
         if (file && fs.existsSync(file.path)) {
             await fs.promises.unlink(file.path).catch(console.error);
         }

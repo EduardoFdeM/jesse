@@ -16,11 +16,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
     
     io = new Server(httpServer, {
         path: '/socket.io/',
-        cors: {
-            ...corsOptions,
-            methods: ['GET', 'POST'],
-            credentials: true
-        },
+        cors: corsOptions,
         allowEIO3: true,
         pingTimeout: 120000,
         pingInterval: 30000,

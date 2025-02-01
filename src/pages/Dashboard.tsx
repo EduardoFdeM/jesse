@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { FileText, LogOut, Sun, Moon } from 'lucide-react';
+import { FileText, Book, MessageSquare, LogOut, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function Dashboard() {
@@ -24,15 +24,15 @@ export function Dashboard() {
             <nav className="bg-white shadow dark:bg-gray-800">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between h-16">
-                        <div className="flex">
-                            <div className="flex-shrink-0 flex items-center">
-                                <FileText className="h-8 w-8 text-blue-600 dark:text-blue-400" />
-                                <span className="ml-2 text-xl font-bold text-gray-900 dark:text-white">
-                                    PDF Translation
-                                </span>
-                            </div>
+                        <div className="flex-shrink-0 flex items-center">
+                            <FileText className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+                            <span className="ml-2 text-xl font-bold text-gray-900 dark:text-white">
+                                PDF Translation
+                            </span>
+                        </div>
 
-                            <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
+                        <div className="flex-1 flex justify-center">
+                            <div className="hidden sm:flex sm:space-x-8">
                                 <Link
                                     to="/translations"
                                     className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
@@ -41,6 +41,7 @@ export function Dashboard() {
                                             : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                                     }`}
                                 >
+                                    <FileText className="h-4 w-4 mr-2" />
                                     Traduções
                                 </Link>
                                 <Link
@@ -51,12 +52,24 @@ export function Dashboard() {
                                             : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                                     }`}
                                 >
+                                    <Book className="h-4 w-4 mr-2" />
                                     Bases de Conhecimento
+                                </Link>
+                                <Link
+                                    to="/prompts"
+                                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                                        isActive('/prompts')
+                                            ? 'border-blue-500 text-gray-900 dark:text-white'
+                                            : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                                    }`}
+                                >
+                                    <MessageSquare className="h-4 w-4 mr-2" />
+                                    Prompts
                                 </Link>
                             </div>
                         </div>
 
-                        <div className="hidden sm:ml-6 sm:flex sm:items-center space-x-4">
+                        <div className="hidden sm:flex sm:items-center space-x-4">
                             <button
                                 onClick={toggleTheme}
                                 className="p-2 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
@@ -126,6 +139,7 @@ export function Dashboard() {
                                     : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                             }`}
                         >
+                            <FileText className="h-4 w-4 mr-2" />
                             Traduções
                         </Link>
                         <Link
@@ -136,7 +150,19 @@ export function Dashboard() {
                                     : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                             }`}
                         >
+                            <Book className="h-4 w-4 mr-2" />
                             Bases de Conhecimento
+                        </Link>
+                        <Link
+                            to="/prompts"
+                            className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                                isActive('/prompts')
+                                    ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
+                                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                            }`}
+                        >
+                            <MessageSquare className="h-4 w-4 mr-2" />
+                            Prompts
                         </Link>
                         <button
                             onClick={handleLogout}

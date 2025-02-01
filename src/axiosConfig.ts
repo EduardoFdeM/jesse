@@ -13,16 +13,22 @@ const api = axios.create({
 // Mapa para armazenar os controllers por rota
 const controllerMap = new Map<string, AbortController>();
 
-// Interceptor para adicionar o token de autenticação
+// Interceptor para adicionar o token e logs
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('jwtToken');
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        console.log('📤 Enviando requisição:', {
+            url: config.url,
+            method: config.method,
+            headers: config.headers
+        });
         return config;
     },
     (error) => {
+        console.error('❌ Erro na requisição:', error);
         return Promise.reject(error);
     }
 );
@@ -59,22 +65,23 @@ export const clearControllers = () => {
     controllerMap.clear();
 };
 
-// Interceptor para tratar erros
+// Interceptor para logs de resposta
 api.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-        // Se for erro 429, não vamos rejeitar a promise
-        if (error.response?.status === 429) {
-            console.log('⚠️ Rate limit atingido, mas o upload continua em processamento');
-            // Retorna um objeto especial indicando que o upload continua
-            return {
-                status: 429,
-                data: {
-                    message: 'Upload em andamento',
-                    isRateLimit: true
-                }
-            };
-        }
+    (response) => {
+        console.log('✅ Resposta recebida:', {
+            url: response.config.url,
+            status: response.status,
+            data: response.data
+        });
+        return response;
+    },
+    (error) => {
+        console.error('❌ Erro na resposta:', {
+            url: error.config?.url,
+            status: error.response?.status,
+            message: error.message,
+            response: error.response?.data
+        });
         return Promise.reject(error);
     }
 );

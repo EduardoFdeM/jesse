@@ -38,3 +38,13 @@ export interface Translation {
   knowledgeBase?: KnowledgeBase | null;
   costData?: string;
 }
+
+export interface Prompt {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  version: string;
+  tags: string[];
+  userId: string;
+}

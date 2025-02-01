@@ -46,4 +46,16 @@ export interface AuthState {
         name?: string;
     } | null;
     isAuthenticated: boolean;
+}
+
+export interface Prompt {
+    id: string;
+    name: string;
+    description: string;
+    content: string;
+    tags: string[];
+    version: string;
+    createdAt: string;
+    updatedAt: string;
+    userId: string;
 } 

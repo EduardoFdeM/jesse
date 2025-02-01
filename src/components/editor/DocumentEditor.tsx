@@ -58,10 +58,10 @@ export function DocumentEditor({
   const [showHighlightPicker, setShowHighlightPicker] = useState(false);
   const [showSymbolPicker, setShowSymbolPicker] = useState(false);
   const [pageMargins, setPageMargins] = useState({
-    top: '20mm',
-    right: '20mm',
-    bottom: '20mm',
-    left: '20mm'
+    top: '25mm',
+    right: '25mm',
+    bottom: '25mm',
+    left: '25mm'
   });
   const [showMarginSettings, setShowMarginSettings] = useState(false);
   const navigate = useNavigate();
