@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2 } from 'lucide-react';
-import { Translation, KnowledgeBase } from '../../types/index';
+import { Translation, KnowledgeBase, Prompt } from '../../types/index';
 import { api } from '../../services/api';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
@@ -22,6 +22,9 @@ export function TranslatedDocuments() {
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+    const [prompts, setPrompts] = useState<Prompt[]>([]);
+    const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string | null>(null);
+    const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]) => {
@@ -34,17 +37,30 @@ export function TranslatedDocuments() {
     const loadTranslations = useCallback(async () => {
         try {
             const response = await api.get('/api/translations');
-            setTranslations(sortTranslations(response.data.data));
+            const translationsWithMetadata = response.data.data.map((translation: Translation) => {
+                let metadata = {};
+                try {
+                    metadata = translation.translationMetadata 
+                        ? JSON.parse(translation.translationMetadata)
+                        : {};
+                } catch (e) {
+                    console.error('Erro ao parsear metadata:', e);
+                }
+                    
+                return {
+                    ...translation,
+                    usedKnowledgeBase: metadata.usedKnowledgeBase || translation.usedKnowledgeBase || false,
+                    usedPrompt: metadata.usedPrompt || translation.usedPrompt || false,
+                    knowledgeBaseName: metadata.knowledgeBaseName || translation.knowledgeBase?.name,
+                    promptName: metadata.promptName || translation.prompt?.name
+                };
+            });
+            
+            setTranslations(sortTranslations(translationsWithMetadata));
             setError(null);
         } catch (err) {
             console.error('Erro ao carregar traduções:', err);
-            // Não definir erro se for um erro de timeout ou autenticação
-            // pois o interceptor já vai lidar com isso
-            if (
-                err.message !== 'timeout of 10000ms exceeded' &&
-                err.message !== 'Network Error' &&
-                err.response?.status !== 401
-            ) {
+            if (err.message !== 'timeout of 10000ms exceeded' && err.response?.status !== 401) {
                 setError('Erro ao carregar traduções');
             }
         }
@@ -85,11 +101,25 @@ export function TranslatedDocuments() {
         };
 
         const handleCompleted = (translation: Translation) => {
-            setTranslations(prev => 
-                sortTranslations(
-                    prev.map(t => t.id === translation.id ? translation : t)
-                )
-            );
+            setTranslations(prev => {
+                const translationMetadata = translation.translationMetadata 
+                    ? JSON.parse(translation.translationMetadata)
+                    : {};
+                    
+                return sortTranslations(
+                    prev.map(t => 
+                        t.id === translation.id 
+                            ? {
+                                ...translation,
+                                usedKnowledgeBase: translationMetadata.usedKnowledgeBase || false,
+                                usedPrompt: translationMetadata.usedPrompt || false,
+                                knowledgeBase: translation.knowledgeBase,
+                                prompt: translation.prompt
+                            }
+                            : t
+                    )
+                );
+            });
             toast.success(`Tradução de "${translation.originalName}" concluída!`);
         };
 
@@ -144,21 +174,24 @@ export function TranslatedDocuments() {
 
     const uploadAndTranslateFile = async (file: File): Promise<void> => {
         try {
-            console.log('Iniciando upload do arquivo:', file.name);
-            
             const formData = new FormData();
             formData.append('file', file);
             formData.append('originalname', file.name);
             formData.append('sourceLanguage', sourceLanguage || 'pt');
             formData.append('targetLanguage', targetLanguage || 'en');
+            formData.append('useKnowledgeBase', selectedKnowledgeBase ? 'true' : 'false');
+            formData.append('useCustomPrompt', selectedPrompt ? 'true' : 'false');
+
+            if (selectedKnowledgeBase) {
+                formData.append('knowledgeBaseId', selectedKnowledgeBase);
+            }
+            if (selectedPrompt) {
+                formData.append('promptId', selectedPrompt);
+            }
 
             const response = await api.post('/api/translations', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
-                },
-                onUploadProgress: (progressEvent) => {
-                    const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total!);
-                    console.log(`Upload progress: ${percentCompleted}%`);
                 }
             });
 
@@ -366,6 +399,32 @@ export function TranslatedDocuments() {
         }
     };
 
+    const handleReset = () => {
+        setSourceLanguage('');
+        setTargetLanguage('');
+        setSelectedKnowledgeBase(null);
+        setSelectedPrompt(null);
+    };
+
+    useEffect(() => {
+        const loadData = async () => {
+            try {
+                const [kbResponse, promptsResponse] = await Promise.all([
+                    api.get('/api/knowledge-bases'),
+                    api.get('/api/prompts')
+                ]);
+
+                setKnowledgeBases(kbResponse.data.data);
+                setPrompts(promptsResponse.data.data);
+            } catch (error) {
+                console.error('Erro ao carregar dados:', error);
+                toast.error('Erro ao carregar dados necessários');
+            }
+        };
+
+        loadData();
+    }, []);
+
     return (
         <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
@@ -420,6 +479,12 @@ export function TranslatedDocuments() {
                     sourceLanguage={sourceLanguage}
                     targetLanguage={targetLanguage}
                     knowledgeBases={knowledgeBases}
+                    prompts={prompts}
+                    onReset={handleReset}
+                    selectedKnowledgeBase={selectedKnowledgeBase}
+                    selectedPrompt={selectedPrompt}
+                    onKnowledgeBaseSelect={(id) => setSelectedKnowledgeBase(id)}
+                    onPromptSelect={(id) => setSelectedPrompt(id)}
                 />
             </div>
 
@@ -593,9 +658,14 @@ export function TranslatedDocuments() {
                                         Status: {translation.status}
                                     </div>
                                 )}
-                                {translation.knowledgeBase && (
+                                {translation.usedKnowledgeBase && (
                                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                                        Base de Conhecimento: {translation.knowledgeBase.name}
+                                        Base de Conhecimento: {translation.knowledgeBaseName || 'Não especificada'}
+                                    </div>
+                                )}
+                                {translation.usedPrompt && (
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                        Prompt: {translation.promptName || 'Não especificado'}
                                     </div>
                                 )}
                                 {translation.errorMessage && (
@@ -608,16 +678,16 @@ export function TranslatedDocuments() {
                             <div className="flex gap-4 mt-2 text-sm text-gray-600">
                                 <div className="flex items-center">
                                     <span className="mr-2">Base de Conhecimento:</span>
-                                    {translation.knowledgeBaseId ? (
-                                        <span className="text-green-600">✓</span>
+                                    {translation.usedKnowledgeBase && translation.knowledgeBase ? (
+                                        <span className="text-green-600" title={translation.knowledgeBase.name}>✓</span>
                                     ) : (
                                         <span className="text-red-600">✗</span>
                                     )}
                                 </div>
                                 <div className="flex items-center">
                                     <span className="mr-2">Prompt Personalizado:</span>
-                                    {translation.promptId ? (
-                                        <span className="text-green-600">✓</span>
+                                    {translation.usedPrompt && translation.prompt ? (
+                                        <span className="text-green-600" title={translation.prompt.name}>✓</span>
                                     ) : (
                                         <span className="text-red-600">✗</span>
                                     )}

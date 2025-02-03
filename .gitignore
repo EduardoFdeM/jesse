@@ -8,7 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 src/.env
-erver/.env
+server/.env
 *.env
 .env
 .env.local

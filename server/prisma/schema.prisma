@@ -35,6 +35,8 @@ model Translation {
   errorMessage    String?
   translatedUrl   String?
   costData        String?        @default("{}")
+  usedPrompt      Boolean       @default(false)
+  usedKnowledgeBase Boolean     @default(false)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   userId          String
@@ -42,8 +44,8 @@ model Translation {
   knowledgeBaseId String?
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
   promptId        String?
-  promptVersion   String?
   prompt          Prompt?        @relation(fields: [promptId], references: [id])
+  translationMetadata String?    @default("{}")
 }
 
 model KnowledgeBase {

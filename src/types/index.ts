@@ -34,8 +34,21 @@ export interface Translation {
   createdAt: string;
   updatedAt: string;
   userId: string;
-  knowledgeBaseId?: string | null;
-  knowledgeBase?: KnowledgeBase | null;
+  knowledgeBaseId: string | null;
+  promptId: string | null;
+  translationMetadata: string;
+  usedPrompt: boolean;
+  usedKnowledgeBase: boolean;
+  knowledgeBase?: {
+    id: string;
+    name: string;
+  };
+  prompt?: {
+    id: string;
+    name: string;
+  };
+  knowledgeBaseName?: string;
+  promptName?: string;
   costData?: string;
 }
 
@@ -47,4 +60,13 @@ export interface Prompt {
   version: string;
   tags: string[];
   userId: string;
+}
+
+export interface FileUploadProps {
+  sourceLanguage: string;
+  targetLanguage: string;
+  onFileSelect: (files: File[]) => Promise<void>;
+  knowledgeBases: KnowledgeBase[];
+  prompts: Prompt[];
+  onReset?: () => void;
 }

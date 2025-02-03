@@ -110,113 +110,106 @@ const generateUpdatedFile = async (content: string, fileType: string): Promise<s
 // Criar tradução
 export const createTranslation = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
     try {
-        const { 
-            sourceLanguage, 
-            targetLanguage, 
-            outputFormat = 'pdf',
-            promptId 
-        } = req.body;
         const file = req.file;
-        
-        console.log('Iniciando upload:', {
+        const useKnowledgeBase = req.body.useKnowledgeBase === 'true';
+        const useCustomPrompt = req.body.useCustomPrompt === 'true';
+        const knowledgeBaseId = useKnowledgeBase ? req.body.knowledgeBaseId : null;
+        const promptId = useCustomPrompt ? req.body.promptId : null;
+
+        console.log('📝 Iniciando tradução:', {
             file: file?.originalname,
-            mimetype: file?.mimetype,
-            size: file?.size
+            useKnowledgeBase,
+            useCustomPrompt,
+            knowledgeBaseId,
+            promptId
         });
 
         if (!file) {
             throw new BadRequestError('Nenhum arquivo foi enviado');
         }
 
-        // Verificar se o diretório de uploads existe
-        const uploadDir = path.join(process.cwd(), 'uploads');
-        if (!fs.existsSync(uploadDir)) {
-            await fs.promises.mkdir(uploadDir, { recursive: true });
-        }
-
-        // Validar formato de saída
-        const validFormats = ['pdf', 'txt', 'docx'];
-        if (!validFormats.includes(outputFormat)) {
-            throw new BadRequestError('Formato de saída inválido');
-        }
-
-        if (!sourceLanguage || !targetLanguage || !req.user?.id) {
+        // Validações iniciais
+        if (!req.body.sourceLanguage || !req.body.targetLanguage || !req.user?.id) {
             throw new ValidationError('Dados inválidos para tradução');
         }
 
-        const originalName = Array.isArray(req.body.originalname) 
-            ? req.body.originalname[0] 
-            : req.body.originalname || 'translated_document.pdf';
+        // Validar base de conhecimento se selecionada
+        if (useKnowledgeBase && knowledgeBaseId) {
+            const knowledgeBase = await prisma.knowledgeBase.findFirst({
+                where: { 
+                    id: knowledgeBaseId,
+                    userId: req.user.id
+                }
+            });
+            if (!knowledgeBase) {
+                throw new ValidationError('Base de conhecimento não encontrada');
+            }
+        }
 
-        // Criar o registro no banco com status 'pending'
+        // Validar prompt se selecionado
+        if (useCustomPrompt && promptId) {
+            const prompt = await prisma.prompt.findFirst({
+                where: { 
+                    id: promptId,
+                    userId: req.user.id
+                }
+            });
+            if (!prompt) {
+                throw new ValidationError('Prompt não encontrado');
+            }
+        }
+
+        // Criar o registro com os dados corretos
         const translation = await prisma.translation.create({
             data: {
-                fileName: originalName,
+                fileName: file.originalname,
                 filePath: file.path,
-                originalName,
-                sourceLanguage,
-                targetLanguage,
+                originalName: req.body.originalname || file.originalname,
+                sourceLanguage: req.body.sourceLanguage,
+                targetLanguage: req.body.targetLanguage,
                 status: 'processing',
                 userId: req.user.id,
                 fileSize: file.size,
                 fileType: file.mimetype,
-                promptId
+                usedPrompt: useCustomPrompt,
+                usedKnowledgeBase: useKnowledgeBase,
+                promptId,
+                knowledgeBaseId
+            },
+            include: {
+                knowledgeBase: true,
+                prompt: true
             }
         });
 
         // Emitir evento de início
         emitTranslationStarted(translation);
-
-        // Responder imediatamente ao cliente
-        res.status(202).json({
-            message: 'Tradução iniciada',
-            translationId: translation.id
-        });
-
-        // Iniciar processo de tradução em background
-        let promptContent = DEFAULT_TRANSLATION_PROMPT;
         
-        // Se tiver promptId, busca o prompt
-        if (promptId) {
-            const customPrompt = await prisma.prompt.findFirst({
-                where: { 
-                    id: promptId,
-                    userId: req.user!.id
-                }
-            });
-            
-            if (customPrompt) {
-                promptContent = customPrompt.content;
-            }
-        }
-
+        // Iniciar tradução com os parâmetros corretos
         translateFile({
             filePath: file.path,
-            sourceLanguage,
-            targetLanguage,
-            userId: req.user!.id,
+            sourceLanguage: req.body.sourceLanguage,
+            targetLanguage: req.body.targetLanguage,
+            userId: req.user.id,
             translationId: translation.id,
-            outputFormat,
-            originalName,
-            promptId
-        }).catch(error => {
-            console.error('Erro na tradução em background:', error);
+            outputFormat: file.mimetype,
+            originalName: file.originalname,
+            knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
+            promptId: useCustomPrompt ? promptId : undefined,
+            useKnowledgeBase,
+            useCustomPrompt
         });
 
-        // Verificar se o arquivo foi salvo
-        if (!fs.existsSync(file.path)) {
-            throw new Error('Arquivo não foi salvo corretamente');
-        }
-
-        // Verificar se o arquivo foi salvo corretamente
-        const fileContent = await fs.promises.readFile(file.path, 'utf8');
-        console.log('Conteúdo do arquivo recebido:', fileContent);
+        res.status(202).json({
+            message: 'Tradução iniciada com sucesso',
+            translation
+        });
 
     } catch (error) {
-        console.error('Erro detalhado no upload:', error);
+        console.error('❌ Erro no processo de tradução:', error);
         // Limpar arquivo temporário se existir
         if (req.file?.path && fs.existsSync(req.file.path)) {
-            fs.unlinkSync(req.file.path);
+            await fs.promises.unlink(req.file.path);
         }
         throw error;
     }
@@ -266,15 +259,12 @@ export const getTranslation = asyncHandler(async (req: Request, res: Response) =
 
 // Listar traduções do usuário
 export const getTranslations = authenticatedHandler(async (req, res) => {
-    if (!req.user) {
-        throw new UnauthorizedError('Usuário não autenticado');
-    }
-
     const translations = await prisma.translation.findMany({
-        where: { userId: req.user.id },
+        where: { userId: req.user!.id },
         orderBy: { createdAt: 'desc' },
         include: {
-            knowledgeBase: true
+            knowledgeBase: true,
+            prompt: true
         }
     });
 

@@ -7,6 +7,8 @@ import { uploadToS3 } from '../config/storage.js';
 import { Server } from 'socket.io';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
 import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
+import axios from 'axios';
+import { KnowledgeBase } from '@prisma/client';
 
 interface PDFTextR {
     T: string;
@@ -53,37 +55,95 @@ declare global {
     var io: Server | undefined;
 }
 
-// Função otimizada para dividir o texto mantendo a formatação
-const splitTextIntoChunks = (text: string, maxChunkSize: number = 24000): string[] => {
-    const lines = text.split(/\r?\n/);
-    const chunks: string[] = [];
-    let currentChunk = '';
+interface TextChunk {
+    content: string;
+    index: number;
+    wordCount: number;
+}
 
-    for (const line of lines) {
-        if (line.length > maxChunkSize) {
+const splitTextIntelligently = (text: string): TextChunk[] => {
+    // Dividir em parágrafos primeiro
+    const paragraphs = text.split(/\n{2,}/);
+    const chunks: TextChunk[] = [];
+    let currentChunk = '';
+    let currentWordCount = 0;
+    let chunkIndex = 0;
+
+    // Limite de palavras por chunk (aproximadamente 2000 palavras)
+    const WORD_LIMIT = 2000;
+
+    for (const paragraph of paragraphs) {
+        const words = paragraph.split(/\s+/);
+        
+        // Se o parágrafo sozinho excede o limite
+        if (words.length > WORD_LIMIT) {
+            // Se temos conteúdo acumulado, salvamos primeiro
             if (currentChunk) {
-                chunks.push(currentChunk);
+                chunks.push({
+                    content: currentChunk.trim(),
+                    index: chunkIndex++,
+                    wordCount: currentWordCount
+                });
                 currentChunk = '';
+                currentWordCount = 0;
             }
-            
-            let remainingLine = line;
-            while (remainingLine.length > 0) {
-                const chunk = remainingLine.slice(0, maxChunkSize);
-                chunks.push(chunk);
-                remainingLine = remainingLine.slice(maxChunkSize);
+
+            // Dividimos o parágrafo grande mantendo sentenças juntas
+            const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
+            let sentenceChunk = '';
+            let sentenceWordCount = 0;
+
+            for (const sentence of sentences) {
+                const sentenceWords = sentence.split(/\s+/).length;
+                
+                if (sentenceWordCount + sentenceWords > WORD_LIMIT) {
+                    if (sentenceChunk) {
+                        chunks.push({
+                            content: sentenceChunk.trim(),
+                            index: chunkIndex++,
+                            wordCount: sentenceWordCount
+                        });
+                    }
+                    sentenceChunk = sentence;
+                    sentenceWordCount = sentenceWords;
+                } else {
+                    sentenceChunk += ' ' + sentence;
+                    sentenceWordCount += sentenceWords;
+                }
+            }
+
+            if (sentenceChunk) {
+                chunks.push({
+                    content: sentenceChunk.trim(),
+                    index: chunkIndex++,
+                    wordCount: sentenceWordCount
+                });
             }
         } 
-        else if ((currentChunk + line + '\n').length > maxChunkSize) {
-            chunks.push(currentChunk);
-            currentChunk = line + '\n';
+        // Se adicionar o parágrafo atual excede o limite
+        else if (currentWordCount + words.length > WORD_LIMIT) {
+            chunks.push({
+                content: currentChunk.trim(),
+                index: chunkIndex++,
+                wordCount: currentWordCount
+            });
+            currentChunk = paragraph;
+            currentWordCount = words.length;
         } 
+        // Caso contrário, acumula
         else {
-            currentChunk += line + '\n';
+            currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+            currentWordCount += words.length;
         }
     }
 
+    // Adiciona o último chunk se houver
     if (currentChunk) {
-        chunks.push(currentChunk);
+        chunks.push({
+            content: currentChunk.trim(),
+            index: chunkIndex,
+            wordCount: currentWordCount
+        });
     }
 
     return chunks;
@@ -252,47 +312,46 @@ const getTranslationPrompt = async (params: TranslateFileParams): Promise<string
     return version ? version.content : prompt.content;
 };
 
-// Função para traduzir um chunk com retry
+interface TranslationContext {
+    previousChunk?: TextChunk;
+    nextChunk?: TextChunk;
+    knowledgeBase?: KnowledgeBase | null;
+    prompt?: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+}
+
+interface TranslationResult {
+    text: string;
+    costLog: {
+        totalTokens: number;
+        promptTokens: number;
+        completionTokens: number;
+    };
+}
+
 const translateChunkWithRetry = async (
-    chunk: string,
+    chunk: TextChunk,
     params: TranslateFileParams,
-    _knowledgeBaseContent: string
-): Promise<{ text: string; costLog: TranslationCost }> => {
+    context: TranslationContext,
+    retries = 3
+): Promise<TranslationResult> => {
     try {
-        const promptContent = await getTranslationPrompt(params);
+        const response = await translateWithContext(chunk, context);
         
-        // Substitui as variáveis no prompt com os valores reais
-        const finalPrompt = promptContent
-            .replace('{sourceLanguage}', params.sourceLanguage)
-            .replace('{targetLanguage}', params.targetLanguage)
-            .replace('{text}', chunk);
-        
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                { 
-                    role: "system", 
-                    content: finalPrompt
-                },
-                { 
-                    role: "user", 
-                    content: chunk 
-                }
-            ]
-        });
-
-        const translatedText = completion.choices[0]?.message?.content || '';
-
         return {
-            text: translatedText,
+            text: response.choices[0].message.content || '',
             costLog: {
-                inputTokens: completion.usage?.prompt_tokens || 0,
-                outputTokens: completion.usage?.completion_tokens || 0,
-                totalTokens: completion.usage?.total_tokens || 0
+                totalTokens: response.usage?.total_tokens || 0,
+                promptTokens: response.usage?.prompt_tokens || 0,
+                completionTokens: response.usage?.completion_tokens || 0
             }
         };
     } catch (error) {
-        console.error('Erro na tradução:', error);
+        if (retries > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return translateChunkWithRetry(chunk, params, context, retries - 1);
+        }
         throw error;
     }
 };
@@ -408,6 +467,9 @@ interface TranslateFileParams {
     originalName: string;
     promptId?: string;
     promptVersion?: string;
+    knowledgeBaseId?: string;
+    useKnowledgeBase: boolean;
+    useCustomPrompt: boolean;
 }
 
 export type ChatCompletionMessageParam = {
@@ -418,19 +480,77 @@ export type ChatCompletionMessageParam = {
 // Função principal de tradução
 export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
     try {
+        let knowledgeBaseContent = '';
+        let customPrompt = DEFAULT_TRANSLATION_PROMPT;
+        let knowledgeBaseData: KnowledgeBase | null = null;
+        
+        // Carregar base de conhecimento
+        if (params.useKnowledgeBase && params.knowledgeBaseId) {
+            knowledgeBaseData = await prisma.knowledgeBase.findUnique({
+                where: { id: params.knowledgeBaseId }
+            });
+            
+            if (knowledgeBaseData) {
+                try {
+                    const response = await axios.get(knowledgeBaseData.filePath, {
+                        headers: {
+                            'Accept': 'text/plain',
+                            'Content-Type': 'text/plain'
+                        }
+                    });
+                    knowledgeBaseContent = response.data;
+                } catch (error) {
+                    console.error('Erro ao carregar base de conhecimento:', error);
+                }
+            }
+        }
+
+        // Carregar prompt personalizado
+        let prompt = null;
+        if (params.useCustomPrompt && params.promptId) {
+            prompt = await prisma.prompt.findUnique({
+                where: { id: params.promptId }
+            });
+            
+            if (prompt) {
+                customPrompt = prompt.content;
+            }
+        }
+
+        // Extrair texto do arquivo
         const fileContent = params.filePath.endsWith('.pdf')
             ? await extractTextFromPDF(params.filePath)
-            : fs.readFileSync(params.filePath, 'utf-8');
+            : await fs.promises.readFile(params.filePath, 'utf-8');
 
-        const chunks = splitTextIntoChunks(fileContent);
+        // Dividir em chunks inteligentemente
+        const chunks = splitTextIntelligently(fileContent);
         const translatedChunks: string[] = [];
-        let totalCost = 0;
+        let totalCost = {
+            totalTokens: 0,
+            promptTokens: 0,
+            completionTokens: 0
+        };
 
+        // Traduzir cada chunk
         for (let i = 0; i < chunks.length; i++) {
-            const result = await translateChunkWithRetry(chunks[i], params, '');
+            const context: TranslationContext = {
+                previousChunk: i > 0 ? chunks[i - 1] : undefined,
+                nextChunk: i < chunks.length - 1 ? chunks[i + 1] : undefined,
+                knowledgeBase: knowledgeBaseData,
+                prompt: customPrompt,
+                sourceLanguage: params.sourceLanguage,
+                targetLanguage: params.targetLanguage
+            };
+
+            const result = await translateChunkWithRetry(chunks[i], params, context);
             translatedChunks.push(result.text);
-            totalCost += result.costLog.totalTokens;
             
+            // Atualizar custos
+            totalCost.totalTokens += result.costLog.totalTokens;
+            totalCost.promptTokens += result.costLog.promptTokens;
+            totalCost.completionTokens += result.costLog.completionTokens;
+
+            // Atualizar progresso
             const progress = Math.round(((i + 1) / chunks.length) * 100);
             await prisma.translation.update({
                 where: { id: params.translationId },
@@ -443,19 +563,15 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             });
         }
 
-        // Forçar formato de saída como PDF
-        const translatedFileName = generateTranslatedFileName(
-            params.originalName || 'documento',
+        // Salvar arquivo traduzido
+        const translatedContent = translatedChunks.join('\n\n');
+        const savedFile = await saveTranslatedFile(
+            translatedContent,
+            params.originalName,
             'pdf'
         );
-        
-        const savedFile = await saveTranslatedFile(
-            translatedChunks.join('\n'),
-            translatedFileName,
-            'pdf' // Forçar PDF
-        );
 
-        // Finalizar tradução e emitir evento de conclusão
+        // Atualizar registro da tradução com mais informações
         const updatedTranslation = await prisma.translation.update({
             where: { id: params.translationId },
             data: {
@@ -463,32 +579,83 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 filePath: savedFile.filePath,
                 fileSize: savedFile.fileSize,
                 fileName: savedFile.fileName,
-                costData: calculateCost(totalCost, 0)
+                costData: JSON.stringify(totalCost),
+                usedPrompt: params.useCustomPrompt,
+                usedKnowledgeBase: params.useKnowledgeBase,
+                promptId: params.promptId,
+                knowledgeBaseId: params.knowledgeBaseId,
+                translationMetadata: JSON.stringify({
+                    usedKnowledgeBase: params.useKnowledgeBase,
+                    usedPrompt: params.useCustomPrompt,
+                    knowledgeBaseName: knowledgeBaseData?.name || null,
+                    promptName: prompt?.name || null
+                })
+            },
+            include: {
+                knowledgeBase: true,
+                prompt: true
             }
         });
 
-        // Emitir evento de conclusão
-        if (global.io) {
-            global.io.emit('translation:completed', updatedTranslation);
+        global.io?.emit('translation:completed', updatedTranslation);
+        return updatedTranslation;
+
+    } catch (error) {
+        await handleTranslationError(error, params.translationId);
+        throw error;
+    }
+};
+
+const translateWithContext = async (chunk: TextChunk, context: TranslationContext) => {
+    try {
+        let knowledgeBaseContent = '';
+        
+        // Se tiver base de conhecimento, buscar do S3
+        if (context.knowledgeBase) {
+            try {
+                const response = await axios.get(context.knowledgeBase.filePath);
+                knowledgeBaseContent = response.data;
+            } catch (error) {
+                console.error('Erro ao buscar base de conhecimento:', error);
+                // Continua sem a base de conhecimento em caso de erro
+            }
         }
 
-        return updatedTranslation;
-    } catch (processError) {
-        const errorMessage = processError instanceof Error ? processError.message : 'Erro desconhecido';
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: {
-                status: 'error',
-                errorMessage
+        const messages: ChatCompletionMessageParam[] = [
+            {
+                role: 'system',
+                content: context.prompt || DEFAULT_TRANSLATION_PROMPT
+            },
+            {
+                role: 'user',
+                content: `
+                    ${knowledgeBaseContent ? `Base de Conhecimento:\n${knowledgeBaseContent}\n\n` : ''}
+                    Texto para traduzir de ${context.sourceLanguage} para ${context.targetLanguage}:
+                    ${chunk.content}
+                `
             }
+        ];
+
+        return await openai.chat.completions.create({
+            model: "gpt-4",
+            messages,
+            temperature: 0.3
         });
-        
-        global.io?.emit('translation:error', { 
-            id: params.translationId, 
-            error: errorMessage
-        });
-        
-        throw processError;
+    } catch (error) {
+        console.error('Erro na tradução:', error);
+        throw error;
     }
+};
+
+const handleTranslationError = async (error: any, translationId: string) => {
+    console.error('Erro na tradução:', error);
+    await prisma.translation.update({
+        where: { id: translationId },
+        data: {
+            status: 'error',
+            errorMessage: error.message || 'Erro desconhecido durante a tradução'
+        }
+    });
+    global.io?.emit('translation:error', { id: translationId, error: error.message });
 };
 
