@@ -72,6 +72,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
     if (!validatePromptSelection()) return;
 
+    // Prevenir múltiplos envios
+    if (isLoading) {
+      return;
+    }
+
     try {
       setIsLoading(true);
       setUploadStatus('Preparando arquivo...');
@@ -99,14 +104,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           'Content-Type': 'multipart/form-data'
         },
         signal: controller.signal,
-        timeout: 300000, // 5 minutos
-        onUploadProgress: (progressEvent) => {
-          const progress = progressEvent.total
-            ? Math.round((progressEvent.loaded * 100) / progressEvent.total)
-            : 0;
-          setUploadProgress(progress);
-          setUploadStatus(`Enviando arquivo... ${progress}%`);
-        }
+        timeout: 300000
       });
 
       if (response.data.error) {
@@ -114,7 +112,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       }
 
       toast.success('Arquivo enviado com sucesso!');
-      await onFileSelect([selectedFile]);
       setSelectedFile(null);
       onReset();
     } catch (error: any) {

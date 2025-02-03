@@ -33,7 +33,7 @@ interface TranslationContext {
 
 // Funções principais
 export const processKnowledgeBaseFile = async (filePath: string, params: CreateKnowledgeBaseParams): Promise<KnowledgeBase> => {
-    console.log('🔄 [1/6] Iniciando processamento do arquivo:', filePath);
+    console.log('🔄 [1/7] Iniciando processamento do arquivo:', filePath);
 
     try {
         // Validar arquivo
@@ -42,7 +42,7 @@ export const processKnowledgeBaseFile = async (filePath: string, params: CreateK
         }
 
         // Ler o arquivo
-        console.log('📖 [2/6] Lendo arquivo');
+        console.log('📖 [2/7] Lendo arquivo');
         const fileContent = await fs.promises.readFile(filePath);
         const uniqueFileName = `kb_${Date.now()}_${path.basename(filePath)}`;
         const displayFileName = params.originalFileName || path.basename(filePath);
@@ -56,34 +56,39 @@ export const processKnowledgeBaseFile = async (filePath: string, params: CreateK
         }
 
         // Fazer upload para o S3 com nome único
-        console.log('☁️ [3/6] Enviando para o Spaces');
+        console.log('☁️ [3/7] Enviando para o Spaces');
         const spacesUrl = await uploadToS3(fileContent, uniqueFileName, 'knowledge');
-        console.log('✅ [4/6] Upload concluído:', spacesUrl);
+        console.log('✅ [4/7] Upload concluído:', spacesUrl);
 
         // Adicionar processamento do conteúdo
-        console.log('📑 [2/6] Processando conteúdo do arquivo');
+        console.log('📑 [5/7] Processando conteúdo e gerando embeddings');
         const content = await fs.promises.readFile(filePath, 'utf-8');
+        const chunks = splitIntoChunks(content);
         
-        // Criar/Atualizar a base de conhecimento no banco
-        console.log('💾 [5/6] Salvando no banco de dados');
-        const knowledgeBaseData: Prisma.KnowledgeBaseCreateInput = {
-            name: params.name,
-            description: params.description,
-            sourceLanguage: params.sourceLanguage,
-            targetLanguage: params.targetLanguage,
-            user: {
-                connect: {
-                    id: params.userId
+        // Criar base de conhecimento com chunks
+        const knowledgeBase = await prisma.knowledgeBase.create({
+            data: {
+                name: params.name,
+                description: params.description,
+                sourceLanguage: params.sourceLanguage,
+                targetLanguage: params.targetLanguage,
+                fileName: params.originalFileName || path.basename(filePath),
+                filePath: spacesUrl,
+                fileSize: fileContent.length,
+                fileType: path.extname(filePath).slice(1),
+                userId: params.userId,
+                chunks: {
+                    createMany: {
+                        data: await Promise.all(chunks.map(async chunk => ({
+                            content: chunk,
+                            embedding: await getEmbedding(chunk)
+                        })))
+                    }
                 }
             },
-            fileName: displayFileName,
-            filePath: spacesUrl,
-            fileType,
-            fileSize
-        };
-
-        const knowledgeBase = await prisma.knowledgeBase.create({
-            data: knowledgeBaseData
+            include: {
+                chunks: true
+            }
         });
 
         // Limpar arquivo temporário
@@ -136,37 +141,42 @@ export const getKnowledgeBaseContent = async (knowledgeBaseId: string): Promise<
 // Função para traduzir com contexto
 export const translateWithContext = async (chunk: TextChunk, context: TranslationContext) => {
     try {
-        let knowledgeBaseContent = '';
+        let relevantContext = '';
         
         if (context.knowledgeBase) {
             try {
-                knowledgeBaseContent = await getKnowledgeBaseContent(context.knowledgeBase);
+                // Buscar apenas o contexto relevante usando embeddings
+                relevantContext = await getRelevantKnowledgeBaseContext(
+                    chunk.content,
+                    context.knowledgeBase,
+                    3 // Número de trechos mais relevantes
+                );
             } catch (error) {
-                console.error('Erro ao buscar base de conhecimento:', error);
-                // Continua sem a base de conhecimento em caso de erro
+                console.error('Erro ao buscar contexto relevante:', error);
             }
         }
 
-        // Montar o prompt com o contexto
+        // Montar o prompt otimizado
         const prompt = `
             ${context.prompt || ''}
             
-            Base de Conhecimento:
-            ${knowledgeBaseContent}
+            Contexto Relevante da Base de Conhecimento:
+            ${relevantContext}
             
             Texto para traduzir:
             ${chunk.content}
             
-            Contexto anterior: ${context.previousChunk?.content || 'Nenhum'}
-            Próximo contexto: ${context.nextChunk?.content || 'Nenhum'}
+            Contexto anterior: ${context.previousChunk?.content || ''}
+            Próximo contexto: ${context.nextChunk?.content || ''}
             
-            Por favor, traduza o texto acima de ${context.sourceLanguage} para ${context.targetLanguage}.
-        `;
+            Traduza o texto de ${context.sourceLanguage} para ${context.targetLanguage}.
+        `.trim();
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4",
+            model: "gpt-4-turbo-preview", // Modelo mais eficiente
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.3
+            temperature: 0.3,
+            max_tokens: 4000 // Limitar tokens de saída
         });
 
         return response;
@@ -174,6 +184,44 @@ export const translateWithContext = async (chunk: TextChunk, context: Translatio
         console.error('Erro na tradução:', error);
         throw error;
     }
+};
+
+// Função para buscar contexto relevante usando embeddings
+const getRelevantKnowledgeBaseContext = async (query: string, knowledgeBaseId: string, limit: number = 3): Promise<string> => {
+    try {
+        const queryEmbedding = await getEmbedding(query);
+        
+        type ChunkResult = {
+            content: string;
+            similarity: number;
+        };
+
+        const relevantChunks = await prisma.$queryRaw<ChunkResult[]>`
+            SELECT 
+                content,
+                1 - (embedding <=> ${queryEmbedding}::vector) as similarity
+            FROM "KnowledgeBaseChunk"
+            WHERE knowledge_base_id = ${knowledgeBaseId}
+            ORDER BY similarity DESC
+            LIMIT ${limit}
+        `;
+
+        return relevantChunks
+            .map(chunk => chunk.content)
+            .join('\n\n');
+    } catch (error) {
+        console.error('Erro ao buscar contexto relevante:', error);
+        return '';
+    }
+};
+
+// Função auxiliar para gerar embeddings
+const getEmbedding = async (text: string): Promise<number[]> => {
+    const response = await openai.embeddings.create({
+        model: "text-embedding-3-small",
+        input: text
+    });
+    return response.data[0].embedding;
 };
 
 // Funções auxiliares existentes
@@ -238,4 +286,23 @@ const summarizeSection = async (section: string, technicalTerms: string[]): Prom
         console.error('Erro ao resumir seção:', error);
         return section; // Em caso de erro, retorna a seção original
     }
+};
+
+// Função para dividir texto em chunks significativos
+const splitIntoChunks = (text: string): string[] => {
+    const paragraphs = text.split(/\n\n+/);
+    const chunks: string[] = [];
+    let currentChunk = '';
+
+    for (const paragraph of paragraphs) {
+        if ((currentChunk + paragraph).length > 1000) {
+            if (currentChunk) chunks.push(currentChunk.trim());
+            currentChunk = paragraph;
+        } else {
+            currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+        }
+    }
+
+    if (currentChunk) chunks.push(currentChunk.trim());
+    return chunks;
 };

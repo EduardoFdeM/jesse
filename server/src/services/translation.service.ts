@@ -55,94 +55,59 @@ declare global {
     var io: Server | undefined;
 }
 
-interface TextChunk {
+interface TextChunkWithContext {
     content: string;
     index: number;
-    wordCount: number;
+    overlap: {
+        previous?: string;
+        next?: string;
+    };
 }
 
-const splitTextIntelligently = (text: string): TextChunk[] => {
-    // Dividir em parágrafos primeiro
-    const paragraphs = text.split(/\n{2,}/);
-    const chunks: TextChunk[] = [];
+const MAX_TOKENS_PER_REQUEST = 4000; // Reduzido para garantir margem
+const OVERLAP_SIZE = 200; // Caracteres de sobreposição entre chunks
+const MIN_CHUNK_SIZE = 1000; // Tamanho mínimo do chunk
+
+const splitTextIntelligently = (text: string): TextChunkWithContext[] => {
+    const chunks: TextChunkWithContext[] = [];
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [];
     let currentChunk = '';
-    let currentWordCount = 0;
-    let chunkIndex = 0;
+    let index = 0;
 
-    // Limite de palavras por chunk (aproximadamente 2000 palavras)
-    const WORD_LIMIT = 2000;
-
-    for (const paragraph of paragraphs) {
-        const words = paragraph.split(/\s+/);
+    for (let i = 0; i < sentences.length; i++) {
+        const sentence = sentences[i];
+        const nextSentence = sentences[i + 1];
         
-        // Se o parágrafo sozinho excede o limite
-        if (words.length > WORD_LIMIT) {
-            // Se temos conteúdo acumulado, salvamos primeiro
-            if (currentChunk) {
-                chunks.push({
-                    content: currentChunk.trim(),
-                    index: chunkIndex++,
-                    wordCount: currentWordCount
-                });
-                currentChunk = '';
-                currentWordCount = 0;
-            }
+        // Adicionar sentença atual
+        if ((currentChunk.length + sentence.length) < MAX_TOKENS_PER_REQUEST * 4) {
+            currentChunk += sentence;
+        } else {
+            // Preparar sobreposição
+            const previousOverlap = i > 0 ? sentences[i - 1] : undefined;
+            const nextOverlap = nextSentence;
 
-            // Dividimos o parágrafo grande mantendo sentenças juntas
-            const sentences = paragraph.match(/[^.!?]+[.!?]+/g) || [paragraph];
-            let sentenceChunk = '';
-            let sentenceWordCount = 0;
-
-            for (const sentence of sentences) {
-                const sentenceWords = sentence.split(/\s+/).length;
-                
-                if (sentenceWordCount + sentenceWords > WORD_LIMIT) {
-                    if (sentenceChunk) {
-                        chunks.push({
-                            content: sentenceChunk.trim(),
-                            index: chunkIndex++,
-                            wordCount: sentenceWordCount
-                        });
-                    }
-                    sentenceChunk = sentence;
-                    sentenceWordCount = sentenceWords;
-                } else {
-                    sentenceChunk += ' ' + sentence;
-                    sentenceWordCount += sentenceWords;
-                }
-            }
-
-            if (sentenceChunk) {
-                chunks.push({
-                    content: sentenceChunk.trim(),
-                    index: chunkIndex++,
-                    wordCount: sentenceWordCount
-                });
-            }
-        } 
-        // Se adicionar o parágrafo atual excede o limite
-        else if (currentWordCount + words.length > WORD_LIMIT) {
             chunks.push({
                 content: currentChunk.trim(),
-                index: chunkIndex++,
-                wordCount: currentWordCount
+                index: index++,
+                overlap: {
+                    previous: previousOverlap,
+                    next: nextOverlap
+                }
             });
-            currentChunk = paragraph;
-            currentWordCount = words.length;
-        } 
-        // Caso contrário, acumula
-        else {
-            currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
-            currentWordCount += words.length;
+
+            currentChunk = sentence; // Começar novo chunk com a sentença atual
         }
     }
 
-    // Adiciona o último chunk se houver
+    // Adicionar último chunk se houver
     if (currentChunk) {
         chunks.push({
             content: currentChunk.trim(),
-            index: chunkIndex,
-            wordCount: currentWordCount
+            index: index,
+            overlap: {
+                previous: sentences[sentences.length - 2],
+                next: undefined
+            }
         });
     }
 
@@ -313,8 +278,8 @@ const getTranslationPrompt = async (params: TranslateFileParams): Promise<string
 };
 
 interface TranslationContext {
-    previousChunk?: TextChunk;
-    nextChunk?: TextChunk;
+    previousChunk?: TextChunkWithContext;
+    nextChunk?: TextChunkWithContext;
     knowledgeBase?: KnowledgeBase | null;
     prompt?: string;
     sourceLanguage: string;
@@ -331,7 +296,7 @@ interface TranslationResult {
 }
 
 const translateChunkWithRetry = async (
-    chunk: TextChunk,
+    chunk: TextChunkWithContext,
     params: TranslateFileParams,
     context: TranslationContext,
     retries = 3
@@ -522,7 +487,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             ? await extractTextFromPDF(params.filePath)
             : await fs.promises.readFile(params.filePath, 'utf-8');
 
-        // Dividir em chunks inteligentemente
+        // Dividir em chunks com sobreposição
         const chunks = splitTextIntelligently(fileContent);
         const translatedChunks: string[] = [];
         let totalCost = {
@@ -531,11 +496,9 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             completionTokens: 0
         };
 
-        // Traduzir cada chunk
+        // Traduzir cada chunk com contexto
         for (let i = 0; i < chunks.length; i++) {
             const context: TranslationContext = {
-                previousChunk: i > 0 ? chunks[i - 1] : undefined,
-                nextChunk: i < chunks.length - 1 ? chunks[i + 1] : undefined,
                 knowledgeBase: knowledgeBaseData,
                 prompt: customPrompt,
                 sourceLanguage: params.sourceLanguage,
@@ -543,8 +506,16 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             };
 
             const result = await translateChunkWithRetry(chunks[i], params, context);
-            translatedChunks.push(result.text);
             
+            // Remover sobreposições duplicadas
+            let translatedText = result.text;
+            if (i > 0 && chunks[i].overlap.previous) {
+                // Remover sobreposição com chunk anterior
+                translatedText = removeDuplicateOverlap(translatedChunks[i-1], translatedText);
+            }
+            
+            translatedChunks.push(translatedText);
+
             // Atualizar custos
             totalCost.totalTokens += result.costLog.totalTokens;
             totalCost.promptTokens += result.costLog.promptTokens;
@@ -563,8 +534,10 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             });
         }
 
-        // Salvar arquivo traduzido
+        // Juntar chunks traduzidos removendo duplicações nas sobreposições
         const translatedContent = translatedChunks.join('\n\n');
+        
+        // Salvar arquivo traduzido
         const savedFile = await saveTranslatedFile(
             translatedContent,
             params.originalName,
@@ -606,41 +579,56 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
     }
 };
 
-const translateWithContext = async (chunk: TextChunk, context: TranslationContext) => {
+const translateWithContext = async (chunk: TextChunkWithContext, context: TranslationContext) => {
     try {
-        let knowledgeBaseContent = '';
-        
-        // Se tiver base de conhecimento, buscar do S3
-        if (context.knowledgeBase) {
-            try {
-                const response = await axios.get(context.knowledgeBase.filePath);
-                knowledgeBaseContent = response.data;
-            } catch (error) {
-                console.error('Erro ao buscar base de conhecimento:', error);
-                // Continua sem a base de conhecimento em caso de erro
-            }
-        }
-
-        const messages: ChatCompletionMessageParam[] = [
+        let messages: ChatCompletionMessageParam[] = [
             {
                 role: 'system',
                 content: context.prompt || DEFAULT_TRANSLATION_PROMPT
-            },
-            {
-                role: 'user',
-                content: `
-                    ${knowledgeBaseContent ? `Base de Conhecimento:\n${knowledgeBaseContent}\n\n` : ''}
-                    Texto para traduzir de ${context.sourceLanguage} para ${context.targetLanguage}:
-                    ${chunk.content}
-                `
             }
         ];
 
-        return await openai.chat.completions.create({
+        // Adicionar contexto de sobreposição
+        if (chunk.overlap.previous) {
+            messages.push({
+                role: 'user',
+                content: `Contexto anterior:\n${chunk.overlap.previous}\n`
+            });
+        }
+
+        // Adicionar base de conhecimento se disponível
+        if (context.knowledgeBase) {
+            const relevantContext = await extractRelevantContext(chunk.content, context.knowledgeBase);
+            if (relevantContext) {
+                messages.push({
+                    role: 'user',
+                    content: `Contexto relevante:\n${relevantContext}\n`
+                });
+            }
+        }
+
+        // Adicionar o texto principal para tradução
+        messages.push({
+            role: 'user',
+            content: `Traduza de ${context.sourceLanguage} para ${context.targetLanguage}:\n${chunk.content}`
+        });
+
+        // Adicionar contexto posterior se disponível
+        if (chunk.overlap.next) {
+            messages.push({
+                role: 'user',
+                content: `Próximo contexto:\n${chunk.overlap.next}\n`
+            });
+        }
+
+        const response = await openai.chat.completions.create({
             model: "gpt-4",
             messages,
-            temperature: 0.3
+            temperature: 0.3,
+            max_tokens: MAX_TOKENS_PER_REQUEST
         });
+
+        return response;
     } catch (error) {
         console.error('Erro na tradução:', error);
         throw error;
@@ -657,5 +645,80 @@ const handleTranslationError = async (error: any, translationId: string) => {
         }
     });
     global.io?.emit('translation:error', { id: translationId, error: error.message });
+};
+
+// Função auxiliar para remover sobreposições duplicadas
+const removeDuplicateOverlap = (previousChunk: string, currentChunk: string): string => {
+    const words1 = previousChunk.split(/\s+/);
+    const words2 = currentChunk.split(/\s+/);
+    
+    // Encontrar a maior sequência comum no final do chunk anterior
+    let maxOverlap = 0;
+    for (let i = 1; i <= Math.min(OVERLAP_SIZE, words1.length); i++) {
+        const end1 = words1.slice(-i).join(' ');
+        const start2 = words2.slice(0, i).join(' ');
+        if (end1 === start2) {
+            maxOverlap = i;
+        }
+    }
+    
+    // Remover a sobreposição do início do chunk atual
+    return words2.slice(maxOverlap).join(' ');
+};
+
+// Função para extrair contexto relevante da base de conhecimento
+const extractRelevantContext = async (text: string, knowledgeBase: KnowledgeBase): Promise<string> => {
+    try {
+        const chunks = await prisma.knowledgeBaseChunk.findMany({
+            where: {
+                knowledgeBaseId: knowledgeBase.id
+            },
+            select: {
+                content: true
+            }
+        });
+
+        // Extrair termos técnicos do texto atual
+        const textTerms = extractTechnicalTerms(text);
+        
+        // Filtrar chunks relevantes
+        const relevantChunks = chunks
+            .filter(chunk => {
+                const chunkTerms = extractTechnicalTerms(chunk.content);
+                return hasRelevantOverlap(chunkTerms, textTerms);
+            })
+            .map(chunk => chunk.content)
+            .slice(0, 3); // Limitar a 3 chunks mais relevantes
+
+        return relevantChunks.join('\n\n');
+    } catch (error) {
+        console.error('Erro ao extrair contexto relevante:', error);
+        return '';
+    }
+};
+
+// Função auxiliar para extrair termos técnicos
+const extractTechnicalTerms = (text: string): string[] => {
+    const patterns = [
+        /[A-Z][a-z]+(?:[A-Z][a-z]+)*/g,  // CamelCase
+        /\b[A-Z]+\b/g,                    // Siglas
+        /\b[A-Z][a-z]+\b/g,              // Palavras capitalizadas
+        /\b\w+(?:[-_]\w+)+\b/g           // Termos com hífen ou underscore
+    ];
+
+    const terms = new Set<string>();
+    patterns.forEach(pattern => {
+        const matches = text.match(pattern) || [];
+        matches.forEach(term => terms.add(term));
+    });
+
+    return Array.from(terms);
+};
+
+// Função auxiliar para verificar sobreposição relevante de termos
+const hasRelevantOverlap = (terms1: string[], terms2: string[]): boolean => {
+    const overlap = terms1.filter(term => terms2.includes(term));
+    // Considerar relevante se houver pelo menos 2 termos em comum
+    return overlap.length >= 2;
 };
 

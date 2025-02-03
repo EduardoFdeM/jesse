@@ -47,9 +47,25 @@ export const createKnowledgeBase = asyncHandler(async (req: Request, res: Respon
             originalFileName: file.originalname
         });
 
+        // Remover informações sensíveis/desnecessárias da resposta
+        const knowledgeBaseResponse = {
+            id: knowledgeBase.id,
+            name: knowledgeBase.name,
+            description: knowledgeBase.description,
+            fileName: knowledgeBase.fileName,
+            filePath: knowledgeBase.filePath,
+            fileSize: knowledgeBase.fileSize,
+            fileType: knowledgeBase.fileType,
+            sourceLanguage: knowledgeBase.sourceLanguage,
+            targetLanguage: knowledgeBase.targetLanguage,
+            createdAt: knowledgeBase.createdAt,
+            updatedAt: knowledgeBase.updatedAt,
+            userId: knowledgeBase.userId
+        };
+
         res.status(201).json({
             status: 'success',
-            data: knowledgeBase
+            data: knowledgeBaseResponse
         });
     } catch (error) {
         // Limpar arquivo temporário em caso de erro

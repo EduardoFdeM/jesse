@@ -63,6 +63,7 @@ model KnowledgeBase {
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
+  chunks         KnowledgeBaseChunk[]
 }
 
 model Prompt {
@@ -95,4 +96,16 @@ model PromptVersion {
 
   @@index([promptId])
   @@index([userId])
+}
+
+model KnowledgeBaseChunk {
+  id              String       @id @default(cuid())
+  content         String       @db.Text
+  embedding       Float[]      // Alterado para array de floats
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  knowledgeBaseId String
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([knowledgeBaseId])
 }
