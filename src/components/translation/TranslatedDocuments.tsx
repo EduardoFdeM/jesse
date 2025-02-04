@@ -7,6 +7,10 @@ import { toast } from 'react-toastify';
 import { useSocket } from '../../hooks/useSocket';
 import { LANGUAGES } from '../../constants/languages';
 
+// Constantes para os custos por token
+const INPUT_TOKEN_RATE = 0.00000015;  // $0.150 / 1M tokens
+const OUTPUT_TOKEN_RATE = 0.0000006;  // $0.600 / 1M tokens
+
 export function TranslatedDocuments() {
     const [translations, setTranslations] = useState<Translation[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -27,10 +31,8 @@ export function TranslatedDocuments() {
     const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
 
     // Função para ordenar traduções
-    const sortTranslations = (translations: Translation[]) => {
-        return [...translations].sort((a, b) => 
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+    const sortTranslations = (translations: Translation[]): Translation[] => {
+        return translations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     };
 
     // Função para carregar traduções
@@ -322,14 +324,34 @@ export function TranslatedDocuments() {
     };
 
     // Função para formatar o custo
-    const formatCost = (cost: string | null) => {
+    const formatCost = (cost: string | null): string => {
         if (!cost) return 'N/A';
-        
-        const numericCost = parseFloat(cost);
-        if (isNaN(numericCost)) return 'N/A';
-        
-        // O custo já vem calculado corretamente do backend, só precisamos formatar
-        return `US$ ${numericCost.toFixed(4)}`;
+        try {
+            // Tenta interpretar o valor como JSON
+            const parsedCost = JSON.parse(cost);
+            
+            // Se tiver os tokens separados (prompt/completion), usa as taxas específicas
+            if (parsedCost.promptTokens && parsedCost.completionTokens) {
+                const inputCost = parsedCost.promptTokens * INPUT_TOKEN_RATE;
+                const outputCost = parsedCost.completionTokens * OUTPUT_TOKEN_RATE;
+                const totalCost = inputCost + outputCost;
+                return `US$ ${totalCost.toFixed(4)}`;
+            }
+            
+            // Se só tiver totalTokens, usa uma média das taxas (fallback)
+            if (parsedCost.totalTokens) {
+                const averageRate = (INPUT_TOKEN_RATE + OUTPUT_TOKEN_RATE) / 2;
+                const computedCost = parsedCost.totalTokens * averageRate;
+                return `US$ ${computedCost.toFixed(4)}`;
+            }
+            
+            return 'N/A';
+        } catch (error) {
+            // Se não for JSON, tenta converter diretamente
+            const numericCost = parseFloat(cost);
+            if (isNaN(numericCost)) return 'N/A';
+            return `US$ ${numericCost.toFixed(4)}`;
+        }
     };
 
     // Função para selecionar itens entre dois índices
