@@ -46,10 +46,10 @@ export const processKnowledgeBaseFile = async (filePath: string, params: Process
         }
 
         const fileType = fileExtension as FileType;
-
+        
         // Ler conteúdo do arquivo
         const fileContent = await fs.promises.readFile(filePath);
-
+        
         // Upload para S3
         const timestamp = Date.now();
         const s3Key = `knowledge-bases/${params.userId}/${timestamp}-${path.basename(filePath)}`;
@@ -59,8 +59,16 @@ export const processKnowledgeBaseFile = async (filePath: string, params: Process
             throw new Error('Falha ao fazer upload do arquivo para S3');
         }
 
-        // Ler conteúdo para processamento
-        const content = await fs.promises.readFile(filePath, 'utf-8');
+        // Extrair texto do arquivo de acordo com o tipo
+        let content = '';
+        if (fileType === 'txt') {
+            content = await fs.promises.readFile(filePath, 'utf-8');
+        } else if (['xlsx', 'xls'].includes(fileType)) {
+            content = await extractTextFromXLSX(filePath);
+        } else if (fileType === 'csv') {
+            content = await fs.promises.readFile(filePath, 'utf-8');
+        }
+
         const chunks = splitIntoChunks(content);
         
         // Criar base de conhecimento com chunks
@@ -222,5 +230,30 @@ export const simpleSearchKnowledgeBaseContext = async (
     } catch (error) {
         console.error('Erro ao buscar contexto relevante:', error);
         return '';
+    }
+};
+
+// Função para extrair texto de arquivo XLSX
+const extractTextFromXLSX = async (filePath: string): Promise<string> => {
+    try {
+        const XLSX = (await import('xlsx')).default;
+        const workbook = XLSX.readFile(filePath);
+        
+        let fullText = '';
+        
+        // Concatena o texto de todas as planilhas
+        workbook.SheetNames.forEach(sheetName => {
+            const sheet = workbook.Sheets[sheetName];
+            const text = XLSX.utils.sheet_to_txt(sheet);
+            // Limpa caracteres inválidos e garante UTF-8 válido
+            const cleanText = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+                                .replace(/\u0000/g, ''); // Remove null bytes
+            fullText += cleanText + '\n\n';
+        });
+        
+        return fullText.trim();
+    } catch (error) {
+        console.error('Erro ao extrair texto do XLSX:', error);
+        throw error;
     }
 };

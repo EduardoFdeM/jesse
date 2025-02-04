@@ -22,7 +22,14 @@ export function Editor() {
         api.get(`/api/translations/${id}`)
       ]);
 
-      setContent(contentResponse.data.content);
+      // Converte o texto plano para HTML, preservando parágrafos
+      const plainText: string = contentResponse.data.content;
+      const formattedContent = plainText
+        .split('\n\n')
+        .map(paragraph => `<p>${paragraph}</p>`)
+        .join('');
+        
+      setContent(formattedContent);
       setSourceLanguage(translationResponse.data.sourceLanguage);
       setTargetLanguage(translationResponse.data.targetLanguage);
     } catch (error) {

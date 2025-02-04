@@ -538,10 +538,16 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             });
         }
 
-        // Juntar chunks traduzidos removendo duplicações nas sobreposições
+        // Juntar chunks traduzidos, removendo duplicações nas sobreposições
         const translatedContent = translatedChunks.join('\n\n');
         
-        // Salvar arquivo traduzido
+        // Armazena o conteúdo traduzido em texto plano para edição
+        await prisma.translation.update({
+            where: { id: params.translationId },
+            data: { plainTextContent: translatedContent }
+        });
+
+        // Salvar arquivo traduzido (PDF) para download
         const savedFile = await saveTranslatedFile(
             translatedContent,
             params.originalName,

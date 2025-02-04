@@ -46,6 +46,7 @@ model Translation {
   promptId        String?
   prompt          Prompt?        @relation(fields: [promptId], references: [id])
   translationMetadata String?    @default("{}")
+  plainTextContent String?
 }
 
 model KnowledgeBase {

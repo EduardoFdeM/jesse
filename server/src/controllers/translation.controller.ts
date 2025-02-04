@@ -381,97 +381,103 @@ export const getTranslationContent = authenticatedHandler(async (req, res) => {
             throw new NotFoundError('Tradução não encontrada');
         }
 
-        const s3Key = translation.filePath.split(`${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/`)[1];
-        
-        if (!s3Key) {
-            throw new Error('Caminho do arquivo inválido');
-        }
+        let content = '';
 
-        try {
-            const command = new GetObjectCommand({
-                Bucket: process.env.AWS_S3_BUCKET || '',
-                Key: s3Key
-            });
+        // Se o conteúdo em texto plano foi armazenado, utiliza-o para edição
+        if (translation?.plainTextContent) {
+            content = translation.plainTextContent;
+        } else {
+            const s3Key = translation.filePath.split(`${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/`)[1];
+            
+            if (!s3Key) {
+                throw new Error('Caminho do arquivo inválido');
+            }
 
-            const response = await s3Client.send(command);
-            let content = '';
+            try {
+                const command = new GetObjectCommand({
+                    Bucket: process.env.AWS_S3_BUCKET || '',
+                    Key: s3Key
+                });
 
-            if (translation.fileType === 'application/pdf') {
-                content = await new Promise<string>((resolve, reject) => {
-                    const chunks: Buffer[] = [];
-                    
-                    if (response.Body instanceof Readable) {
-                        response.Body
-                            .on('data', (chunk: Buffer) => chunks.push(chunk))
-                            .on('end', async () => {
-                                try {
-                                    const buffer = Buffer.concat(chunks);
-                                    const tempDir = path.join(process.cwd(), 'temp');
-                                    
-                                    // Garantir que o diretório temp existe
-                                    if (!fs.existsSync(tempDir)) {
-                                        await fs.promises.mkdir(tempDir, { recursive: true });
-                                    }
-                                    
-                                    // Criar arquivo temporário
-                                    const tempFile = path.join(tempDir, `temp_${Date.now()}.pdf`);
-                                    await fs.promises.writeFile(tempFile, buffer);
-                                    
-                                    const pdfParser = new PDFParser();
-                                    
-                                    pdfParser.on('pdfParser_dataReady', (pdfData: PDFData) => {
-                                        try {
-                                            const text = pdfData.Pages
-                                                .map((page: PDFPage) => 
-                                                    page.Texts.map((text: PDFText) => 
-                                                        text.R.map((r: PDFTextR) => r.T)
-                                                            .join(' '))
-                                                        .join('\n'))
-                                                    .join('\n\n');
-                                            
-                                            // Limpar arquivo temporário
+                const response = await s3Client.send(command);
+
+                if (translation.fileType === 'application/pdf') {
+                    content = await new Promise<string>((resolve, reject) => {
+                        const chunks: Buffer[] = [];
+                        
+                        if (response.Body instanceof Readable) {
+                            response.Body
+                                .on('data', (chunk: Buffer) => chunks.push(chunk))
+                                .on('end', async () => {
+                                    try {
+                                        const buffer = Buffer.concat(chunks);
+                                        const tempDir = path.join(process.cwd(), 'temp');
+                                        
+                                        // Garantir que o diretório temp existe
+                                        if (!fs.existsSync(tempDir)) {
+                                            await fs.promises.mkdir(tempDir, { recursive: true });
+                                        }
+                                        
+                                        // Criar arquivo temporário
+                                        const tempFile = path.join(tempDir, `temp_${Date.now()}.pdf`);
+                                        await fs.promises.writeFile(tempFile, buffer);
+                                        
+                                        const pdfParser = new PDFParser();
+                                        
+                                        pdfParser.on('pdfParser_dataReady', (pdfData: PDFData) => {
+                                            try {
+                                                const text = pdfData.Pages
+                                                    .map((page: PDFPage) => 
+                                                        page.Texts.map((text: PDFText) => 
+                                                            text.R.map((r: PDFTextR) => r.T)
+                                                                .join(' '))
+                                                            .join('\n'))
+                                                        .join('\n\n');
+                                                
+                                                // Limpar arquivo temporário
+                                                fs.unlink(tempFile, (err) => {
+                                                    if (err) console.error('Erro ao deletar arquivo temporário:', err);
+                                                });
+                                                
+                                                resolve(decodeURIComponent(text));
+                                            } catch {
+                                                reject(new Error('Erro ao processar PDF'));
+                                            }
+                                        });
+                                        
+                                        pdfParser.on('pdfParser_dataError', () => {
+                                            // Limpar arquivo temporário em caso de erro
                                             fs.unlink(tempFile, (err) => {
                                                 if (err) console.error('Erro ao deletar arquivo temporário:', err);
                                             });
-                                            
-                                            resolve(decodeURIComponent(text));
-                                        } catch {
                                             reject(new Error('Erro ao processar PDF'));
-                                        }
-                                    });
-                                    
-                                    pdfParser.on('pdfParser_dataError', () => {
-                                        // Limpar arquivo temporário em caso de erro
-                                        fs.unlink(tempFile, (err) => {
-                                            if (err) console.error('Erro ao deletar arquivo temporário:', err);
                                         });
-                                        reject(new Error('Erro ao processar PDF'));
-                                    });
 
-                                    pdfParser.loadPDF(tempFile);
-                                } catch (error) {
-                                    reject(new Error('Erro ao processar buffer do PDF'));
-                                }
-                            })
-                            .on('error', (error: Error) => {
-                                reject(error);
-                            });
-                    } else {
-                        reject(new Error('Formato de resposta inválido do S3'));
-                    }
-                });
-            } else {
-                content = await response.Body?.transformToString() || '';
+                                        pdfParser.loadPDF(tempFile);
+                                    } catch (error) {
+                                        reject(new Error('Erro ao processar buffer do PDF'));
+                                    }
+                                })
+                                .on('error', (error: Error) => {
+                                    reject(error);
+                                });
+                        } else {
+                            reject(new Error('Formato de resposta inválido do S3'));
+                        }
+                    });
+                } else {
+                    content = await response.Body?.transformToString() || '';
+                }
+            } catch (s3Error) {
+                console.error('Erro ao acessar arquivo no S3:', s3Error);
+                throw new NotFoundError('Arquivo não encontrado no S3');
             }
-
-            res.json({ 
-                content,
-                translation
-            });
-        } catch (s3Error) {
-            console.error('Erro ao acessar arquivo no S3:', s3Error);
-            throw new NotFoundError('Arquivo não encontrado no S3');
         }
+
+        res.json({ 
+            content,
+            translation
+        });
     } catch (error) {
         console.error('Erro ao obter conteúdo:', error);
         throw error;
