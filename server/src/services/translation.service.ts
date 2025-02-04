@@ -375,26 +375,29 @@ const saveTranslatedFile = async (
                         }
                     });
 
-                    // Configurar layout de colunas
-                    const pages = text.split('---PAGE---');
-                    pages.forEach((pageContent, pageIndex) => {
-                        if (pageIndex > 0) pdfDoc.addPage();
-
-                        const columns = pageContent.split('\n\n');
-                        const columnWidth = (pdfDoc.page.width - 100) / columns.length;
-
-                        columns.forEach((columnContent, columnIndex) => {
-                            pdfDoc.text(columnContent.trim(), {
-                                columns: columns.length,
-                                width: columnWidth,
-                                height: pdfDoc.page.height - 100,
-                                align: 'left',
-                                continued: false,
-                                indent: columnIndex * columnWidth + 50
+                    // Nova lógica para configuração do conteúdo do PDF:
+                    if (text.includes('---PAGE---')) {
+                        // Se o conteúdo possuir marcadores de página, processa páginas e colunas como antes
+                        const pages = text.split('---PAGE---');
+                        pages.forEach((pageContent, pageIndex) => {
+                            if (pageIndex > 0) pdfDoc.addPage();
+                            const columns = pageContent.split('\n\n');
+                            const columnWidth = (pdfDoc.page.width - 100) / columns.length;
+                            columns.forEach((columnContent, columnIndex) => {
+                                pdfDoc.text(columnContent.trim(), {
+                                    columns: columns.length,
+                                    width: columnWidth,
+                                    height: pdfDoc.page.height - 100,
+                                    align: 'left',
+                                    continued: false,
+                                    indent: columnIndex * columnWidth + 50
+                                });
                             });
                         });
-                    });
-
+                    } else {
+                        // Se não houver separador '---PAGE---', escreve o texto inteiro de forma simples
+                        pdfDoc.text(text, { align: 'left' });
+                    }
                     pdfDoc.end();
                 });
             }
