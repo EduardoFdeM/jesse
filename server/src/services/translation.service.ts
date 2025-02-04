@@ -65,7 +65,7 @@ interface TextChunkWithContext {
     };
 }
 
-const MAX_TOKENS_PER_REQUEST = 4000; // Reduzido para garantir margem
+const MAX_TOKENS_PER_REQUEST = 16000; // Suporta até 16K tokens de saída com GPT-4o-mini e context window de 128K tokens.
 const OVERLAP_SIZE = 200; // Caracteres de sobreposição entre chunks
 const MIN_CHUNK_SIZE = 1000; // Tamanho mínimo do chunk
 
@@ -235,8 +235,8 @@ const preserveFormatting = (originalText: string, translatedText: string): strin
 
 // Função para calcular custo
 const calculateCost = (inputTokens: number, outputTokens: number): string => {
-    const COST_PER_1K_INPUT_TOKENS = 0.0015;   // $0.0015 por 1K tokens de entrada
-    const COST_PER_1K_OUTPUT_TOKENS = 0.002;   // $0.002 por 1K tokens de saída
+    const COST_PER_1K_INPUT_TOKENS = 0.00015;    // $0.150 por 1M tokens de entrada
+    const COST_PER_1K_OUTPUT_TOKENS = 0.0006;      // $0.600 por 1M tokens de saída
     
     const inputCost = (inputTokens / 1000) * COST_PER_1K_INPUT_TOKENS;
     const outputCost = (outputTokens / 1000) * COST_PER_1K_OUTPUT_TOKENS;
@@ -611,9 +611,9 @@ const translateWithContext = async (chunk: TextChunkWithContext, context: Transl
         });
 
         const response = await openai.chat.completions.create({
-            model: "gpt-4",
+            model: "gpt-4o-mini",
             messages,
-            temperature: 0.3,
+            temperature: 0.1,
             max_tokens: MAX_TOKENS_PER_REQUEST
         });
 
