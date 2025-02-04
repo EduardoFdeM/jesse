@@ -101,11 +101,10 @@ model PromptVersion {
 model KnowledgeBaseChunk {
   id              String       @id @default(cuid())
   content         String       @db.Text
-  embedding       Float[]      // Alterado para array de floats
-  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
   knowledgeBaseId String
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
   @@index([knowledgeBaseId])
 }

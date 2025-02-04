@@ -1,11 +1,11 @@
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
+  log: ['error'],
   errorFormat: 'pretty',
   datasources: {
     db: {
-      url: process.env.DATABASE_URL
+      url: process.env.DATABASE_URL + '?sslmode=no-verify'
     }
   }
 });
@@ -14,9 +14,7 @@ const prisma = new PrismaClient({
 export const connectDatabase = async () => {
   try {
     console.log('🔄 Tentando conectar ao banco de dados...');
-    const dbUrl = process.env.DATABASE_URL?.split('?')[0];
-    console.log('📊 URL do banco:', dbUrl);
-
+    
     let retries = 3;
     while (retries > 0) {
       try {

@@ -215,19 +215,33 @@ export const deleteKnowledgeBase = asyncHandler(async (req: Request, res: Respon
         throw new NotFoundError('Base de conhecimento não encontrada');
     }
 
-    // Excluir o arquivo
-    if (fs.existsSync(knowledgeBase.filePath)) {
-        fs.unlinkSync(knowledgeBase.filePath);
+    try {
+        // Deletar arquivo do S3
+        if (knowledgeBase.filePath) {
+            const s3Key = knowledgeBase.filePath.split('.amazonaws.com/')[1];
+            if (s3Key) {
+                await deleteFromS3(s3Key);
+            }
+        }
+
+        // Deletar chunks e a base de conhecimento
+        await prisma.$transaction([
+            prisma.knowledgeBaseChunk.deleteMany({
+                where: { knowledgeBaseId: id }
+            }),
+            prisma.knowledgeBase.delete({
+                where: { id }
+            })
+        ]);
+
+        res.json({
+            status: 'success',
+            data: null
+        });
+    } catch (error) {
+        console.error('Erro ao deletar base de conhecimento:', error);
+        throw error;
     }
-
-    await prisma.knowledgeBase.delete({
-        where: { id }
-    });
-
-    res.json({
-        status: 'success',
-        data: null
-    });
 });
 
 // Obter conteúdo da base de conhecimento

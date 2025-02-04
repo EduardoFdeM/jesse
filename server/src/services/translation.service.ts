@@ -9,6 +9,7 @@ import { Document, Paragraph, Packer, TextRun } from 'docx';
 import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
 import axios from 'axios';
 import { KnowledgeBase } from '@prisma/client';
+import { simpleSearchKnowledgeBaseContext } from './knowledge.service.js';
 
 interface PDFTextR {
     T: string;
@@ -588,38 +589,26 @@ const translateWithContext = async (chunk: TextChunkWithContext, context: Transl
             }
         ];
 
-        // Adicionar contexto de sobreposição
-        if (chunk.overlap.previous) {
-            messages.push({
-                role: 'user',
-                content: `Contexto anterior:\n${chunk.overlap.previous}\n`
-            });
-        }
-
-        // Adicionar base de conhecimento se disponível
+        // Adicionar contexto da base de conhecimento se disponível
         if (context.knowledgeBase) {
-            const relevantContext = await extractRelevantContext(chunk.content, context.knowledgeBase);
-            if (relevantContext) {
-                messages.push({
-                    role: 'user',
-                    content: `Contexto relevante:\n${relevantContext}\n`
-                });
+            try {
+                const relevantContext = await getRelevantContext(chunk.content, context.knowledgeBase.id);
+                if (relevantContext) {
+                    messages.push({
+                        role: 'user',
+                        content: `Contexto relevante:\n${relevantContext}\n`
+                    });
+                }
+            } catch (error) {
+                console.error('Erro ao buscar contexto relevante:', error);
             }
         }
 
-        // Adicionar o texto principal para tradução
+        // Adicionar o texto para tradução
         messages.push({
             role: 'user',
             content: `Traduza de ${context.sourceLanguage} para ${context.targetLanguage}:\n${chunk.content}`
         });
-
-        // Adicionar contexto posterior se disponível
-        if (chunk.overlap.next) {
-            messages.push({
-                role: 'user',
-                content: `Próximo contexto:\n${chunk.overlap.next}\n`
-            });
-        }
 
         const response = await openai.chat.completions.create({
             model: "gpt-4",
@@ -632,6 +621,16 @@ const translateWithContext = async (chunk: TextChunkWithContext, context: Transl
     } catch (error) {
         console.error('Erro na tradução:', error);
         throw error;
+    }
+};
+
+// Atualizar a função que estava usando searchRelevantChunks para usar simpleSearchKnowledgeBaseContext
+const getRelevantContext = async (text: string, knowledgeBaseId: string): Promise<string> => {
+    try {
+        return await simpleSearchKnowledgeBaseContext(text, knowledgeBaseId);
+    } catch (error) {
+        console.error('Erro ao buscar contexto relevante:', error);
+        return '';
     }
 };
 
