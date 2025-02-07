@@ -174,7 +174,9 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 usedPrompt: useCustomPrompt,
                 usedKnowledgeBase: useKnowledgeBase,
                 promptId,
-                knowledgeBaseId
+                knowledgeBaseId,
+                threadId: null,  // Será atualizado durante a tradução
+                runId: null     // Será atualizado durante a tradução
             },
             include: {
                 knowledgeBase: true,

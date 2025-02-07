@@ -5,7 +5,7 @@ const prisma = new PrismaClient({
   errorFormat: 'pretty',
   datasources: {
     db: {
-      url: process.env.DATABASE_URL + '?sslmode=no-verify'
+      url: process.env.DATABASE_URL + '?sslmode=no-verify&connection_limit=5&pool_timeout=0'
     }
   }
 });
@@ -14,33 +14,32 @@ const prisma = new PrismaClient({
 export const connectDatabase = async () => {
   try {
     console.log('🔄 Tentando conectar ao banco de dados...');
+    console.log('URL:', process.env.DATABASE_URL);
     
-    let retries = 3;
+    let retries = 5;
+    let lastError;
+    
     while (retries > 0) {
       try {
         await prisma.$connect();
         console.log('✅ Conectado ao banco de dados com sucesso!');
-        break;
+        
+        // Teste a conexão
+        const result = await prisma.$queryRaw`SELECT current_database(), current_schema()`;
+        console.log('✅ Informações do banco:', result);
+        
+        return;
       } catch (error) {
+        lastError = error;
         retries--;
-        if (retries === 0) throw error;
+        if (retries === 0) break;
+        
         console.log(`⚠️ Tentativa falhou. Restam ${retries} tentativas...`);
         await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
     
-    // Teste a conexão
-    const result = await prisma.$queryRaw`SELECT current_database(), current_schema()`;
-    console.log('✅ Informações do banco:', result);
-    
-    // Verificar tabelas
-    const tables = await prisma.$queryRaw`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public'
-    `;
-    console.log('📋 Tabelas existentes:', tables);
-    
+    throw lastError;
   } catch (error) {
     console.error('❌ Erro ao conectar ao banco de dados:', error);
     throw error;

@@ -24,10 +24,10 @@
     "db:reset": "cd server && npx prisma migrate reset --force && npx prisma db push && npx prisma generate",
     "db:deploy": "cd server && deploy.bat",
     "db:deploy:unix": "cd server && DATABASE_URL=$RAILWAY_DATABASE_URL npx prisma migrate deploy && npx prisma generate",
-    "db:reset:railway": "cd server && npx prisma migrate reset --force && npx prisma generate && npx prisma db push",
-    "db:deploy:railway": "cd server && npx prisma migrate deploy && npx prisma generate && npx prisma db push",
-    "railway:deploy": "npm run db:deploy:railway && npm run server:build",
-    "test:db": "cd server && tsx src/scripts/testConnection.ts",
+    "db:reset:railway": "cd server && npx prisma migrate reset --force && npx prisma generate && npx prisma db push --accept-data-loss",
+    "db:deploy:railway": "cd server && npx prisma migrate deploy && npx prisma generate && npx prisma db push --accept-data-loss",
+    "railway:deploy": "npm run db:test:connection && npm run db:deploy:railway && npm run server:build",
+    "db:test:connection": "cd server && tsx src/scripts/testConnection.ts",
     "prisma:reset": "cd server && cross-env DATABASE_URL=$RAILWAY_DATABASE_URL npx prisma migrate reset --force",
     "prisma:deploy": "cd server && cross-env DATABASE_URL=$RAILWAY_DATABASE_URL npx prisma migrate deploy",
     "prisma:push": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway && npx prisma db push --accept-data-loss",
@@ -36,9 +36,10 @@
     "db:reset:unix": "cd server && DATABASE_URL=$RAILWAY_DATABASE_URL npx prisma migrate reset --force && npx prisma generate && npx prisma db push",
     "db:reset:win:no-ssl": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway?sslmode=no-verify && npx prisma migrate reset --force && npx prisma generate && npx prisma db push",
     "db:reset:win:ssl": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway?sslmode=require&connection_limit=5 && npx prisma migrate reset --force && npx prisma generate && npx prisma db push --accept-data-loss",
-    "db:test:connection": "cd server && tsx src/scripts/testConnection.ts",
     "prisma:push:no-ssl": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway?sslmode=no-verify && npx prisma db push --accept-data-loss",
-    "prisma:push:safe": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway?sslmode=no-verify && npx prisma db push"
+    "prisma:push:safe": "cd server && set DATABASE_URL=postgresql://postgres:KsqInWIXpEkzUkRKHrdlezOSgdILvZBQ@junction.proxy.rlwy.net:58730/railway?sslmode=no-verify && npx prisma db push",
+    "prisma:push:railway": "cd server && npx prisma db push --accept-data-loss",
+    "prisma:migrate:railway": "cd server && npx prisma migrate deploy && npx prisma generate"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.726.1",

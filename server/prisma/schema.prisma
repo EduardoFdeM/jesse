@@ -47,6 +47,9 @@ model Translation {
   prompt          Prompt?        @relation(fields: [promptId], references: [id])
   translationMetadata String?    @default("{}")
   plainTextContent String?
+  threadId        String?        // ID do thread do Assistant
+  runId           String?        // ID do run do Assistant
+  assistantId     String?        @default("")
 }
 
 model KnowledgeBase {
@@ -80,6 +83,9 @@ model Prompt {
   updatedAt    DateTime        @updatedAt
   translations Translation[]
   versions     PromptVersion[] @relation("PromptVersions")
+  isPublic     Boolean         @default(false)
+  model        String          @default("gpt-4-turbo-preview")
+  temperature  Float           @default(0.3)
 
   @@index([userId])
 }
