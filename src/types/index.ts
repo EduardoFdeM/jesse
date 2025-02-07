@@ -91,8 +91,10 @@ export interface AuthState {
 
 // Tipos do assistente
 export interface AssistantConfig {
-  assistantId: string;
+  id: string;
+  name: string;
   model: string;
+  instructions: string;
   temperature: number;
 }
 

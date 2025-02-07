@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import prisma from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY
+});
 
 // Listar todos os usuários
 export const getUsers = asyncHandler(async (_req: Request, res: Response) => {
@@ -133,25 +138,67 @@ export const updateUserRole = asyncHandler(async (req: Request, res: Response) =
 
 // Obter configuração do assistente
 export const getAssistantConfig = asyncHandler(async (_req: Request, res: Response) => {
-    const config = {
-        assistantId: process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID,
-        model: process.env.OPENAI_MODEL || 'gpt-4-turbo-preview',
-        temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.3')
-    };
+    const assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID;
+    
+    if (!assistantId) {
+        throw new Error('ID do assistente não configurado');
+    }
 
-    res.json({ config });
+    try {
+        // Buscar detalhes do assistente na OpenAI
+        const assistant = await openai.beta.assistants.retrieve(assistantId);
+
+        const config = {
+            id: assistant.id,
+            name: assistant.name,
+            model: assistant.model,
+            instructions: assistant.instructions,
+            temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.3')
+        };
+
+        res.json({ config });
+    } catch (error) {
+        console.error('Erro ao buscar assistente:', error);
+        throw new Error('Erro ao buscar configuração do assistente');
+    }
 });
 
 // Atualizar configuração do assistente
 export const updateAssistantConfig = asyncHandler(async (req: Request, res: Response) => {
-    const { assistantId, model, temperature } = req.body;
+    const { model, instructions, temperature } = req.body;
+    const assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID;
 
-    // Aqui você pode adicionar a lógica para atualizar as variáveis de ambiente
-    // Por exemplo, salvando em um arquivo .env ou em um serviço de configuração
+    if (!assistantId) {
+        throw new Error('ID do assistente não configurado');
+    }
 
-    // Por enquanto, apenas retornamos os valores recebidos
-    res.json({
-        message: 'Configuração atualizada com sucesso',
-        config: { assistantId, model, temperature }
-    });
+    try {
+        // Atualizar o assistente na OpenAI
+        const assistant = await openai.beta.assistants.update(
+            assistantId,
+            {
+                model,
+                instructions
+            }
+        );
+
+        // Atualizar a temperatura no .env ou onde for apropriado
+        // TODO: Implementar persistência da temperatura
+
+        const config = {
+            id: assistant.id,
+            name: assistant.name,
+            model: assistant.model,
+            instructions: assistant.instructions,
+            temperature
+        };
+
+        res.json({
+            message: 'Configuração atualizada com sucesso',
+            config
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar assistente:', error);
+        throw new Error('Erro ao atualizar configuração do assistente');
+    }
 }); 
