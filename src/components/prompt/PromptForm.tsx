@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Save, ArrowLeft, Tag, Plus, X } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { api } from '../../services/api';
+import api from '../../axiosConfig';
 import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';

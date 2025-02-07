@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { FileText } from 'lucide-react';
-import { api } from '../services/api';
+import api from '../axiosConfig';
 import toast from 'react-hot-toast';
 
 export function Login() {
@@ -25,6 +25,7 @@ export function Login() {
             localStorage.setItem('userEmail', user.email);
             localStorage.setItem('userId', user.id);
             localStorage.setItem('userName', user.name);
+            localStorage.setItem('userRole', user.role);
             
             toast.success('Login realizado com sucesso!');
             navigate('/');

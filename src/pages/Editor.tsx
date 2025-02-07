@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { DocumentEditor } from '../components/editor/DocumentEditor';
-import { api } from '../services/api';
+import api from '../axiosConfig';
 import { toast } from 'react-toastify';
 
 export function Editor() {

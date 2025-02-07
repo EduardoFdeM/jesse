@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2 } from 'lucide-react';
 import { Translation, KnowledgeBase, Prompt } from '../../types/index';
-import { api } from '../../services/api';
+import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
 import { useSocket } from '../../hooks/useSocket';
@@ -10,6 +10,13 @@ import { LANGUAGES } from '../../constants/languages';
 // Constantes para os custos por token
 const INPUT_TOKEN_RATE = 0.00000015;  // $0.150 / 1M tokens
 const OUTPUT_TOKEN_RATE = 0.0000006;  // $0.600 / 1M tokens
+
+interface TranslationMetadata {
+    usedKnowledgeBase: boolean;
+    usedPrompt: boolean;
+    knowledgeBaseName?: string;
+    promptName?: string;
+}
 
 export function TranslatedDocuments() {
     const [translations, setTranslations] = useState<Translation[]>([]);
@@ -40,30 +47,34 @@ export function TranslatedDocuments() {
         try {
             const response = await api.get('/api/translations');
             const translationsWithMetadata = response.data.data.map((translation: Translation) => {
-                let metadata = {};
+                let metadata: TranslationMetadata = {
+                    usedKnowledgeBase: false,
+                    usedPrompt: false
+                };
                 try {
-                    metadata = translation.translationMetadata 
-                        ? JSON.parse(translation.translationMetadata)
-                        : {};
+                    if (translation.translationMetadata) {
+                        metadata = JSON.parse(translation.translationMetadata) as TranslationMetadata;
+                    }
                 } catch (e) {
                     console.error('Erro ao parsear metadata:', e);
                 }
                     
                 return {
                     ...translation,
-                    usedKnowledgeBase: metadata.usedKnowledgeBase || translation.usedKnowledgeBase || false,
-                    usedPrompt: metadata.usedPrompt || translation.usedPrompt || false,
+                    usedKnowledgeBase: metadata.usedKnowledgeBase || false,
+                    usedPrompt: metadata.usedPrompt || false,
                     knowledgeBaseName: metadata.knowledgeBaseName || translation.knowledgeBase?.name,
                     promptName: metadata.promptName || translation.prompt?.name
                 };
             });
             
             setTranslations(sortTranslations(translationsWithMetadata));
-            setError(null);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Erro ao carregar traduções:', err);
-            if (err.message !== 'timeout of 10000ms exceeded' && err.response?.status !== 401) {
-                setError('Erro ao carregar traduções');
+            if (err instanceof Error && 
+                err.message !== 'timeout of 10000ms exceeded' && 
+                (err as any).response?.status !== 401) {
+                handleError('Erro ao carregar traduções');
             }
         }
     }, []);
@@ -125,15 +136,8 @@ export function TranslatedDocuments() {
             toast.success(`Tradução de "${translation.originalName}" concluída!`);
         };
 
-        const handleError = ({ id, error }: { id: string; error: string }) => {
-            setTranslations(prev => 
-                prev.map(t => 
-                    t.id === id 
-                        ? { ...t, status: 'error', errorMessage: error }
-                        : t
-                )
-            );
-            toast.error(`Erro na tradução: ${error}`);
+        const handleError = (message: string) => {
+            toast.error(message);
         };
 
         socket.on('translation:started', handleStarted);
@@ -203,9 +207,8 @@ export function TranslatedDocuments() {
 
             toast.success('Arquivo enviado com sucesso!');
             await loadTranslations();
-        } catch (error: any) {
-            console.error('Erro detalhado no upload:', error.response?.data || error);
-            toast.error(error.response?.data?.message || error.message || 'Erro ao fazer upload do arquivo');
+        } catch (error: unknown) {
+            handleUploadError(error);
         }
     };
     
@@ -447,6 +450,32 @@ export function TranslatedDocuments() {
         loadData();
     }, []);
 
+    const handleUploadError = (error: unknown) => {
+        if (error instanceof Error) {
+            handleError(error.message);
+        } else {
+            handleError('Erro desconhecido ao fazer upload do arquivo');
+        }
+    };
+
+    // Atualizar a exibição dos metadados
+    const renderMetadata = (translation: Translation & { knowledgeBaseName?: string; promptName?: string }) => {
+        return (
+            <>
+                {translation.usedKnowledgeBase && (
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Base de Conhecimento: {translation.knowledgeBaseName || translation.knowledgeBase?.name || 'Não especificada'}
+                    </div>
+                )}
+                {translation.usedPrompt && (
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Prompt: {translation.promptName || translation.prompt?.name || 'Não especificado'}
+                    </div>
+                )}
+            </>
+        );
+    };
+
     return (
         <div className="space-y-6">
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
@@ -505,8 +534,8 @@ export function TranslatedDocuments() {
                     onReset={handleReset}
                     selectedKnowledgeBase={selectedKnowledgeBase}
                     selectedPrompt={selectedPrompt}
-                    onKnowledgeBaseSelect={(id) => setSelectedKnowledgeBase(id)}
-                    onPromptSelect={(id) => setSelectedPrompt(id)}
+                    onKnowledgeBaseSelect={(id: string) => setSelectedKnowledgeBase(id)}
+                    onPromptSelect={(id: string) => setSelectedPrompt(id)}
                 />
             </div>
 
@@ -680,16 +709,7 @@ export function TranslatedDocuments() {
                                         Status: {translation.status}
                                     </div>
                                 )}
-                                {translation.usedKnowledgeBase && (
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                                        Base de Conhecimento: {translation.knowledgeBaseName || 'Não especificada'}
-                                    </div>
-                                )}
-                                {translation.usedPrompt && (
-                                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                                        Prompt: {translation.promptName || 'Não especificado'}
-                                    </div>
-                                )}
+                                {renderMetadata(translation)}
                                 {translation.errorMessage && (
                                     <div className="text-red-600 dark:text-red-400">
                                         Erro: {translation.errorMessage}

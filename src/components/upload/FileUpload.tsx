@@ -12,6 +12,10 @@ interface FileUploadProps {
   knowledgeBases: KnowledgeBase[];
   prompts: Prompt[];
   onReset: () => void;
+  selectedKnowledgeBase?: string | null;
+  selectedPrompt?: string | null;
+  onKnowledgeBaseSelect?: (id: string) => void;
+  onPromptSelect?: (id: string) => void;
 }
 
 interface UploadQueueItem {
@@ -30,12 +34,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   onFileSelect,
   knowledgeBases,
   prompts,
-  onReset
+  onReset,
+  selectedKnowledgeBase,
+  selectedPrompt,
+  onKnowledgeBaseSelect,
+  onPromptSelect
 }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
-  const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string>('');
-  const [useCustomPrompt, setUseCustomPrompt] = useState(false);
-  const [selectedPrompt, setSelectedPrompt] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -57,7 +62,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   }, []);
 
   const validatePromptSelection = () => {
-    if (useCustomPrompt && !selectedPrompt) {
+    if (selectedPrompt === null) {
       toast.error('Selecione um prompt personalizado');
       return false;
     }
@@ -87,12 +92,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       formData.append('targetLanguage', targetLanguage);
       formData.append('originalname', selectedFile.name);
       formData.append('useKnowledgeBase', useKnowledgeBase.toString());
-      formData.append('useCustomPrompt', useCustomPrompt.toString());
+      formData.append('useCustomPrompt', selectedPrompt !== null ? 'true' : 'false');
       
       if (useKnowledgeBase && selectedKnowledgeBase) {
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
       }
-      if (useCustomPrompt && selectedPrompt) {
+      if (selectedPrompt) {
         formData.append('promptId', selectedPrompt);
       }
 
@@ -167,8 +172,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
         {useKnowledgeBase && (
           <select
-            value={selectedKnowledgeBase}
-            onChange={(e) => setSelectedKnowledgeBase(e.target.value)}
+            value={selectedKnowledgeBase || ''}
+            onChange={(e) => onKnowledgeBaseSelect?.(e.target.value)}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">Selecione uma base</option>
@@ -187,8 +192,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           <input
             type="checkbox"
             id="useCustomPrompt"
-            checked={useCustomPrompt}
-            onChange={(e) => setUseCustomPrompt(e.target.checked)}
+            checked={selectedPrompt !== null}
+            onChange={(e) => onPromptSelect?.(e.target.checked ? prompts[0].id : null)}
             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
           <label htmlFor="useCustomPrompt" className="text-sm text-gray-700">
@@ -196,10 +201,10 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </label>
         </div>
 
-        {useCustomPrompt && (
+        {selectedPrompt && (
           <select
             value={selectedPrompt}
-            onChange={(e) => setSelectedPrompt(e.target.value)}
+            onChange={(e) => onPromptSelect?.(e.target.value)}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">Selecione um prompt...</option>

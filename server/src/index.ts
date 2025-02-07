@@ -12,7 +12,7 @@ import cors from 'cors';
 import corsOptions from './config/cors.js';
 import promptRoutes from './routes/prompt.routes.js';
 import { authenticate } from './middlewares/auth.middleware.js';
-
+import adminRoutes from './routes/admin.routes.js';
 // Carregar variáveis de ambiente
 dotenv.config();
 
@@ -78,6 +78,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/translations', authenticate, translationRoutes);
 app.use('/api/knowledge-bases', authenticate, knowledgeRoutes);
 app.use('/api/prompts', authenticate, promptRoutes);
+app.use('/api/admin', authenticate, adminRoutes);
 
 // Adicionar log específico para debug de autenticação
 app.use((req, res, next) => {

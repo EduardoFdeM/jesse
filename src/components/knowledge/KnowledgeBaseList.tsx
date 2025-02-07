@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, FileText, Clock } from 'lucide-react';
 import { KnowledgeBase } from '../../types';
-import { api } from '../../services/api';
+import api from '../../axiosConfig';
 import { Link } from 'react-router-dom';
 import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';

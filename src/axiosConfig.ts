@@ -2,12 +2,16 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://pdf-tradutor-production.up.railway.app';
 
+console.log('🌐 API URL configurada:', API_URL);
+
 const api = axios.create({
     baseURL: API_URL,
     headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
     },
-    withCredentials: true
+    withCredentials: true,
+    timeout: 30000
 });
 
 // Mapa para armazenar os controllers por rota
@@ -17,14 +21,23 @@ const controllerMap = new Map<string, AbortController>();
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('jwtToken');
+        
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+
+        // Criar um novo controller apenas se não existir um para a rota
+        if (config.url && !controllerMap.has(config.url)) {
+            const controller = new AbortController();
+            controllerMap.set(config.url, controller);
+            config.signal = controller.signal;
+        }
+
         console.log('📤 Enviando requisição:', {
             url: config.url,
-            method: config.method,
-            headers: config.headers
+            method: config.method
         });
+
         return config;
     },
     (error) => {
@@ -33,22 +46,47 @@ api.interceptors.request.use(
     }
 );
 
-// Função para obter ou criar um controller para uma rota específica
-export const getController = (route: string) => {
-    // Se já existe um controller para esta rota, cancela ele
-    if (controllerMap.has(route)) {
-        const existingController = controllerMap.get(route);
-        if (existingController) {
-            existingController.abort();
-            controllerMap.delete(route);
+// Melhorar o interceptor de resposta
+api.interceptors.response.use(
+    (response) => {
+        console.log('📥 Resposta recebida:', {
+            status: response.status,
+            url: response.config.url
+        });
+
+        // Limpar o controller após a resposta
+        if (response.config.url) {
+            controllerMap.delete(response.config.url);
         }
+
+        return response;
+    },
+    (error) => {
+        // Não logar erros de cancelamento
+        if (axios.isCancel(error)) {
+            return Promise.reject(error);
+        }
+
+        console.error('❌ Erro na resposta:', {
+            status: error.response?.status,
+            message: error.message,
+            url: error.config?.url
+        });
+
+        // Limpar o controller em caso de erro
+        if (error.config?.url) {
+            controllerMap.delete(error.config.url);
+        }
+
+        if (error.response?.status === 401) {
+            localStorage.removeItem('jwtToken');
+            window.location.href = '/login';
+            return Promise.reject(new Error('Sessão expirada. Por favor, faça login novamente.'));
+        }
+
+        return Promise.reject(error);
     }
-    
-    // Cria um novo controller
-    const controller = new AbortController();
-    controllerMap.set(route, controller);
-    return controller;
-};
+);
 
 // Função para cancelar uma requisição específica
 export const cancelRequest = (route: string) => {
@@ -64,35 +102,5 @@ export const clearControllers = () => {
     controllerMap.forEach(controller => controller.abort());
     controllerMap.clear();
 };
-
-// Interceptor para logs de resposta
-api.interceptors.response.use(
-    (response) => {
-        console.log('✅ Resposta recebida:', {
-            url: response.config.url,
-            status: response.status,
-            data: response.data
-        });
-        return response;
-    },
-    (error) => {
-        console.error('❌ Erro na resposta:', {
-            url: error.config?.url,
-            status: error.response?.status,
-            message: error.message,
-            response: error.response?.data
-        });
-        return Promise.reject(error);
-    }
-);
-
-// Interceptor para adicionar o signal do controller
-api.interceptors.request.use(config => {
-    if (config.url) {
-        const controller = getController(config.url);
-        config.signal = controller.signal;
-    }
-    return config;
-});
 
 export default api;

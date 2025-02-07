@@ -73,7 +73,8 @@ export const authSchemas = {
         name: z.string({
             required_error: "Nome é obrigatório",
             invalid_type_error: "Nome deve ser uma string"
-        }).min(2, "O nome deve ter pelo menos 2 caracteres")
+        }).min(2, "O nome deve ter pelo menos 2 caracteres"),
+        role: z.enum(['SUPERUSER', 'TRANSLATOR', 'EDITOR']).optional()
     }).strict() // Não permite campos extras
 };
 

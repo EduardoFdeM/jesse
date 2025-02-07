@@ -2,17 +2,24 @@ import { Router } from 'express';
 import authRoutes from './auth.routes.js';
 import translationRoutes from './translation.routes.js';
 import knowledgeRoutes from './knowledge.routes.js';
+import promptRoutes from './prompt.routes.js';
+import adminRoutes from './admin.routes.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
+import { authorize } from '../middlewares/authorization.middleware.js';
 
 const router = Router();
 
-// Rotas de autenticação
+// Rotas públicas
 router.use('/auth', authRoutes);
 
-// Rotas de tradução
-router.use('/translations', translationRoutes);
+// Middleware de autenticação para todas as rotas protegidas
+router.use(authenticate);
 
-// Rotas de glossário
-router.use('/knowledge-bases', knowledgeRoutes);
+// Rotas protegidas
+router.use('/translations', authorize(['SUPERUSER', 'TRANSLATOR']), translationRoutes);
+router.use('/knowledge-bases', authorize(['SUPERUSER', 'TRANSLATOR']), knowledgeRoutes);
+router.use('/prompts', authorize(['SUPERUSER', 'TRANSLATOR']), promptRoutes);
+router.use('/admin', authorize(['SUPERUSER']), adminRoutes);
 
 export default router;
 

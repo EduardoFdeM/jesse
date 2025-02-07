@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { FileText, Book, MessageSquare, LogOut, Sun, Moon } from 'lucide-react';
+import { FileText, Book, MessageSquare, LogOut, Sun, Moon, Settings } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function Dashboard() {
     const navigate = useNavigate();
     const location = useLocation();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const userRole = localStorage.getItem('userRole');
 
     const { theme, toggleTheme } = useTheme();
 
@@ -66,6 +67,19 @@ export function Dashboard() {
                                     <MessageSquare className="h-4 w-4 mr-2" />
                                     Prompts
                                 </Link>
+                                {userRole === 'SUPERUSER' && (
+                                    <Link
+                                        to="/admin"
+                                        className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
+                                            isActive('/admin')
+                                                ? 'border-blue-500 text-gray-900 dark:text-white'
+                                                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                                        }`}
+                                    >
+                                        <Settings className="h-4 w-4 mr-2" />
+                                        Admin
+                                    </Link>
+                                )}
                             </div>
                         </div>
 
@@ -164,10 +178,24 @@ export function Dashboard() {
                             <MessageSquare className="h-4 w-4 mr-2" />
                             Prompts
                         </Link>
+                        {userRole === 'SUPERUSER' && (
+                            <Link
+                                to="/admin"
+                                className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                                    isActive('/admin')
+                                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
+                                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Settings className="h-4 w-4 mr-2" />
+                                Admin
+                            </Link>
+                        )}
                         <button
                             onClick={handleLogout}
                             className="block w-full text-left pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"
                         >
+                            <LogOut className="h-4 w-4 mr-2" />
                             Sair
                         </button>
                     </div>

@@ -11,6 +11,7 @@ declare global {
                 id: string;
                 email: string;
                 name: string;
+                role: string;
             };
         }
     }
@@ -21,6 +22,7 @@ export interface AuthenticatedRequest extends Request {
         id: string;
         email: string;
         name: string;
+        role: string;
     };
 }
 
@@ -48,7 +50,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         
         const user = await prisma.user.findUnique({
             where: { id: decoded.id },
-            select: { id: true, email: true, name: true }
+            select: { id: true, email: true, name: true, role: true }
         });
 
         if (!user) {

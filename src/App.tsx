@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Dashboard } from './pages/Dashboard';
+import { Admin } from './pages/Admin';
 import { KnowledgeBaseList } from './components/knowledge/KnowledgeBaseList';
 import { KnowledgeBaseForm } from './components/knowledge/KnowledgeBaseForm';
 import { TranslatedDocuments } from './components/translation/TranslatedDocuments';
@@ -11,6 +12,17 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { Editor } from './pages/Editor';
 import { PromptList } from './components/prompt/PromptList';
 import { PromptForm } from './components/prompt/PromptForm';
+
+// Componente para proteger rotas de admin
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+    const userRole = localStorage.getItem('userRole');
+    
+    if (userRole !== 'SUPERUSER') {
+        return <Navigate to="/" replace />;
+    }
+    
+    return <PrivateRoute>{children}</PrivateRoute>;
+};
 
 export default function App() {
     return (
@@ -33,6 +45,7 @@ export default function App() {
                             <Route path="new" element={<PromptForm />} />
                             <Route path=":id/edit" element={<PromptForm />} />
                         </Route>
+                        <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
                     </Route>
                     <Route path="/editor/:id" element={<Editor />} />
                 </Routes>

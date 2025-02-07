@@ -10,7 +10,9 @@ import knowledgeRoutes from './routes/knowledge.routes.js';
 import corsOptions from './config/cors.js';
 import promptRoutes from './routes/prompt.routes.js';
 import { authenticate } from './middlewares/auth.middleware.js';
+import { authorize } from './middlewares/authorization.middleware.js';
 import cookieParser from 'cookie-parser';
+import adminRoutes from './routes/admin.routes.js';
 
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -80,10 +82,6 @@ app.get('/', (_req, res) => {
     });
 });
 
-// Health Check
-import healthRoutes from './routes/health.routes.js';
-app.use('/api/health', healthRoutes);
-
 // Middleware de verificação de rotas
 const routeLogger = (prefix: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
     console.log(`📝 ${req.method} ${prefix}${req.path}`, {
@@ -94,16 +92,16 @@ const routeLogger = (prefix: string) => (req: express.Request, _res: express.Res
     next();
 };
 
-// Rotas públicas
-app.use('/api/auth', routeLogger('/api/auth'), authRoutes);
+// Rotas da API
+import apiRoutes from './routes/index.js';
+app.use('/api', routeLogger('/api'), apiRoutes);
+
+// Health Check
+import healthRoutes from './routes/health.routes.js';
+app.use('/api/health', healthRoutes);
 
 // Middleware de autenticação
 app.use('/api', authenticate);
-
-// Rotas protegidas: registra autenticação apenas para a rota de prompts
-app.use('/api/prompts', authenticate, routeLogger('/api/prompts'), promptRoutes);
-app.use('/api/translations', routeLogger('/api/translations'), translationRoutes);
-app.use('/api/knowledge-bases', routeLogger('/api/knowledge-bases'), knowledgeRoutes);
 
 // Adicionar log para debug
 app.use((req, res, next) => {
@@ -119,10 +117,8 @@ app.use((req, res, next) => {
 
 // Log após registro de rotas
 console.log('✅ Rotas registradas:', {
-    auth: '/api/auth',
-    translations: '/api/translations',
-    knowledgeBases: '/api/knowledge-bases',
-    prompts: '/api/prompts'
+    api: '/api',
+    health: '/api/health'
 });
 
 // Middleware para rotas não encontradas (404)

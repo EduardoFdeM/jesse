@@ -1,4 +1,5 @@
 import { io } from 'socket.io-client';
+import api from './axiosConfig';
 
 const SOCKET_URL = import.meta.env.VITE_API_URL || 'https://pdf-tradutor-production.up.railway.app';
 

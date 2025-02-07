@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { FileText } from 'lucide-react';
-import { api } from '../services/api';
+import api from '../axiosConfig';
 import toast from 'react-hot-toast';
 import { AxiosError } from 'axios';
 

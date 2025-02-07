@@ -47,7 +47,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
             user: {
                 id: user.id,
                 email: user.email,
-                name: user.name
+                name: user.name,
+                role: user.role
             }
         }
     });
@@ -81,6 +82,7 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
             name,
             email,
             password: hashedPassword
+            // role será EDITOR por padrão (definido no schema)
         }
     });
 
@@ -98,7 +100,8 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
             user: {
                 id: user.id,
                 email: user.email,
-                name: user.name
+                name: user.name,
+                role: user.role
             }
         }
     });
@@ -112,7 +115,8 @@ export const verifyToken = asyncHandler(async (req: Request, res: Response) => {
             user: {
                 id: req.user!.id,
                 email: req.user!.email,
-                name: req.user!.name
+                name: req.user!.name,
+                role: req.user!.role
             }
         }
     });

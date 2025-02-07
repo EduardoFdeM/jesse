@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import { Translation } from '../../types/index';
-import { api } from '../../services/api';
+import api from '../../axiosConfig';
 
 interface TranslationProgressProps {
     translationId: string;

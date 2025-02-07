@@ -1,9 +1,19 @@
+// Tipos de usuário
 export interface User {
   id: string;
   name: string;
   email: string;
+  role: string;
+  createdAt?: string;
+  updatedAt?: string;
+  _count?: {
+    translations: number;
+    knowledgeBases: number;
+    prompts: number;
+  };
 }
 
+// Tipos de base de conhecimento
 export interface KnowledgeBase {
   id: string;
   name: string;
@@ -19,6 +29,7 @@ export interface KnowledgeBase {
   userId: string;
 }
 
+// Tipos de tradução
 export interface Translation {
   id: string;
   fileName: string;
@@ -47,11 +58,13 @@ export interface Translation {
     id: string;
     name: string;
   };
-  knowledgeBaseName?: string;
-  promptName?: string;
   costData?: string;
+  threadId?: string;
+  runId?: string;
+  assistantId?: string;
 }
 
+// Tipos de prompt/assistente
 export interface Prompt {
   id: string;
   name: string;
@@ -60,8 +73,40 @@ export interface Prompt {
   version: string;
   tags: string[];
   userId: string;
+  isPublic?: boolean;
+  model?: string;
+  temperature?: number;
 }
 
+// Tipos de autenticação
+export interface AuthState {
+  user: {
+    id: string;
+    email: string;
+    name?: string;
+    role: string;
+  } | null;
+  isAuthenticated: boolean;
+}
+
+// Tipos do assistente
+export interface AssistantConfig {
+  assistantId: string;
+  model: string;
+  temperature: number;
+}
+
+// Tipos de estatísticas
+export interface UserStats {
+  totalTranslations: number;
+  totalKnowledgeBases: number;
+  totalPrompts: number;
+  totalCost: number;
+  translationStats: Record<string, number>;
+  monthlyActivity: Record<string, number>;
+}
+
+// Tipos de componentes
 export interface FileUploadProps {
   sourceLanguage: string;
   targetLanguage: string;
@@ -69,4 +114,12 @@ export interface FileUploadProps {
   knowledgeBases: KnowledgeBase[];
   prompts: Prompt[];
   onReset?: () => void;
+}
+
+// Tipos de eventos do Socket
+export interface SocketEvents {
+  TRANSLATION_STARTED: 'translation:started';
+  TRANSLATION_PROGRESS: 'translation:progress';
+  TRANSLATION_COMPLETED: 'translation:completed';
+  TRANSLATION_ERROR: 'translation:error';
 }
