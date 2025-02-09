@@ -63,12 +63,26 @@ model KnowledgeBase {
   fileType       String
   sourceLanguage String
   targetLanguage String
+  vectorStoreId  String?      // ID do Vector Store (opcional por enquanto para compatibilidade)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
   chunks         KnowledgeBaseChunk[]
+
+  @@index([userId])
+}
+
+model KnowledgeBaseChunk {
+  id              String       @id @default(cuid())
+  content         String       @db.Text
+  knowledgeBaseId String
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([knowledgeBaseId])
 }
 
 model Prompt {
@@ -104,15 +118,4 @@ model PromptVersion {
 
   @@index([promptId])
   @@index([userId])
-}
-
-model KnowledgeBaseChunk {
-  id              String       @id @default(cuid())
-  content         String       @db.Text
-  knowledgeBaseId String
-  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  @@index([knowledgeBaseId])
 }

@@ -87,6 +87,18 @@ export function Admin() {
         }
     };
 
+    const handleDownload = async (translationId: string) => {
+        try {
+            const response = await api.get(`/api/translations/${translationId}/download`);
+            if (response.data.url) {
+                window.open(response.data.url, '_blank');
+            }
+        } catch (error) {
+            console.error('Erro ao baixar arquivo:', error);
+            toast.error('Erro ao baixar arquivo');
+        }
+    };
+
     return (
         <div className="container mx-auto px-4 py-8">
             <h1 className="text-3xl font-bold mb-8">Painel Administrativo</h1>
@@ -146,28 +158,131 @@ export function Admin() {
                                 </div>
                             </div>
                             {selectedUser.stats && (
-                                <div>
-                                    <h3 className="text-lg font-medium mb-4">Estatísticas</h3>
-                                    <div className="space-y-2">
-                                        <p><span className="font-medium">Total de Traduções:</span> {selectedUser.stats.totalTranslations}</p>
-                                        <p><span className="font-medium">Bases de Conhecimento:</span> {selectedUser.stats.totalKnowledgeBases}</p>
-                                        <p><span className="font-medium">Prompts:</span> {selectedUser.stats.totalPrompts}</p>
-                                        <p><span className="font-medium">Custo Total:</span> ${selectedUser.stats.totalCost.toFixed(2)}</p>
-                                    </div>
-                                    <div className="mt-4">
-                                        <h4 className="font-medium mb-2">Status das Traduções</h4>
-                                        <div className="space-y-1">
-                                            {Object.entries(selectedUser.stats.translationStats).map(([status, count]) => (
-                                                <p key={status}>{status}: {count}</p>
-                                            ))}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h3 className="text-lg font-medium mb-4">Estatísticas</h3>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="bg-gray-50 p-4 rounded-lg">
+                                                <p className="text-sm text-gray-500">Total de Traduções</p>
+                                                <p className="text-2xl font-semibold">{selectedUser.stats.totalTranslations}</p>
+                                            </div>
+                                            <div className="bg-gray-50 p-4 rounded-lg">
+                                                <p className="text-sm text-gray-500">Taxa de Sucesso</p>
+                                                <p className="text-2xl font-semibold">{selectedUser.stats.successRate}%</p>
+                                            </div>
+                                            <div className="bg-gray-50 p-4 rounded-lg">
+                                                <p className="text-sm text-gray-500">Custo Total</p>
+                                                <p className="text-2xl font-semibold">${selectedUser.stats.totalCost.toFixed(2)}</p>
+                                            </div>
+                                            <div className="bg-gray-50 p-4 rounded-lg">
+                                                <p className="text-sm text-gray-500">Tempo Médio</p>
+                                                <p className="text-2xl font-semibold">{selectedUser.stats.averageTranslationTime}min</p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="mt-4">
-                                        <h4 className="font-medium mb-2">Atividade Mensal</h4>
-                                        <div className="space-y-1">
-                                            {Object.entries(selectedUser.stats.monthlyActivity).map(([month, count]) => (
-                                                <p key={month}>{month}: {count} traduções</p>
-                                            ))}
+
+                                    <div>
+                                        <h3 className="text-lg font-medium mb-4">Últimas Traduções</h3>
+                                        <div className="bg-white shadow overflow-hidden rounded-md">
+                                            <ul className="divide-y divide-gray-200">
+                                                {selectedUser.stats.recentTranslations.map((translation) => (
+                                                    <li key={translation.id} className="px-6 py-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-gray-900">{translation.fileName}</p>
+                                                                <p className="text-sm text-gray-500">
+                                                                    {translation.sourceLanguage} → {translation.targetLanguage}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex items-center space-x-4">
+                                                                <div className="text-right">
+                                                                    <p className="text-sm text-gray-900">{translation.status}</p>
+                                                                    <p className="text-sm text-gray-500">
+                                                                        {new Date(translation.createdAt).toLocaleDateString()}
+                                                                    </p>
+                                                                </div>
+                                                                {translation.status === 'completed' && (
+                                                                    <button
+                                                                        onClick={() => handleDownload(translation.id)}
+                                                                        className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md text-blue-600 hover:text-blue-900"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                                                                            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                                                                        </svg>
+                                                                        Download
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-lg font-medium mb-4">Prompts Personalizados</h3>
+                                        <div className="bg-white shadow overflow-hidden rounded-md">
+                                            <ul className="divide-y divide-gray-200">
+                                                {selectedUser.stats.recentPrompts.map((prompt) => (
+                                                    <li key={prompt.id} className="px-6 py-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-gray-900">{prompt.name}</p>
+                                                                <p className="text-sm text-gray-500">{prompt.description}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-sm text-gray-500">v{prompt.version}</p>
+                                                                <p className="text-sm text-gray-500">{prompt.model}</p>
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-lg font-medium mb-4">Últimas Atividades</h3>
+                                        <div className="bg-white shadow overflow-hidden rounded-md">
+                                            <ul className="divide-y divide-gray-200">
+                                                {selectedUser.stats.recentActivity.map((activity) => (
+                                                    <li key={activity.id} className="px-6 py-4">
+                                                        <div className="flex items-center justify-between">
+                                                            <div>
+                                                                <p className="text-sm font-medium text-gray-900">{activity.action}</p>
+                                                                <p className="text-sm text-gray-500">
+                                                                    {activity.details.fileName || activity.details.promptName || activity.details.knowledgeBaseName}
+                                                                </p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-sm text-gray-500">
+                                                                    {new Date(activity.timestamp).toLocaleString()}
+                                                                </p>
+                                                                {activity.details.cost && (
+                                                                    <p className="text-sm text-gray-900">
+                                                                        ${activity.details.cost.toFixed(2)}
+                                                                    </p>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <h3 className="text-lg font-medium mb-4">Custos por Mês</h3>
+                                        <div className="bg-white shadow overflow-hidden rounded-md p-4">
+                                            <div className="space-y-2">
+                                                {Object.entries(selectedUser.stats.costByMonth).map(([month, cost]) => (
+                                                    <div key={month} className="flex justify-between">
+                                                        <span className="text-sm text-gray-500">{month}</span>
+                                                        <span className="text-sm font-medium">${cost.toFixed(2)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

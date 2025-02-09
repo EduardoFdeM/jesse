@@ -4,11 +4,11 @@
   ~~Ajustar funções e fluxo da tradução.~~
     ~~Refatorar as principais funções: dividir em chunks (não acho que é mais necessário), traduzir (agora é um Assistant), formatar a resposta e montar o arquivo final, acompanhamento do progresso e status, precificação, etc~~
 ~~2. Cargos e roles para os usuários (Superuser; Tradutor; Editor)~~
-  Refatorar o front, com funções específicas para cada cargo.~~
-~~3. Uma nova aba de Admin, disponível apenas para Superuser
-  - Gerenciar usuários - Da para acessar individual as informaçes de cada usuário, como usage, custos, arquivos, prompts personalizados, arquivos traduzidos, últimas atividades.
-  - Gerenciar o Assistant Padrão - Temperatura, Modelo, instrução, etc.
-4. Refatorar o types do frontend
+  ~~Refatorar o front, com funções específicas para cada cargo.~~
+~~3. Uma nova aba de Admin, disponível apenas para Superuser~~
+  ~~- Gerenciar usuários - Da para acessar individual as informaçes de cada usuário, como usage, custos, arquivos, prompts personalizados, arquivos traduzidos, últimas atividades~~
+  ~~- Gerenciar o Assistant Padrão - Temperatura, Modelo, instrução, etc.~~
+~~4. Refatorar o types do frontend~~
 5. Refatorar e transferir o serviço de Base de Conhecimento para o OpenAI
   A Base de Dados agora deve ser de 1:N arquivos (máximo permitido pela Vector Store).
   Usar a Vector Store para armazenar e buscar informações, facilitando nosso service

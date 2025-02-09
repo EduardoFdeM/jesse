@@ -70,10 +70,27 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
             },
             translations: {
                 select: {
-                    costData: true,
+                    id: true,
+                    fileName: true,
+                    sourceLanguage: true,
+                    targetLanguage: true,
+                    status: true,
                     createdAt: true,
-                    status: true
-                }
+                    costData: true
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 10
+            },
+            prompts: {
+                select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    version: true,
+                    model: true
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 5
             }
         }
     });
@@ -97,17 +114,54 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
         return acc;
     }, {});
 
-    // Atividade mensal (últimos 6 meses)
-    const now = new Date();
-    const sixMonthsAgo = new Date(now.setMonth(now.getMonth() - 6));
-    
-    const monthlyActivity = user.translations
-        .filter(t => new Date(t.createdAt) >= sixMonthsAgo)
-        .reduce((acc: Record<string, number>, translation) => {
-            const month = new Date(translation.createdAt).toLocaleString('default', { month: 'long' });
-            acc[month] = (acc[month] || 0) + 1;
-            return acc;
-        }, {});
+    // Calcular taxa de sucesso
+    const successRate = user.translations.length > 0
+        ? (user.translations.filter(t => t.status === 'completed').length / user.translations.length) * 100
+        : 0;
+
+    // Calcular tempo médio (assumindo que temos timestamps no costData)
+    const averageTranslationTime = user.translations.reduce((acc, translation) => {
+        if (translation.costData) {
+            const costData = JSON.parse(translation.costData);
+            return acc + (costData.processingTime || 0);
+        }
+        return acc;
+    }, 0) / (user.translations.length || 1);
+
+    // Custos por mês
+    const costByMonth = user.translations.reduce((acc: Record<string, number>, translation) => {
+        if (translation.costData) {
+            const month = new Date(translation.createdAt).toLocaleString('default', { month: 'long', year: 'numeric' });
+            const costData = JSON.parse(translation.costData);
+            acc[month] = (acc[month] || 0) + (costData.totalCost || 0);
+        }
+        return acc;
+    }, {});
+
+    // Gerar log de atividades
+    const recentActivity = [
+        ...user.translations.map(t => ({
+            id: t.id,
+            type: 'translation' as const,
+            action: `Tradução ${t.status}`,
+            timestamp: t.createdAt,
+            details: {
+                fileName: t.fileName,
+                status: t.status,
+                cost: t.costData ? JSON.parse(t.costData).totalCost : null
+            }
+        })),
+        ...user.prompts.map(p => ({
+            id: p.id,
+            type: 'prompt' as const,
+            action: 'Prompt criado',
+            timestamp: new Date().toISOString(),
+            details: {
+                promptName: p.name
+            }
+        }))
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 10);
 
     res.json({
         totalTranslations: user._count.translations,
@@ -115,7 +169,12 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
         totalPrompts: user._count.prompts,
         totalCost,
         translationStats,
-        monthlyActivity
+        successRate,
+        averageTranslationTime,
+        costByMonth,
+        recentTranslations: user.translations,
+        recentPrompts: user.prompts,
+        recentActivity
     });
 });
 

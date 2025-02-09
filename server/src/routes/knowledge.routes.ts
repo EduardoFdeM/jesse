@@ -1,13 +1,12 @@
 // server/routes/knowledge.routes.ts
 import { Router } from 'express';
-import { upload } from '../middlewares/upload.middleware.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import {
-    createKnowledgeBase,
+    createKnowledgeBaseHandler,
     getKnowledgeBases,
     getKnowledgeBase,
     updateKnowledgeBase,
-    deleteKnowledgeBase
+    deleteKnowledgeBaseHandler
 } from '../controllers/knowledge.controller.js';
 
 const router = Router();
@@ -18,11 +17,10 @@ router.use(authenticate);
 // Rotas para bases de conhecimento com logs
 router.post('/', 
     (req, res, next) => {
-        console.log('📥 Recebendo arquivo para base de conhecimento');
+        console.log('📥 Criando base de conhecimento');
         next();
     },
-    upload.single('file'),
-    createKnowledgeBase
+    createKnowledgeBaseHandler
 );
 
 router.get('/', 
@@ -34,7 +32,7 @@ router.get('/',
 );
 
 router.get('/:id', getKnowledgeBase);
-router.put('/:id', upload.single('file'), updateKnowledgeBase);
-router.delete('/:id', deleteKnowledgeBase);
+router.put('/:id', updateKnowledgeBase);
+router.delete('/:id', deleteKnowledgeBaseHandler);
 
 export default router;
