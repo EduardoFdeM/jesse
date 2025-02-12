@@ -62,10 +62,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   }, []);
 
   const validatePromptSelection = () => {
-    if (selectedPrompt === null) {
-      toast.error('Selecione um prompt personalizado');
-      return false;
-    }
     return true;
   };
 
@@ -74,8 +70,6 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       toast.error('Selecione um arquivo primeiro');
       return;
     }
-
-    if (!validatePromptSelection()) return;
 
     // Prevenir múltiplos envios
     if (isLoading) {
@@ -92,7 +86,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       formData.append('targetLanguage', targetLanguage);
       formData.append('originalname', selectedFile.name);
       formData.append('useKnowledgeBase', useKnowledgeBase.toString());
-      formData.append('useCustomPrompt', selectedPrompt !== null ? 'true' : 'false');
+      formData.append('useCustomPrompt', (selectedPrompt !== null).toString());
       
       if (useKnowledgeBase && selectedKnowledgeBase) {
         formData.append('knowledgeBaseId', selectedKnowledgeBase);

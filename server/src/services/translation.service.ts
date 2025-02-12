@@ -194,16 +194,31 @@ const saveTranslatedFile = async (
     }
 };
 
-// Função principal de tradução
 export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
+    let knowledgeBaseData: KnowledgeBase | null = null;
+    let assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID || '';
+    let customPrompt = DEFAULT_TRANSLATION_PROMPT;
+
     try {
-        let knowledgeBaseData: KnowledgeBase | null = null;
-        let customPrompt = DEFAULT_TRANSLATION_PROMPT;
-        
-        // Carregar base de conhecimento se necessário
+        // Carregar base de conhecimento se selecionada
         if (params.useKnowledgeBase && params.knowledgeBaseId) {
             knowledgeBaseData = await prisma.knowledgeBase.findUnique({
-                where: { id: params.knowledgeBaseId }
+                where: { id: params.knowledgeBaseId },
+                select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    fileName: true,
+                    filePath: true,
+                    fileSize: true,
+                    fileType: true,
+                    userId: true,
+                    vectorStoreId: true,
+                    fileIds: true,
+                    fileMetadata: true,
+                    createdAt: true,
+                    updatedAt: true
+                }
             });
             
             if (knowledgeBaseData) {
@@ -230,11 +245,18 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         // Carregar prompt personalizado
         if (params.useCustomPrompt && params.promptId) {
             const prompt = await prisma.prompt.findUnique({
-                where: { id: params.promptId }
-            }) as Prompt | null;
+                where: { id: params.promptId },
+                select: {
+                    id: true,
+                    name: true,
+                    content: true,
+                    assistantId: true
+                }
+            });
             
-            if (prompt?.instructions) {
-                customPrompt = prompt.instructions;
+            if (prompt?.assistantId) {
+                assistantId = prompt.assistantId;
+                customPrompt = prompt.content;
             }
         }
 
@@ -263,8 +285,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
 
         // Executar o assistant
         const run = await openai.beta.threads.runs.create(thread.id, {
-            assistant_id: process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
-            model: "gpt-4o-mini"
+            assistant_id: assistantId,
+            model: "gpt-4-turbo-preview"
         });
 
         // Atualizar com o runId
@@ -349,7 +371,6 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
 const handleTranslationError = async (error: unknown, translationId: string) => {
     console.error('Erro na tradução:', error);
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido durante a tradução';
-    
     await prisma.translation.update({
         where: { id: translationId },
         data: {

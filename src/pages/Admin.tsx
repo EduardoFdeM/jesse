@@ -221,19 +221,19 @@ export function Admin() {
                                     </div>
 
                                     <div>
-                                        <h3 className="text-lg font-medium mb-4">Prompts Personalizados</h3>
+                                        <h3 className="text-lg font-medium mb-4">Assistants Personalizados</h3>
                                         <div className="bg-white shadow overflow-hidden rounded-md">
                                             <ul className="divide-y divide-gray-200">
-                                                {selectedUser.stats.recentPrompts.map((prompt) => (
-                                                    <li key={prompt.id} className="px-6 py-4">
+                                                {selectedUser.stats.recentPrompts.map((assistant) => (
+                                                    <li key={assistant.id} className="px-6 py-4">
                                                         <div className="flex items-center justify-between">
                                                             <div>
-                                                                <p className="text-sm font-medium text-gray-900">{prompt.name}</p>
-                                                                <p className="text-sm text-gray-500">{prompt.description}</p>
+                                                                <p className="text-sm font-medium text-gray-900">{assistant.name}</p>
+                                                                <p className="text-sm text-gray-500">{assistant.description}</p>
                                                             </div>
                                                             <div className="text-right">
-                                                                <p className="text-sm text-gray-500">v{prompt.version}</p>
-                                                                <p className="text-sm text-gray-500">{prompt.model}</p>
+                                                                <p className="text-sm text-gray-500">Modelo: {assistant.model}</p>
+                                                                <p className="text-sm text-gray-500">Temperatura: {assistant.temperature}</p>
                                                             </div>
                                                         </div>
                                                     </li>
@@ -334,7 +334,7 @@ export function Admin() {
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                             <div>Traduções: {user._count?.translations || 0}</div>
                                             <div>Bases de Conhecimento: {user._count?.knowledgeBases || 0}</div>
-                                            <div>Prompts: {user._count?.prompts || 0}</div>
+                                            <div>Assistants: {user._count?.prompts || 0}</div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                             <button

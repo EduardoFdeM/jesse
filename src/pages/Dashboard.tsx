@@ -21,13 +21,11 @@ export function Dashboard() {
     };
 
     const navigation = [
-        { name: 'Traduções', href: '/translations', icon: FileText },
-        { name: 'Bases de Conhecimento', href: '/knowledge-bases', icon: Book },
-        { name: 'Assistants', href: '/assistants', icon: MessageSquare },
-        ...(userRole === 'SUPERUSER' ? [
-            { name: 'Admin', href: '/admin', icon: Settings }
-        ] : []),
-    ];
+        { name: 'Traduções', href: '/translations', icon: FileText, roles: ['SUPERUSER', 'TRANSLATOR', 'EDITOR'] },
+        { name: 'Bases de Conhecimento', href: '/knowledge-bases', icon: Book, roles: ['SUPERUSER', 'TRANSLATOR'] },
+        { name: 'Assistants', href: '/assistants', icon: MessageSquare, roles: ['SUPERUSER', 'TRANSLATOR'] },
+        { name: 'Admin', href: '/admin', icon: Settings, roles: ['SUPERUSER'] }
+    ].filter(item => item.roles.includes(userRole));
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -43,52 +41,20 @@ export function Dashboard() {
 
                         <div className="flex-1 flex justify-center">
                             <div className="hidden sm:flex sm:space-x-8">
-                                <Link
-                                    to="/translations"
-                                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                                        isActive('/translations')
-                                            ? 'border-blue-500 text-gray-900 dark:text-white'
-                                            : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                                    }`}
-                                >
-                                    <FileText className="h-4 w-4 mr-2" />
-                                    Traduções
-                                </Link>
-                                <Link
-                                    to="/knowledge-bases"
-                                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                                        isActive('/knowledge-bases')
-                                            ? 'border-blue-500 text-gray-900 dark:text-white'
-                                            : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                                    }`}
-                                >
-                                    <Book className="h-4 w-4 mr-2" />
-                                    Bases de Conhecimento
-                                </Link>
-                                <Link
-                                    to="/assistants"
-                                    className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                                        isActive('/assistants')
-                                            ? 'border-blue-500 text-gray-900 dark:text-white'
-                                            : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                                    }`}
-                                >
-                                    <MessageSquare className="h-4 w-4 mr-2" />
-                                    Assistants
-                                </Link>
-                                {userRole === 'SUPERUSER' && (
+                                {navigation.map((item) => (
                                     <Link
-                                        to="/admin"
+                                        key={item.name}
+                                        to={item.href}
                                         className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                                            isActive('/admin')
+                                            isActive(item.href)
                                                 ? 'border-blue-500 text-gray-900 dark:text-white'
                                                 : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                                         }`}
                                     >
-                                        <Settings className="h-4 w-4 mr-2" />
-                                        Admin
+                                        <item.icon className="h-4 w-4 mr-2" />
+                                        {item.name}
                                     </Link>
-                                )}
+                                ))}
                             </div>
                         </div>
 
@@ -154,78 +120,20 @@ export function Dashboard() {
 
                 <div className={`${isMenuOpen ? 'block' : 'hidden'} sm:hidden`}>
                     <div className="pt-2 pb-3 space-y-1">
-                        <Link
-                            to="/translations"
-                            className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                isActive('/translations')
-                                    ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
-                                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                            }`}
-                        >
-                            <FileText className="h-4 w-4 mr-2" />
-                            Traduções
-                        </Link>
-                        <Link
-                            to="/knowledge-bases"
-                            className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                isActive('/knowledge-bases')
-                                    ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
-                                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                            }`}
-                        >
-                            <Book className="h-4 w-4 mr-2" />
-                            Bases de Conhecimento
-                        </Link>
-                        {userRole === 'SUPERUSER' && (
+                        {navigation.map((item) => (
                             <Link
-                                to="/files"
+                                key={item.name}
+                                to={item.href}
                                 className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                    isActive('/files')
+                                    isActive(item.href)
                                         ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
                                         : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                                 }`}
                             >
-                                <Files className="h-4 w-4 mr-2" />
-                                Arquivos OpenAI
+                                <item.icon className="h-4 w-4 mr-2" />
+                                {item.name}
                             </Link>
-                        )}
-                        <Link
-                            to="/assistants"
-                            className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                isActive('/assistants')
-                                    ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
-                                    : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                            }`}
-                        >
-                            <MessageSquare className="h-4 w-4 mr-2" />
-                            Assistants
-                        </Link>
-                        {userRole === 'SUPERUSER' && (
-                            <Link
-                                to="/admin"
-                                className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                    isActive('/admin')
-                                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
-                                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                                }`}
-                            >
-                                <Settings className="h-4 w-4 mr-2" />
-                                Admin
-                            </Link>
-                        )}
-                        {userRole === 'SUPERUSER' && (
-                            <Link
-                                to="/knowledge-bases/files"
-                                className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                    isActive('/knowledge-bases/files')
-                                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
-                                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
-                                }`}
-                            >
-                                <Files className="h-4 w-4 mr-2" />
-                                Arquivos OpenAI
-                            </Link>
-                        )}
+                        ))}
                         <button
                             onClick={handleLogout}
                             className="block w-full text-left pl-3 pr-4 py-2 border-l-4 border-transparent text-base font-medium text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300"

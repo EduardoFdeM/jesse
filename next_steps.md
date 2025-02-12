@@ -20,10 +20,10 @@
   Refatorar o front para que seja possível configurar a temperatura, modelo, instrução dos assistentes personalizados.
   Função de visibilidade Global ou Privado para cada assistente. (a nível de Tradutores)
 7. Refatorar OpenAI.ts
-8. Refatorar o front da aba de tradução:
-  Função para compartilhar arquivos com os editores.
-  Para os usuários Editor:
-    O Editor não tem permissão para traduzir ou as outras abas. Sua função é apenas editar o conteúdo dos arquivos traduzidos. É um diagramador. Ele poderá visualizar os arquivos compartilhados com ele
+~~8. Refatorar o front da aba de tradução:~~
+  ~~Função para compartilhar arquivos com os editores.~~
+  ~~Para os usuários Editor:~~
+    ~~O Editor não tem permissão para traduzir ou as outras abas. Sua função é apenas editar o conteúdo dos arquivos traduzidos. É um diagramador. Ele poderá visualizar os arquivos compartilhados com ele~~
 9. Refatorar função de cálculo de custos de tradução.
-10. Documentar o projeto por completo com explicação e detalhamento de cada parte do código e explicação de onde está cada infraestrutura (Railway, Vercel, etc)
+~~10. Documentar o projeto por completo com explicação e detalhamento de cada parte do código e explicação de onde está cada infraestrutura (Railway, Vercel, etc)~~
 

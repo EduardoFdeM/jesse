@@ -25,6 +25,16 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
     return <PrivateRoute>{children}</PrivateRoute>;
 };
 
+const TranslatorRoute = ({ children }: { children: React.ReactNode }) => {
+    const userRole = localStorage.getItem('userRole');
+    
+    if (userRole === 'EDITOR') {
+        return <Navigate to="/translations" replace />;
+    }
+    
+    return <PrivateRoute>{children}</PrivateRoute>;
+};
+
 export default function App() {
     return (
         <ThemeProvider>
@@ -36,16 +46,23 @@ export default function App() {
                     <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>}>
                         <Route index element={<Navigate to="/translations" replace />} />
                         <Route path="translations" element={<TranslatedDocuments />} />
-                        <Route path="knowledge-bases">
-                            <Route index element={<KnowledgeBaseList />} />
-                            <Route path="new" element={<KnowledgeBaseForm />} />
-                            <Route path=":id/edit" element={<KnowledgeBaseForm />} />
-                        </Route>
-                        <Route path="assistants">
-                            <Route index element={<AssistantList />} />
-                            <Route path="new" element={<AssistantForm />} />
-                            <Route path=":id/edit" element={<AssistantForm />} />
-                        </Route>
+                        
+                        <Route path="knowledge-bases" element={<TranslatorRoute>
+                            <Routes>
+                                <Route index element={<KnowledgeBaseList />} />
+                                <Route path="new" element={<KnowledgeBaseForm />} />
+                                <Route path=":id/edit" element={<KnowledgeBaseForm />} />
+                            </Routes>
+                        </TranslatorRoute>} />
+                        
+                        <Route path="assistants" element={<TranslatorRoute>
+                            <Routes>
+                                <Route index element={<AssistantList />} />
+                                <Route path="new" element={<AssistantForm />} />
+                                <Route path=":id/edit" element={<AssistantForm />} />
+                            </Routes>
+                        </TranslatorRoute>} />
+                        
                         <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
                     </Route>
                     <Route path="/editor/:id" element={<Editor />} />

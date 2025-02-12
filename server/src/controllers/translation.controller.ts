@@ -159,11 +159,15 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             }
         }
 
+        // Fazer upload do arquivo para S3
+        const fileBuffer = await fs.promises.readFile(file.path);
+        const s3FilePath = await uploadToS3(fileBuffer, file.originalname);
+
         // Criar o registro com os dados corretos
         const translation = await prisma.translation.create({
             data: {
                 fileName: file.originalname,
-                filePath: file.path,
+                filePath: s3FilePath,
                 originalName: req.body.originalname || file.originalname,
                 sourceLanguage: req.body.sourceLanguage,
                 targetLanguage: req.body.targetLanguage,
@@ -189,7 +193,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         
         // Iniciar tradução com os parâmetros corretos
         translateFile({
-            filePath: file.path,
+            filePath: s3FilePath,
             sourceLanguage: req.body.sourceLanguage,
             targetLanguage: req.body.targetLanguage,
             userId: req.user.id,

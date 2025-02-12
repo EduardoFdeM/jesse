@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFoundError } from '../utils/errors.js';
 import prisma from '../config/database.js';
-import openai from '../config/openai.js';
+import openai, { OpenAIAssistant } from '../config/openai.js';
 
 export const getAssistants = asyncHandler(async (req: Request, res: Response) => {
     const userId = req.user?.id;
@@ -10,10 +10,25 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
         return res.status(401).json({ error: 'Não autenticado' });
     }
     
-    const assistants = await prisma.prompt.findMany({ 
-        where: { userId },
+    // Buscar assistants da OpenAI
+    const openaiAssistants = await openai.assistant.list();
+    
+    // Buscar assistants do banco
+    const dbAssistants = await prisma.prompt.findMany({ 
+        where: { 
+            OR: [
+                { userId },
+                { isPublic: true }
+            ]
+        },
         orderBy: { createdAt: 'desc' }
     });
+
+    // Filtrar apenas os assistants que existem na OpenAI
+    const assistants = dbAssistants.filter(assistant => 
+        assistant.assistantId && 
+        openaiAssistants.data.some((oa: OpenAIAssistant) => oa.id === assistant.assistantId)
+    );
     
     res.json({ 
         status: 'success', 
@@ -42,6 +57,7 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
         data: {
             name,
             description,
+            content: instructions,
             instructions,
             tags,
             model,

@@ -47,6 +47,26 @@ export interface OpenAIFile {
     status_details: string | null;
 }
 
+export interface OpenAIAssistant {
+    id: string;
+    object: string;
+    created_at: number;
+    name: string;
+    description: string | null;
+    model: string;
+    instructions: string | null;
+    tools: Array<{ type: string }>;
+    file_ids: string[];
+}
+
+export interface OpenAIAssistantList {
+    object: string;
+    data: OpenAIAssistant[];
+    first_id: string;
+    last_id: string;
+    has_more: boolean;
+}
+
 // Funções para Vector Store
 const vectorStoreApi = {
     create: async (name: string): Promise<VectorStore> => {
@@ -213,6 +233,23 @@ const filesApi = {
 
 // Funções para Assistants
 const assistantApi = {
+    list: async (): Promise<OpenAIAssistantList> => {
+        const response = await fetch('https://api.openai.com/v1/assistants?order=desc&limit=20', {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            }
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Erro ao listar Assistants: ${error}`);
+        }
+
+        return await response.json();
+    },
+
     create: async (params: {
         name: string;
         instructions: string;
@@ -279,6 +316,104 @@ const assistantApi = {
     }
 };
 
+// Funções para Threads e Runs
+const threadsApi = {
+    create: async (): Promise<any> => {
+        const response = await fetch('https://api.openai.com/v1/threads', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao criar thread');
+        }
+
+        return await response.json();
+    },
+
+    messages: {
+        create: async (threadId: string, params: {
+            role: string;
+            content: string;
+        }): Promise<any> => {
+            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2'
+                },
+                body: JSON.stringify(params)
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao criar mensagem');
+            }
+
+            return await response.json();
+        },
+
+        list: async (threadId: string): Promise<any> => {
+            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao listar mensagens');
+            }
+
+            return await response.json();
+        }
+    },
+
+    runs: {
+        create: async (threadId: string, params: {
+            assistant_id: string;
+            model: string;
+        }): Promise<any> => {
+            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2'
+                },
+                body: JSON.stringify(params)
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao criar run');
+            }
+
+            return await response.json();
+        },
+
+        retrieve: async (threadId: string, runId: string): Promise<any> => {
+            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao buscar status do run');
+            }
+
+            return await response.json();
+        }
+    }
+};
+
 // Adicionar as funções ao cliente OpenAI
 const openaiClient = openai;
 
@@ -287,12 +422,18 @@ type ExtendedOpenAI = OpenAI & {
     vectorStore: typeof vectorStoreApi;
     files: typeof filesApi;
     assistant: typeof assistantApi;
+    beta: {
+        threads: typeof threadsApi;
+    };
 };
 
 // Adicionar as propriedades extras
 (openaiClient as any).vectorStore = vectorStoreApi;
 (openaiClient as any).files = filesApi;
 (openaiClient as any).assistant = assistantApi;
+(openaiClient as any).beta = {
+    threads: threadsApi
+};
 
 export { vectorStoreApi as vectorStore, filesApi as files, assistantApi as assistant };
 export default openaiClient as ExtendedOpenAI;

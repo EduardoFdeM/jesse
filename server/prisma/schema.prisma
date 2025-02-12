@@ -21,6 +21,8 @@ model User {
   translations   Translation[]
   knowledgeBases KnowledgeBase[]
   prompts        Prompt[]
+  sharedWithMe   TranslationShare[] @relation("shared_with")
+  sharedByMe     TranslationShare[] @relation("shared_by")
 }
 
 model Translation {
@@ -51,6 +53,7 @@ model Translation {
   threadId        String?        // ID do thread do Assistant
   runId           String?        // ID do run do Assistant
   assistantId     String?        @default("")
+  shares          TranslationShare[]
 }
 
 model KnowledgeBase {
@@ -69,6 +72,7 @@ model KnowledgeBase {
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
+  isPublic       Boolean       @default(false)
 
   @@index([userId])
 }
@@ -77,7 +81,8 @@ model Prompt {
   id           String        @id @default(uuid())
   name         String
   description  String
-  instructions String        @db.Text        // Antigo content
+  content      String        @db.Text
+  instructions String        @db.Text
   tags         String[]      @default([])
   userId       String
   user         User          @relation(fields: [userId], references: [id])
@@ -91,4 +96,20 @@ model Prompt {
   status       String        @default("pending") // pending, active, error
 
   @@index([userId])
+}
+
+model TranslationShare {
+  id            String      @id @default(cuid())
+  translationId String
+  translation   Translation @relation(fields: [translationId], references: [id])
+  sharedWithId  String      // ID do usuário com quem foi compartilhado
+  sharedWith    User        @relation("shared_with", fields: [sharedWithId], references: [id])
+  sharedById    String      // ID do usuário que compartilhou
+  sharedBy      User        @relation("shared_by", fields: [sharedById], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([translationId, sharedWithId])
+  @@index([sharedWithId])
+  @@index([sharedById])
 }

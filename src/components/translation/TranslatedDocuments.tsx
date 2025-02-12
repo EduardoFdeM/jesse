@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Clock, CheckCircle, XCircle, Edit, Trash2 } from 'lucide-react';
-import { Translation, KnowledgeBase, Prompt } from '../../types/index';
+import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2 } from 'lucide-react';
+import { Translation, KnowledgeBase, Prompt, User } from '../../types/index';
 import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
 import { useSocket } from '../../hooks/useSocket';
 import { LANGUAGES } from '../../constants/languages';
+import { LanguageSelector } from './LanguageSelector';
 
 // Constantes para os custos por token
 const INPUT_TOKEN_RATE = 0.00000015;  // $0.150 / 1M tokens
@@ -36,6 +37,11 @@ export function TranslatedDocuments() {
     const [prompts, setPrompts] = useState<Prompt[]>([]);
     const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string | null>(null);
     const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [selectedTranslationForShare, setSelectedTranslationForShare] = useState<Translation | null>(null);
+    const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const userRole = localStorage.getItem('userRole');
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]): Translation[] => {
@@ -45,7 +51,11 @@ export function TranslatedDocuments() {
     // Função para carregar traduções
     const loadTranslations = useCallback(async () => {
         try {
-            const response = await api.get('/api/translations');
+            const endpoint = userRole === 'EDITOR' 
+                ? '/api/translations/shared'  // Endpoint específico para editores
+                : '/api/translations';        // Endpoint padrão
+                
+            const response = await api.get(endpoint);
             const translationsWithMetadata = response.data.data.map((translation: Translation) => {
                 let metadata: TranslationMetadata = {
                     usedKnowledgeBase: false,
@@ -53,7 +63,7 @@ export function TranslatedDocuments() {
                 };
                 try {
                     if (translation.translationMetadata) {
-                        metadata = JSON.parse(translation.translationMetadata) as TranslationMetadata;
+                        metadata = JSON.parse(translation.translationMetadata);
                     }
                 } catch (e) {
                     console.error('Erro ao parsear metadata:', e);
@@ -69,15 +79,11 @@ export function TranslatedDocuments() {
             });
             
             setTranslations(sortTranslations(translationsWithMetadata));
-        } catch (err: unknown) {
+        } catch (err) {
             console.error('Erro ao carregar traduções:', err);
-            if (err instanceof Error && 
-                err.message !== 'timeout of 10000ms exceeded' && 
-                (err as any).response?.status !== 401) {
-                handleError('Erro ao carregar traduções');
-            }
+            toast.error('Erro ao carregar traduções');
         }
-    }, []);
+    }, [userRole]);
 
     // Função para carregar bases de conhecimento
     const loadKnowledgeBases = useCallback(async () => {
@@ -476,68 +482,176 @@ export function TranslatedDocuments() {
         );
     };
 
+    // Função para compartilhar tradução
+    const handleShare = async (translationId: string) => {
+        try {
+            // Carregar usuários disponíveis para compartilhamento
+            const response = await api.get('/api/users/available');
+            setAvailableUsers(response.data.users);
+            
+            const translation = translations.find(t => t.id === translationId);
+            setSelectedTranslationForShare(translation || null);
+            setShowShareModal(true);
+        } catch (error) {
+            toast.error('Erro ao carregar usuários');
+        }
+    };
+
+    // Função para salvar compartilhamento
+    const handleSaveShare = async () => {
+        if (!selectedTranslationForShare) return;
+        
+        try {
+            await api.post(`/api/translations/${selectedTranslationForShare.id}/share`, {
+                userIds: selectedUsers
+            });
+            
+            toast.success('Documento compartilhado com sucesso');
+            setShowShareModal(false);
+            setSelectedUsers([]);
+        } catch (error) {
+            toast.error('Erro ao compartilhar documento');
+        }
+    };
+
+    // Adicionar botão de compartilhamento na lista de ações
+    const renderActions = (translation: Translation) => {
+        if (userRole === 'EDITOR') {
+            return (
+                <button
+                    onClick={() => handleEdit(translation.id)}
+                    className="p-1 hover:bg-gray-100 rounded"
+                    title="Editar"
+                >
+                    <Edit className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                </button>
+            );
+        }
+
+        return (
+            <>
+                {translation.status === 'completed' && (
+                    <>
+                        <button
+                            onClick={() => handleDownload(translation.id, translation.fileName)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Download"
+                        >
+                            <Download className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                        <button
+                            onClick={() => handleShare(translation.id)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Compartilhar"
+                        >
+                            <Share2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                        <button
+                            onClick={() => handleEdit(translation.id)}
+                            className="p-1 hover:bg-gray-100 rounded"
+                            title="Editar"
+                        >
+                            <Edit className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                    </>
+                )}
+                {userRole !== 'EDITOR' && (
+                    <button
+                        onClick={() => handleDelete(translation.id)}
+                        className="p-1 hover:bg-gray-100 rounded"
+                        title="Deletar"
+                    >
+                        <Trash2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                    </button>
+                )}
+            </>
+        );
+    };
+
+    // Adicionar modal de compartilhamento
+    const ShareModal = () => (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+                <h3 className="text-lg font-medium mb-4">Compartilhar Documento</h3>
+                <div className="space-y-4">
+                    {availableUsers.map(user => (
+                        <div key={user.id} className="flex items-center">
+                            <input
+                                type="checkbox"
+                                id={user.id}
+                                checked={selectedUsers.includes(user.id)}
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        setSelectedUsers([...selectedUsers, user.id]);
+                                    } else {
+                                        setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                                    }
+                                }}
+                                className="mr-2"
+                            />
+                            <label htmlFor={user.id}>
+                                {user.name} ({user.role})
+                            </label>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                    <button
+                        onClick={() => setShowShareModal(false)}
+                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                    >
+                        Cancelar
+                    </button>
+                    <button
+                        onClick={handleSaveShare}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                        Compartilhar
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-4">
-                    Nova Tradução
-                </h2>
-                
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                        <label htmlFor="sourceLanguage" className="block text-sm font-medium text-gray-700">
-                            Idioma de Origem
-                        </label>
-                        <select
-                            id="sourceLanguage"
-                            value={sourceLanguage}
-                            onChange={(e) => setSourceLanguage(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            required
-                        >
-                            <option value="">Selecione...</option>
-                            {LANGUAGES.map(lang => (
-                                <option key={lang.code} value={lang.code}>
-                                    {lang.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label htmlFor="targetLanguage" className="block text-sm font-medium text-gray-700">
-                            Idioma de Destino
-                        </label>
-                        <select
-                            id="targetLanguage"
-                            value={targetLanguage}
-                            onChange={(e) => setTargetLanguage(e.target.value)}
-                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                            required
-                        >
-                            <option value="">Selecione...</option>
-                            {LANGUAGES.map(lang => (
-                                <option key={lang.code} value={lang.code}>
-                                    {lang.name}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
+            <div className="sm:flex sm:items-center">
+                <div className="sm:flex-auto">
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                        {userRole === 'EDITOR' ? 'Documentos Compartilhados' : 'Traduções'}
+                    </h1>
                 </div>
-
-                <FileUpload 
-                    onFileSelect={handleFileSelect}
-                    sourceLanguage={sourceLanguage}
-                    targetLanguage={targetLanguage}
-                    knowledgeBases={knowledgeBases}
-                    prompts={prompts}
-                    onReset={handleReset}
-                    selectedKnowledgeBase={selectedKnowledgeBase}
-                    selectedPrompt={selectedPrompt}
-                    onKnowledgeBaseSelect={(id: string) => setSelectedKnowledgeBase(id)}
-                    onPromptSelect={(id: string) => setSelectedPrompt(id)}
-                />
             </div>
+
+            {/* Mostrar FileUpload apenas para SUPERUSER e TRANSLATOR */}
+            {userRole !== 'EDITOR' && (
+                <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <LanguageSelector
+                            value={sourceLanguage}
+                            onChange={setSourceLanguage}
+                            label="Idioma de origem"
+                        />
+                        <LanguageSelector
+                            value={targetLanguage}
+                            onChange={setTargetLanguage}
+                            label="Idioma de destino"
+                        />
+                    </div>
+                    <FileUpload
+                        sourceLanguage={sourceLanguage}
+                        targetLanguage={targetLanguage}
+                        onFileSelect={handleFileSelect}
+                        knowledgeBases={knowledgeBases}
+                        prompts={prompts}
+                        onReset={handleReset}
+                        selectedKnowledgeBase={selectedKnowledgeBase}
+                        selectedPrompt={selectedPrompt}
+                        onKnowledgeBaseSelect={setSelectedKnowledgeBase}
+                        onPromptSelect={setSelectedPrompt}
+                    />
+                </div>
+            )}
 
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
@@ -654,44 +768,7 @@ export function TranslatedDocuments() {
                                 </div>
 
                                 <div className="flex items-center space-x-2">
-                                    {!isSelectionMode && (
-                                        <>
-                                            {translation.status === 'completed' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDownload(translation.id, translation.fileName);
-                                                    }}
-                                                    className="p-1 hover:bg-gray-100 rounded"
-                                                    title="Download"
-                                                >
-                                                    <Download className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                                                </button>
-                                            )}
-                                            {translation.status === 'completed' && (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleEdit(translation.id);
-                                                    }}
-                                                    className="p-1 hover:bg-gray-100 rounded"
-                                                    title="Editar"
-                                                >
-                                                    <Edit className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleDelete(translation.id);
-                                                }}
-                                                className="p-1 hover:bg-gray-100 rounded"
-                                                title="Deletar"
-                                            >
-                                                <Trash2 className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                                            </button>
-                                        </>
-                                    )}
+                                    {renderActions(translation)}
                                 </div>
                             </div>
 
@@ -773,6 +850,8 @@ export function TranslatedDocuments() {
                     </div>
                 </div>
             )}
+
+            {showShareModal && <ShareModal />}
         </div>
     );
 }

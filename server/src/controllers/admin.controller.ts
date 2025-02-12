@@ -3,6 +3,7 @@ import prisma from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import OpenAI from 'openai';
+import bcrypt from 'bcrypt';
 
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY
@@ -279,4 +280,46 @@ export const updateAssistantConfig = asyncHandler(async (req: Request, res: Resp
         console.error('Erro ao atualizar assistente:', error);
         throw new Error('Erro ao atualizar configuração do assistente');
     }
+});
+
+// Adicionar novo usuário
+export const createUser = asyncHandler(async (req: Request, res: Response) => {
+    const { name, email, password, role } = req.body;
+
+    if (!name || !email || !password || !role) {
+        throw new ValidationError('Todos os campos são obrigatórios');
+    }
+
+    if (!['SUPERUSER', 'TRANSLATOR', 'EDITOR'].includes(role)) {
+        throw new ValidationError('Role inválido');
+    }
+
+    const existingUser = await prisma.user.findUnique({
+        where: { email }
+    });
+
+    if (existingUser) {
+        throw new ValidationError('Email já cadastrado');
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const user = await prisma.user.create({
+        data: {
+            name,
+            email,
+            password: hashedPassword,
+            role
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            createdAt: true
+        }
+    });
+
+    res.status(201).json({ user });
 }); 
