@@ -9,38 +9,54 @@ export const SocketEvents = {
 } as const;
 
 export const emitTranslationStarted = (translation: Translation) => {
-    const io = getIO();
-    io.emit(SocketEvents.TRANSLATION_STARTED, {
-        id: translation.id,
-        fileName: translation.fileName,
-        originalName: translation.originalName,
-        status: translation.status
-    });
+    try {
+        const io = getIO();
+        io.emit(SocketEvents.TRANSLATION_STARTED, {
+            id: translation.id,
+            fileName: translation.fileName,
+            originalName: translation.originalName,
+            status: translation.status
+        });
+    } catch (error) {
+        console.error('Erro ao emitir evento de início:', error);
+    }
 };
 
 export const emitTranslationProgress = (translationId: string, progress: number) => {
-    const io = getIO();
-    io.emit(SocketEvents.TRANSLATION_PROGRESS, {
-        id: translationId,
-        progress
-    });
+    try {
+        const io = getIO();
+        io.emit(SocketEvents.TRANSLATION_PROGRESS, {
+            id: translationId,
+            progress
+        });
+    } catch (error) {
+        console.error('Erro ao emitir evento de progresso:', error);
+    }
 };
 
 export const emitTranslationCompleted = (translation: Translation) => {
-    const io = getIO();
-    io.emit(SocketEvents.TRANSLATION_COMPLETED, {
-        id: translation.id,
-        fileName: translation.fileName,
-        originalName: translation.originalName,
-        status: translation.status,
-        filePath: translation.filePath
-    });
+    try {
+        const io = getIO();
+        io.emit(SocketEvents.TRANSLATION_COMPLETED, {
+            id: translation.id,
+            fileName: translation.fileName,
+            originalName: translation.originalName,
+            status: translation.status,
+            filePath: translation.filePath
+        });
+    } catch (error) {
+        console.error('Erro ao emitir evento de conclusão:', error);
+    }
 };
 
 export const emitTranslationError = (translationId: string, error: string) => {
-    const io = getIO();
-    io.emit(SocketEvents.TRANSLATION_ERROR, {
-        id: translationId,
-        error
-    });
+    try {
+        const io = getIO();
+        io.emit(SocketEvents.TRANSLATION_ERROR, {
+            id: translationId,
+            error
+        });
+    } catch (err) {
+        console.error('Erro ao emitir evento de erro:', err);
+    }
 }; 

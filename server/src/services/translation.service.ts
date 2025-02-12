@@ -7,6 +7,7 @@ import { uploadToS3 } from '../config/storage.js';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
 import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
 import { simpleSearchKnowledgeBaseContext } from './knowledge.service.js';
+import { Prompt } from '@prisma/client';
 
 type KnowledgeBase = {
     id: string;
@@ -230,10 +231,10 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         if (params.useCustomPrompt && params.promptId) {
             const prompt = await prisma.prompt.findUnique({
                 where: { id: params.promptId }
-            });
+            }) as Prompt | null;
             
-            if (prompt) {
-                customPrompt = prompt.content;
+            if (prompt?.instructions) {
+                customPrompt = prompt.instructions;
             }
         }
 

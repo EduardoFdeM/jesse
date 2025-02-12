@@ -211,6 +211,74 @@ const filesApi = {
     }
 };
 
+// Funções para Assistants
+const assistantApi = {
+    create: async (params: {
+        name: string;
+        instructions: string;
+        model: string;
+        temperature?: number;
+    }): Promise<any> => {
+        const response = await fetch('https://api.openai.com/v1/assistants', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                name: params.name,
+                instructions: params.instructions,
+                model: params.model,
+                tools: [{ type: "file_search" }]
+            })
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Erro ao criar Assistant: ${error}`);
+        }
+
+        return await response.json();
+    },
+
+    modify: async (assistantId: string, params: {
+        name?: string;
+        instructions?: string;
+        model?: string;
+    }): Promise<any> => {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify(params)
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao modificar Assistant');
+        }
+
+        return await response.json();
+    },
+
+    delete: async (assistantId: string): Promise<void> => {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'assistants=v2'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao deletar Assistant');
+        }
+    }
+};
+
 // Adicionar as funções ao cliente OpenAI
 const openaiClient = openai;
 
@@ -218,11 +286,13 @@ const openaiClient = openai;
 type ExtendedOpenAI = OpenAI & {
     vectorStore: typeof vectorStoreApi;
     files: typeof filesApi;
+    assistant: typeof assistantApi;
 };
 
 // Adicionar as propriedades extras
 (openaiClient as any).vectorStore = vectorStoreApi;
 (openaiClient as any).files = filesApi;
+(openaiClient as any).assistant = assistantApi;
 
-export { vectorStoreApi as vectorStore, filesApi as files };
+export { vectorStoreApi as vectorStore, filesApi as files, assistantApi as assistant };
 export default openaiClient as ExtendedOpenAI;

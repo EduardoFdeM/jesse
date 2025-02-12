@@ -10,7 +10,7 @@ import { initializeSocket } from './config/socket.js';
 import { configureSecurityMiddleware } from './config/security.js';
 import cors from 'cors';
 import corsOptions from './config/cors.js';
-import promptRoutes from './routes/prompt.routes.js';
+import promptRoutes from './routes/assistant.routes.js';
 import { authenticate } from './middlewares/auth.middleware.js';
 import adminRoutes from './routes/admin.routes.js';
 // Carregar variáveis de ambiente

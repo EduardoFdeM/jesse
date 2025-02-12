@@ -54,6 +54,12 @@ export const getUserDetails = asyncHandler(async (req: Request, res: Response) =
     res.json({ user });
 });
 
+// Interfaces para tipagem
+interface TranslationCostData {
+    totalCost: number;
+    processingTime: number;
+}
+
 // Obter estatísticas de um usuário
 export const getUserStats = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
@@ -86,8 +92,8 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
                     id: true,
                     name: true,
                     description: true,
-                    version: true,
-                    model: true
+                    model: true,
+                    temperature: true
                 },
                 orderBy: { createdAt: 'desc' },
                 take: 5
@@ -99,48 +105,61 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
         throw new NotFoundError('Usuário não encontrado');
     }
 
-    // Calcular custos totais
-    const totalCost = user.translations.reduce((acc, translation) => {
+    // Atualizar cálculo de custos totais
+    const totalCost = user.translations?.reduce((acc: number, translation) => {
         if (translation.costData) {
-            const costData = JSON.parse(translation.costData);
-            return acc + (costData.totalCost || 0);
+            try {
+                const costData = JSON.parse(translation.costData) as TranslationCostData;
+                return acc + (costData.totalCost || 0);
+            } catch {
+                return acc;
+            }
+        }
+        return acc;
+    }, 0) || 0;
+
+    // Atualizar estatísticas de traduções por status
+    const translationStats = user.translations?.reduce((acc: Record<string, number>, translation) => {
+        acc[translation.status] = (acc[translation.status] || 0) + 1;
+        return acc;
+    }, {} as Record<string, number>) || {};
+
+    // Calcular taxa de sucesso
+    const successRate = user.translations?.length ? 
+        (user.translations.filter(t => t.status === 'completed').length / user.translations.length) * 100 : 0;
+
+    // Atualizar cálculo do tempo médio
+    const averageTranslationTime = user.translations?.reduce((acc: number, translation) => {
+        if (translation.costData) {
+            try {
+                const costData = JSON.parse(translation.costData) as TranslationCostData;
+                return acc + (costData.processingTime || 0);
+            } catch {
+                return acc;
+            }
         }
         return acc;
     }, 0);
 
-    // Estatísticas de traduções por status
-    const translationStats = user.translations.reduce((acc: Record<string, number>, translation) => {
-        acc[translation.status] = (acc[translation.status] || 0) + 1;
-        return acc;
-    }, {});
+    const avgTime = user.translations?.length ? averageTranslationTime / user.translations.length : 0;
 
-    // Calcular taxa de sucesso
-    const successRate = user.translations.length > 0
-        ? (user.translations.filter(t => t.status === 'completed').length / user.translations.length) * 100
-        : 0;
-
-    // Calcular tempo médio (assumindo que temos timestamps no costData)
-    const averageTranslationTime = user.translations.reduce((acc, translation) => {
+    // Atualizar custos por mês
+    const costByMonth = user.translations?.reduce((acc: Record<string, number>, translation) => {
         if (translation.costData) {
-            const costData = JSON.parse(translation.costData);
-            return acc + (costData.processingTime || 0);
+            try {
+                const month = new Date(translation.createdAt).toLocaleString('default', { month: 'long', year: 'numeric' });
+                const costData = JSON.parse(translation.costData) as TranslationCostData;
+                acc[month] = (acc[month] || 0) + (costData.totalCost || 0);
+            } catch {
+                // Ignorar erros de parsing
+            }
         }
         return acc;
-    }, 0) / (user.translations.length || 1);
-
-    // Custos por mês
-    const costByMonth = user.translations.reduce((acc: Record<string, number>, translation) => {
-        if (translation.costData) {
-            const month = new Date(translation.createdAt).toLocaleString('default', { month: 'long', year: 'numeric' });
-            const costData = JSON.parse(translation.costData);
-            acc[month] = (acc[month] || 0) + (costData.totalCost || 0);
-        }
-        return acc;
-    }, {});
+    }, {} as Record<string, number>) || {};
 
     // Gerar log de atividades
     const recentActivity = [
-        ...user.translations.map(t => ({
+        ...(user.translations?.map(t => ({
             id: t.id,
             type: 'translation' as const,
             action: `Tradução ${t.status}`,
@@ -150,30 +169,30 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
                 status: t.status,
                 cost: t.costData ? JSON.parse(t.costData).totalCost : null
             }
-        })),
-        ...user.prompts.map(p => ({
+        })) || []),
+        ...(user.prompts?.map(p => ({
             id: p.id,
             type: 'prompt' as const,
             action: 'Prompt criado',
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(),
             details: {
                 promptName: p.name
             }
-        }))
+        })) || [])
     ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
     .slice(0, 10);
 
     res.json({
-        totalTranslations: user._count.translations,
-        totalKnowledgeBases: user._count.knowledgeBases,
-        totalPrompts: user._count.prompts,
+        totalTranslations: user._count?.translations || 0,
+        totalKnowledgeBases: user._count?.knowledgeBases || 0,
+        totalPrompts: user._count?.prompts || 0,
         totalCost,
         translationStats,
         successRate,
-        averageTranslationTime,
+        averageTranslationTime: avgTime,
         costByMonth,
-        recentTranslations: user.translations,
-        recentPrompts: user.prompts,
+        recentTranslations: user.translations || [],
+        recentPrompts: user.prompts || [],
         recentActivity
     });
 });

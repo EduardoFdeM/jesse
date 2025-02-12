@@ -23,7 +23,7 @@ export function Dashboard() {
     const navigation = [
         { name: 'Traduções', href: '/translations', icon: FileText },
         { name: 'Bases de Conhecimento', href: '/knowledge-bases', icon: Book },
-        { name: 'Prompts', href: '/prompts', icon: MessageSquare },
+        { name: 'Assistants', href: '/assistants', icon: MessageSquare },
         ...(userRole === 'SUPERUSER' ? [
             { name: 'Admin', href: '/admin', icon: Settings }
         ] : []),
@@ -66,15 +66,15 @@ export function Dashboard() {
                                     Bases de Conhecimento
                                 </Link>
                                 <Link
-                                    to="/prompts"
+                                    to="/assistants"
                                     className={`inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium ${
-                                        isActive('/prompts')
+                                        isActive('/assistants')
                                             ? 'border-blue-500 text-gray-900 dark:text-white'
                                             : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
                                     }`}
                                 >
                                     <MessageSquare className="h-4 w-4 mr-2" />
-                                    Prompts
+                                    Assistants
                                 </Link>
                                 {userRole === 'SUPERUSER' && (
                                     <Link
@@ -190,15 +190,15 @@ export function Dashboard() {
                             </Link>
                         )}
                         <Link
-                            to="/prompts"
+                            to="/assistants"
                             className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
-                                isActive('/prompts')
+                                isActive('/assistants')
                                     ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
                                     : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
                             }`}
                         >
                             <MessageSquare className="h-4 w-4 mr-2" />
-                            Prompts
+                            Assistants
                         </Link>
                         {userRole === 'SUPERUSER' && (
                             <Link

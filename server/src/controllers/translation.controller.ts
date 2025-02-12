@@ -4,7 +4,7 @@ import { ValidationError, NotFoundError, BadRequestError, UnauthorizedError } fr
 import prisma from '../config/database.js';
 import fs from 'fs';
 import path from 'path';
-import { emitTranslationStarted } from '../services/socket.service.js';
+import { emitTranslationStarted, emitTranslationError } from '../services/socket.service.js';
 import { translateFile } from '../services/translation.service.js';
 import { generateSignedUrl, uploadToS3, deleteFromS3 } from '../config/storage.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -528,7 +528,7 @@ export const deleteTranslation = authenticatedHandler(async (req: AuthenticatedR
         });
 
         // Emitir evento de deleção via Socket.IO
-        global.io?.emit('translation:deleted', { id });
+        emitTranslationError(id, 'Translation deleted');
 
         res.json({ 
             success: true, 

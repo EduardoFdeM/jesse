@@ -22,9 +22,18 @@ declare global {
         id: string;
         name: string;
         email: string;
-        role: UserRole;
+        password: string;
+        role: string;
         createdAt: Date;
         updatedAt: Date;
+        translations?: Translation[];
+        knowledgeBases?: KnowledgeBase[];
+        prompts?: Prompt[];
+        _count?: {
+            translations: number;
+            knowledgeBases: number;
+            prompts: number;
+        };
     }
 
     // Translation Types
@@ -153,18 +162,18 @@ declare global {
 
     // Stats Types
     interface UserStats {
-        totalTranslations: number;
-        totalKnowledgeBases: number;
-        totalPrompts: number;
-        totalCost: number;
-        translationStats: Record<TranslationStatus, number>;
-        monthlyActivity: Record<string, number>;
-        recentTranslations: Translation[];
-        recentPrompts: Prompt[];
-        recentActivity: UserActivity[];
-        averageTranslationTime: number;
-        successRate: number;
+        translations: Translation[];
+        translationStats: Record<string, number>;
         costByMonth: Record<string, number>;
+        successRate: number;
+        averageTranslationTime: number;
+        recentActivity: Array<{
+            id: string;
+            type: 'translation' | 'prompt';
+            action: string;
+            timestamp: string;
+            details: Record<string, string | number | boolean | null>;
+        }>;
     }
 
     interface UserActivity {

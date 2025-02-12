@@ -8,11 +8,12 @@ import authRoutes from './routes/auth.routes.js';
 import translationRoutes from './routes/translation.routes.js';
 import knowledgeRoutes from './routes/knowledge.routes.js';
 import corsOptions from './config/cors.js';
-import promptRoutes from './routes/prompt.routes.js';
+import promptRoutes from './routes/assistant.routes.js';
 import { authenticate } from './middlewares/auth.middleware.js';
 import { authorize } from './middlewares/authorization.middleware.js';
 import cookieParser from 'cookie-parser';
 import adminRoutes from './routes/admin.routes.js';
+import assistantRoutes from './routes/assistant.routes.js';
 
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -165,5 +166,8 @@ app.use((err: ServerError, req: express.Request, res: express.Response, next: ex
     });
     next(); // Adicionado para resolver o warning de variável não utilizada
 });
+
+// Rotas de assistente
+app.use('/api/assistants', assistantRoutes);
 
 export default app; 

@@ -10,8 +10,8 @@ import { TranslatedDocuments } from './components/translation/TranslatedDocument
 import { PrivateRoute } from './components/auth/PrivateRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Editor } from './pages/Editor';
-import { PromptList } from './components/prompt/PromptList';
-import { PromptForm } from './components/prompt/PromptForm';
+import { AssistantList } from './components/assistant/AssistantList';
+import { AssistantForm } from './components/assistant/AssistantForm';
 import { OpenAIFilesPage } from './pages/OpenAIFiles';
 
 // Componente para proteger rotas de admin
@@ -41,10 +41,10 @@ export default function App() {
                             <Route path="new" element={<KnowledgeBaseForm />} />
                             <Route path=":id/edit" element={<KnowledgeBaseForm />} />
                         </Route>
-                        <Route path="prompts">
-                            <Route index element={<PromptList />} />
-                            <Route path="new" element={<PromptForm />} />
-                            <Route path=":id/edit" element={<PromptForm />} />
+                        <Route path="assistants">
+                            <Route index element={<AssistantList />} />
+                            <Route path="new" element={<AssistantForm />} />
+                            <Route path=":id/edit" element={<AssistantForm />} />
                         </Route>
                         <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
                     </Route>

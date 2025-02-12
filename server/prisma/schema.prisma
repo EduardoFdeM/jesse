@@ -74,36 +74,21 @@ model KnowledgeBase {
 }
 
 model Prompt {
-  id           String          @id @default(uuid())
+  id           String        @id @default(uuid())
   name         String
   description  String
-  content      String          @db.Text
-  tags         String[]        @default([])
-  version      String          @default("1.0.0")
+  instructions String        @db.Text        // Antigo content
+  tags         String[]      @default([])
   userId       String
-  user         User            @relation(fields: [userId], references: [id])
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  user         User          @relation(fields: [userId], references: [id])
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
   translations Translation[]
-  versions     PromptVersion[] @relation("PromptVersions")
-  isPublic     Boolean         @default(false)
-  model        String          @default("gpt-4-turbo-preview")
-  temperature  Float           @default(0.3)
+  isPublic     Boolean       @default(false)
+  model        String        @default("gpt-4-turbo-preview")
+  temperature  Float         @default(0.3)
+  assistantId  String?       // ID do assistant na OpenAI
+  status       String        @default("pending") // pending, active, error
 
-  @@index([userId])
-}
-
-model PromptVersion {
-  id          String   @id @default(cuid())
-  version     String
-  content     String   @db.Text
-  description String?
-  tags        String[]
-  createdAt   DateTime @default(now())
-  promptId    String
-  prompt      Prompt   @relation("PromptVersions", fields: [promptId], references: [id])
-  userId      String
-
-  @@index([promptId])
   @@index([userId])
 }

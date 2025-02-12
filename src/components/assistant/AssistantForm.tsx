@@ -1,78 +1,72 @@
 import { useState, useEffect } from 'react';
-import { Save, ArrowLeft, Tag, Plus, X } from 'lucide-react';
+import { Save, ArrowLeft, Plus, X } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../axiosConfig';
-import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'react-hot-toast';
 
-interface PromptFormProps {
+interface AssistantFormProps {
     initialData?: {
         id?: string;
         name: string;
         description: string;
-        content: string;
-        updatedAt?: string;
-        createdAt?: string;
+        instructions: string;
         tags: string[];
-        version: string;
+        model: string;
+        temperature: number;
+        isPublic: boolean;
     };
 }
 
-interface PromptFormData {
+interface AssistantFormData {
     name: string;
     description: string;
-    content: string;
+    instructions: string;
     tags: string[];
-    version: string;
+    model: string;
+    temperature: number;
+    isPublic: boolean;
 }
 
-interface PromptVersion {
-    id: string;
-    version: string;
-    content: string;
-    description: string;
-    createdAt: string;
-    tags: string[];
-}
-
-export function PromptForm({ initialData }: PromptFormProps) {
+export function AssistantForm({ initialData }: AssistantFormProps) {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const [isLoading, setIsLoading] = useState(true);
-    const [formData, setFormData] = useState<PromptFormData>({
+    const [formData, setFormData] = useState<AssistantFormData>({
         name: initialData?.name || '',
         description: initialData?.description || '',
-        content: initialData?.content || '',
+        instructions: initialData?.instructions || '',
         tags: initialData?.tags || [],
-        version: initialData?.version || '1.0.0'
+        model: initialData?.model || 'gpt-4-turbo-preview',
+        temperature: initialData?.temperature || 0.3,
+        isPublic: initialData?.isPublic || false
     });
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [lastUpdate, setLastUpdate] = useState<string>('');
     const [newTag, setNewTag] = useState('');
-    const [versions, setVersions] = useState<PromptVersion[]>([]);
-    const [showVersionHistory, setShowVersionHistory] = useState(false);
 
     useEffect(() => {
-        const loadPrompt = async () => {
+        const loadAssistant = async () => {
             if (id) {
                 try {
                     setIsLoading(true);
-                    const response = await api.get(`/api/prompts/${id}`);
+                    const response = await api.get(`/api/assistants/${id}`);
                     const data = response.data.data;
                     setFormData({
                         name: data.name,
                         description: data.description,
-                        content: data.content,
+                        instructions: data.instructions,
                         tags: data.tags,
-                        version: data.version
+                        model: data.model,
+                        temperature: data.temperature,
+                        isPublic: data.isPublic
                     });
                     setLastUpdate(data.updatedAt || data.createdAt);
                 } catch (err) {
-                    console.error('Erro ao carregar prompt:', err);
-                    setError('Erro ao carregar prompt');
+                    console.error('Erro ao carregar assistant:', err);
+                    setError('Erro ao carregar assistant');
                 } finally {
                     setIsLoading(false);
                 }
@@ -81,43 +75,21 @@ export function PromptForm({ initialData }: PromptFormProps) {
             }
         };
 
-        loadPrompt();
+        loadAssistant();
     }, [id]);
 
-    useEffect(() => {
-        if (id) {
-            loadVersions();
-        }
-    }, [id]);
-
-    const loadVersions = async () => {
-        try {
-            const response = await api.get(`/api/prompts/${id}/versions`);
-            setVersions(response.data.data);
-        } catch (error) {
-            console.error('Erro ao carregar versões:', error);
-        }
-    };
-
-    const validatePrompt = (content: string) => {
-        if (content.length < 10) {
-            throw new Error('O prompt deve ter pelo menos 10 caracteres');
+    const validateAssistant = (instructions: string) => {
+        if (instructions.length < 10) {
+            throw new Error('As instruções devem ter pelo menos 10 caracteres');
         }
         
         const requiredVariables = ['{sourceLanguage}', '{targetLanguage}', '{text}'];
         const missingVariables = requiredVariables.filter(variable => 
-            !content.includes(variable)
+            !instructions.includes(variable)
         );
 
         if (missingVariables.length > 0) {
-            throw new Error(`O prompt deve conter as variáveis: ${missingVariables.join(', ')}`);
-        }
-    };
-
-    const validateVersion = (version: string) => {
-        const semverRegex = /^\d+\.\d+\.\d+$/;
-        if (!semverRegex.test(version)) {
-            throw new Error('A versão deve seguir o padrão semântico (ex: 1.0.0)');
+            throw new Error(`As instruções devem conter as variáveis: ${missingVariables.join(', ')}`);
         }
     };
 
@@ -127,38 +99,23 @@ export function PromptForm({ initialData }: PromptFormProps) {
         setError(null);
 
         try {
-            validatePrompt(formData.content);
-            validateVersion(formData.version);
-            const endpoint = id ? `/api/prompts/${id}` : '/api/prompts';
+            validateAssistant(formData.instructions);
+            const endpoint = id ? `/api/assistants/${id}` : '/api/assistants';
             const method = id ? 'put' : 'post';
             
-            console.log(`📤 Enviando requisição ${method.toUpperCase()} para ${endpoint}`, {
-                formData,
-                headers: api.defaults.headers
-            });
-            
-            const response = await api[method](endpoint, {
-                name: formData.name.trim(),
-                description: formData.description.trim(),
-                content: formData.content.trim(),
-                tags: formData.tags,
-                version: formData.version
-            });
-            
-            console.log('✅ Resposta do servidor:', response.data);
+            const response = await api[method](endpoint, formData);
             
             if (response.data.status === 'success') {
-                navigate('/prompts');
+                toast.success(`Assistant ${id ? 'atualizado' : 'criado'} com sucesso`);
+                navigate('/assistants');
             } else {
-                throw new Error(response.data.message || 'Erro ao salvar prompt');
+                throw new Error(response.data.message || 'Erro ao salvar assistant');
             }
-        } catch (err: any) {
-            console.error('❌ Erro detalhado ao salvar prompt:', {
-                error: err,
-                response: err.response?.data,
-                status: err.response?.status
-            });
-            setError(err.message);
+        } catch (error: unknown) {
+            console.error('Erro ao salvar assistant:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Erro ao salvar assistant';
+            setError(errorMessage);
+            toast.error(errorMessage);
         } finally {
             setIsSubmitting(false);
         }
@@ -181,46 +138,6 @@ export function PromptForm({ initialData }: PromptFormProps) {
         });
     };
 
-    const handleCreateVersion = async () => {
-        try {
-            // Incrementa a versão minor
-            const [major, minor] = formData.version.split('.');
-            const newVersion = `${major}.${parseInt(minor) + 1}`;
-            
-            setFormData(prev => ({
-                ...prev,
-                version: newVersion
-            }));
-
-            // Salva a versão atual como histórico
-            await api.post(`/api/prompts/${id}/versions`, {
-                version: formData.version,
-                content: formData.content,
-                description: formData.description,
-                tags: formData.tags
-            });
-
-            loadVersions();
-            toast.success('Nova versão criada com sucesso');
-        } catch (error) {
-            console.error('Erro ao criar versão:', error);
-            toast.error('Erro ao criar versão');
-        }
-    };
-
-    const handleRestoreVersion = (version: PromptVersion) => {
-        if (window.confirm('Deseja restaurar esta versão? As alterações não salvas serão perdidas.')) {
-            setFormData({
-                ...formData,
-                content: version.content,
-                description: version.description || '',
-                tags: version.tags,
-                version: version.version
-            });
-            toast.success('Versão restaurada com sucesso');
-        }
-    };
-
     if (isLoading) {
         return (
             <div className="flex items-center justify-center p-4">
@@ -234,14 +151,14 @@ export function PromptForm({ initialData }: PromptFormProps) {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <Link
-                        to="/prompts"
+                        to="/assistants"
                         className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                         title="Voltar"
                     >
                         <ArrowLeft className="h-5 w-5" />
                     </Link>
                     <h2 className="text-lg font-medium">
-                        {id ? 'Editar Prompt' : 'Novo Prompt'}
+                        {id ? 'Editar Assistant' : 'Novo Assistant'}
                     </h2>
                 </div>
                 {lastUpdate && (
@@ -263,7 +180,7 @@ export function PromptForm({ initialData }: PromptFormProps) {
                 <div className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Nome do Prompt <span className="text-red-500 font-bold">*</span>
+                            Nome do Assistant <span className="text-red-500 font-bold">*</span>
                         </label>
                         <input
                             type="text"
@@ -288,7 +205,7 @@ export function PromptForm({ initialData }: PromptFormProps) {
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700">
-                            Conteúdo do Prompt
+                            Instruções do Assistant
                             <span className="text-xs text-gray-500 ml-2">
                                 (Use {'{sourceLanguage}'}, {'{targetLanguage}'} e {'{text}'} como variáveis)
                             </span>
@@ -302,9 +219,8 @@ export function PromptForm({ initialData }: PromptFormProps) {
                             </ul>
                         </div>
                         <textarea
-                            name="content"
-                            value={formData.content}
-                            onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                            value={formData.instructions}
+                            onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
                             rows={10}
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-4"
                             required
@@ -313,15 +229,44 @@ export function PromptForm({ initialData }: PromptFormProps) {
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Versão
+                            Modelo
+                        </label>
+                        <select
+                            value={formData.model}
+                            onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                        >
+                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
+                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Temperatura
                         </label>
                         <input
-                            type="text"
-                            value={formData.version}
-                            onChange={(e) => setFormData({ ...formData, version: e.target.value })}
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            value={formData.temperature}
+                            onChange={(e) => setFormData({ ...formData, temperature: parseFloat(e.target.value) })}
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-                            placeholder="1.0.0"
                         />
+                    </div>
+
+                    <div>
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={formData.isPublic}
+                                onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Tornar público</span>
+                        </label>
                     </div>
 
                     <div>
@@ -371,7 +316,7 @@ export function PromptForm({ initialData }: PromptFormProps) {
                     </p>
                     <div className="flex gap-3">
                         <Link
-                            to="/prompts"
+                            to="/assistants"
                             className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                         >
                             Cancelar
@@ -387,60 +332,6 @@ export function PromptForm({ initialData }: PromptFormProps) {
                     </div>
                 </div>
             </form>
-
-            {id && (
-                <div className="mt-4">
-                    <button
-                        type="button"
-                        onClick={() => setShowVersionHistory(!showVersionHistory)}
-                        className="text-sm text-blue-600 hover:text-blue-800"
-                    >
-                        {showVersionHistory ? 'Ocultar histórico' : 'Ver histórico de versões'}
-                    </button>
-
-                    {showVersionHistory && (
-                        <div className="mt-2 space-y-2">
-                            {versions.map(version => (
-                                <div
-                                    key={version.id}
-                                    className="p-3 border rounded-md hover:bg-gray-50"
-                                >
-                                    <div className="flex justify-between items-center">
-                                        <div>
-                                            <span className="font-medium">v{version.version}</span>
-                                            <span className="ml-2 text-xs text-gray-500">
-                                                {format(new Date(version.createdAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={() => handleRestoreVersion(version)}
-                                            className="text-xs text-blue-600 hover:text-blue-800"
-                                        >
-                                            Restaurar versão
-                                        </button>
-                                    </div>
-                                    <p className="text-sm text-gray-600 mt-1">{version.description}</p>
-                                    <div className="mt-1 flex flex-wrap gap-1">
-                                        {version.tags.map(tag => (
-                                            <span key={tag} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                                                {tag}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    <button
-                        type="button"
-                        onClick={handleCreateVersion}
-                        className="mt-2 px-4 py-2 text-sm text-blue-600 border border-blue-600 rounded hover:bg-blue-50"
-                    >
-                        Criar nova versão
-                    </button>
-                </div>
-            )}
         </div>
     );
 } 
