@@ -1,22 +1,17 @@
-import fs from 'fs';
 import path from 'path';
 import prisma from '../config/database.js';
 import { KnowledgeBase } from '@prisma/client';
-import { uploadToS3, deleteFromS3 } from '../config/storage.js';
+import { ValidationError, BadRequestError } from '../utils/errors.js';
 import openai from '../config/openai.js';
-import { ValidationError } from '../utils/errors.js';
-
-// Definir tipos permitidos de arquivo
-type FileType = 'txt' | 'csv' | 'xlsx' | 'xls';
+import { VectorStore, VectorStoreFileList, files, vectorStore } from '../config/openai.js';
 
 // Interface para parâmetros
 interface ProcessKnowledgeBaseParams {
     name: string;
     description: string;
-    sourceLanguage: string;
-    targetLanguage: string;
     userId: string;
-    originalFileName?: string;
+    files: Express.Multer.File[];
+    existingFileIds?: string[];
 }
 
 interface TextChunk {
@@ -34,13 +29,6 @@ interface TranslationContext {
     targetLanguage: string;
 }
 
-// Interfaces para Vector Store
-interface VectorStore {
-    id: string;
-    name: string;
-    created_at: number;
-}
-
 interface CreateKnowledgeBaseParams {
     name: string;
     description: string;
@@ -49,117 +37,155 @@ interface CreateKnowledgeBaseParams {
     userId: string;
 }
 
-// Interface estendida do KnowledgeBase para incluir o vectorStoreId
-interface KnowledgeBaseWithVectorStore extends KnowledgeBase {
-    vectorStoreId: string | null;
+interface ProcessedFile {
+    fileName: string;
+    filePath: string;
+    fileSize: number;
+    fileIds: string[];
 }
 
+const SUPPORTED_EXTENSIONS = [
+    '.txt', '.pdf', '.doc', '.docx', '.pptx',
+    '.md', '.html', '.js', '.ts', '.py',
+    '.java', '.json', '.c', '.cpp', '.cs',
+    '.css', '.go', '.php', '.rb', '.sh',
+    '.tex'
+];
+
 // Funções principais
-export const processKnowledgeBaseFile = async (filePath: string, params: ProcessKnowledgeBaseParams): Promise<KnowledgeBase> => {
+export const processKnowledgeBaseFiles = async (params: ProcessKnowledgeBaseParams): Promise<KnowledgeBase> => {
     try {
-        // Validar tipo de arquivo
-        const fileExtension = path.extname(filePath).slice(1).toLowerCase();
-        const allowedTypes: FileType[] = ['txt', 'csv', 'xlsx', 'xls'];
-        
-        if (!allowedTypes.includes(fileExtension as FileType)) {
-            throw new ValidationError('Tipo de arquivo não suportado');
+        console.log('📝 Criando Vector Store:', params.name);
+        const store = await vectorStore.create(`kb_${params.name}_${Date.now()}`);
+        console.log('✅ Vector Store criada:', store.id);
+
+        const uploadedFiles = [];
+
+        // Processar arquivos existentes
+        if (params.existingFileIds && params.existingFileIds.length > 0) {
+            console.log('📎 Vinculando arquivos existentes:', params.existingFileIds);
+            for (const fileId of params.existingFileIds) {
+                try {
+                    await vectorStore.files.add(store.id, fileId);
+                    const fileInfo = await files.get(fileId);
+                    uploadedFiles.push({
+                        fileName: fileInfo.filename,
+                        fileSize: fileInfo.bytes,
+                        fileType: fileInfo.filename.split('.').pop() || 'unknown',
+                        fileId: fileInfo.id
+                    });
+                } catch (err) {
+                    const error = err as Error;
+                    console.error(`❌ Erro ao vincular arquivo ${fileId}:`, error.message);
+                    throw new BadRequestError(`Erro ao vincular arquivo: ${error.message}`);
+                }
+            }
         }
 
-        const fileType = fileExtension as FileType;
-        
-        // Ler conteúdo do arquivo
-        const fileContent = await fs.promises.readFile(filePath);
-        
-        // Upload para S3
-        const timestamp = Date.now();
-        const s3Key = `knowledge-bases/${params.userId}/${timestamp}-${path.basename(filePath)}`;
-        const spacesUrl = await uploadToS3(fileContent, s3Key);
+        // Processar novos arquivos
+        if (params.files && params.files.length > 0) {
+            console.log('📤 Enviando novos arquivos para OpenAI');
+            for (const file of params.files) {
+                try {
+                    console.log('📤 Enviando arquivo:', file.originalname);
+                    const fileData = await files.upload(file.buffer, file.originalname);
+                    console.log('✅ Arquivo enviado:', fileData.id);
 
-        if (!spacesUrl) {
-            throw new Error('Falha ao fazer upload do arquivo para S3');
+                    console.log('🔗 Vinculando arquivo à Vector Store:', store.id);
+                    await vectorStore.files.add(store.id, fileData.id);
+
+                    uploadedFiles.push({
+                        fileName: file.originalname,
+                        fileSize: file.size,
+                        fileType: file.originalname.split('.').pop() || 'unknown',
+                        fileId: fileData.id
+                    });
+                } catch (err) {
+                    const error = err as Error;
+                    console.error('❌ Erro ao processar arquivo:', error.message);
+                    throw new BadRequestError(`Erro ao processar arquivo: ${error.message}`);
+                }
+            }
         }
 
-        // Extrair texto do arquivo de acordo com o tipo
-        let content = '';
-        if (fileType === 'txt') {
-            content = await fs.promises.readFile(filePath, 'utf-8');
-        } else if (['xlsx', 'xls'].includes(fileType)) {
-            content = await extractTextFromXLSX(filePath);
-        } else if (fileType === 'csv') {
-            content = await fs.promises.readFile(filePath, 'utf-8');
-        }
-
-        const chunks = splitIntoChunks(content);
-        
-        // Criar Vector Store para a base de conhecimento
-        const vectorStore = await createVectorStore(`kb_${params.name}_${Date.now()}`);
-
-        // Criar base de conhecimento com referência ao Vector Store
+        // Criar base de conhecimento no banco
         const knowledgeBase = await prisma.knowledgeBase.create({
             data: {
                 name: params.name,
                 description: params.description,
-                sourceLanguage: params.sourceLanguage,
-                targetLanguage: params.targetLanguage,
-                fileName: params.originalFileName || path.basename(filePath),
-                filePath: spacesUrl,
-                fileSize: fileContent.length,
-                fileType: fileType,
                 userId: params.userId,
-                vectorStoreId: vectorStore.id,
-                chunks: {
-                    createMany: {
-                        data: chunks.map((chunk: string) => ({
-                            content: chunk
-                        }))
-                    }
-                }
-            },
-            include: {
-                chunks: true
+                vectorStoreId: store.id,
+                fileName: uploadedFiles.map(f => f.fileName).join(', '),
+                filePath: 'vector_store',
+                fileSize: uploadedFiles.reduce((acc, f) => acc + f.fileSize, 0),
+                fileType: uploadedFiles.map(f => f.fileType).join(', '),
+                fileIds: uploadedFiles.map(f => f.fileId)
             }
         });
 
-        // Limpar arquivo temporário
-        await fs.promises.unlink(filePath);
-        console.log('🧹 Arquivo temporário removido');
-
         return knowledgeBase;
-    } catch (error) {
-        console.error('❌ Erro ao processar arquivo da base de conhecimento:', error);
-        
-        // Limpar arquivo temporário em caso de erro
-        try {
-            if (fs.existsSync(filePath)) {
-                await fs.promises.unlink(filePath);
-                console.log('🧹 Arquivo temporário removido após erro');
-            }
-        } catch (cleanupError) {
-            console.error('⚠️ Erro ao limpar arquivo temporário:', cleanupError);
-        }
-        
-        throw error;
+    } catch (err) {
+        const error = err as Error;
+        console.error('❌ Erro ao processar base de conhecimento:', error.message);
+        throw new BadRequestError(`Falha ao processar base de conhecimento: ${error.message}`);
     }
+};
+
+// Função para deletar base de conhecimento
+export const deleteKnowledgeBase = async (id: string): Promise<boolean> => {
+    try {
+        const knowledgeBase = await prisma.knowledgeBase.findUnique({
+            where: { id }
+        });
+
+        if (!knowledgeBase) {
+            throw new BadRequestError('Base de conhecimento não encontrada');
+        }
+
+        // Deletar Vector Store
+        if (knowledgeBase.vectorStoreId) {
+            await vectorStore.delete(knowledgeBase.vectorStoreId);
+        }
+
+        // Deletar do banco
+        await prisma.knowledgeBase.delete({
+            where: { id }
+        });
+
+        return true;
+    } catch (err) {
+        const error = err as Error;
+        console.error('❌ Erro ao deletar base de conhecimento:', error.message);
+        throw new BadRequestError(`Erro ao deletar base de conhecimento: ${error.message}`);
+    }
+};
+
+// Função para listar arquivos de uma base de conhecimento
+export const listKnowledgeBaseFiles = async (id: string) => {
+    const knowledgeBase = await prisma.knowledgeBase.findUnique({
+        where: { id }
+    });
+
+    if (!knowledgeBase?.vectorStoreId) {
+        throw new BadRequestError('Base de conhecimento não encontrada');
+    }
+
+    return vectorStore.files.list(knowledgeBase.vectorStoreId);
 };
 
 // Função para buscar conteúdo da base de conhecimento
 export const getKnowledgeBaseContent = async (knowledgeBaseId: string): Promise<string> => {
     const knowledgeBase = await prisma.knowledgeBase.findUnique({
-        where: { id: knowledgeBaseId },
-        include: {
-            chunks: {
-                orderBy: {
-                    id: 'asc'
-                }
-            }
-        }
+        where: { id: knowledgeBaseId }
     });
 
     if (!knowledgeBase) {
         throw new Error('Base de conhecimento não encontrada');
     }
 
-    return knowledgeBase.chunks.map(chunk => chunk.content).join('\n\n');
+    // Buscar arquivos da Vector Store
+    const vectorFiles = await openai.vectorStore.files.list(knowledgeBase.vectorStoreId!);
+    return vectorFiles.data.map(file => file.id).join('\n\n');
 };
 
 // Função para traduzir com contexto
@@ -344,74 +370,76 @@ export const getVectorStore = async (vectorStoreId: string): Promise<VectorStore
     }
 };
 
-// Função principal para criar base de conhecimento
-export const createKnowledgeBase = async (params: CreateKnowledgeBaseParams): Promise<KnowledgeBase> => {
+// Função para criar base de conhecimento
+export const createKnowledgeBase = async (
+    userId: string,
+    name: string,
+    description: string,
+    files: Express.Multer.File[],
+    existingFileIds?: string[]
+): Promise<KnowledgeBase> => {
     try {
-        // Criar Vector Store
-        const vectorStore = await createVectorStore(`kb_${params.name}_${Date.now()}`);
+        const processedFiles: string[] = [];
+        let totalSize = 0;
+        const fileTypes = new Set<string>();
+        const fileNames: string[] = [];
+        
+        // Processa os novos arquivos
+        for (const file of files) {
+            try {
+                const openaiFile = await openai.files.upload(file.buffer, file.originalname);
+                processedFiles.push(openaiFile.id);
+                totalSize += file.size;
+                fileTypes.add(path.extname(file.originalname).slice(1));
+                fileNames.push(file.originalname);
+            } catch (err) {
+                console.error('Erro ao processar arquivo:', file.originalname, err);
+                throw new Error(`Erro ao processar arquivo ${file.originalname}: ${(err as Error).message}`);
+            }
+        }
+        
+        // Processa os arquivos existentes
+        if (existingFileIds && existingFileIds.length > 0) {
+            for (const fileId of existingFileIds) {
+                try {
+                    const openaiFile = await openai.files.get(fileId);
+                    processedFiles.push(fileId);
+                    totalSize += openaiFile.bytes;
+                    fileTypes.add(path.extname(openaiFile.filename).slice(1));
+                    fileNames.push(openaiFile.filename);
+                } catch (err) {
+                    console.error('Erro ao processar arquivo existente:', fileId, err);
+                    throw new Error(`Erro ao processar arquivo existente ${fileId}: ${(err as Error).message}`);
+                }
+            }
+        }
 
-        // Criar base de conhecimento com Vector Store ID
+        // Cria o Vector Store
+        const vectorStore = await openai.vectorStore.create(`kb_${name}_${Date.now()}`);
+
+        // Adiciona os arquivos ao Vector Store
+        for (const fileId of processedFiles) {
+            await openai.vectorStore.files.add(vectorStore.id, fileId);
+        }
+
+        // Cria o Knowledge Base no banco de dados
         const knowledgeBase = await prisma.knowledgeBase.create({
             data: {
-                name: params.name,
-                description: params.description,
-                sourceLanguage: params.sourceLanguage,
-                targetLanguage: params.targetLanguage,
-                userId: params.userId,
-                fileName: 'vector_store.txt',
+                name,
+                description,
+                userId,
+                vectorStoreId: vectorStore.id,
+                fileName: fileNames.join(', '),
                 filePath: 'vector_store',
-                fileSize: 0,
-                fileType: 'txt',
-                vectorStoreId: vectorStore.id
+                fileSize: totalSize,
+                fileType: Array.from(fileTypes).join(', '),
+                fileIds: processedFiles
             }
         });
 
         return knowledgeBase;
-    } catch (error) {
-        console.error('❌ Erro ao criar base de conhecimento:', error);
-        throw error;
-    }
-};
-
-// Função para deletar base de conhecimento
-export const deleteKnowledgeBase = async (id: string) => {
-    try {
-        const knowledgeBase = await prisma.knowledgeBase.findUnique({
-            where: { id }
-        });
-
-        if (!knowledgeBase) {
-            throw new ValidationError('Base de conhecimento não encontrada');
-        }
-
-        // Deletar Vector Store
-        if (knowledgeBase.vectorStoreId) {
-            try {
-                const response = await fetch(`https://api.openai.com/v1/vector_stores/${knowledgeBase.vectorStoreId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                        'Content-Type': 'application/json',
-                        'OpenAI-Beta': 'assistants=v2'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Erro ao deletar Vector Store: ${response.statusText}`);
-                }
-            } catch (error) {
-                console.error('Erro ao deletar Vector Store:', error);
-            }
-        }
-
-        // Deletar base de conhecimento
-        await prisma.knowledgeBase.delete({
-            where: { id }
-        });
-
-        return true;
-    } catch (error) {
-        console.error('Erro ao deletar base de conhecimento:', error);
-        throw error;
+    } catch (err) {
+        console.error('Erro ao criar knowledge base:', err);
+        throw err;
     }
 };

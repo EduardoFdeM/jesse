@@ -57,32 +57,20 @@ model KnowledgeBase {
   id             String        @id @default(cuid())
   name           String
   description    String
-  fileName       String
-  filePath       String
-  fileSize       Int
-  fileType       String
-  sourceLanguage String
-  targetLanguage String
-  vectorStoreId  String?      // ID do Vector Store (opcional por enquanto para compatibilidade)
+  fileName       String        // Nome dos arquivos separados por vírgula
+  filePath       String        // Sempre será 'vector_store'
+  fileSize       Int          // Soma do tamanho dos arquivos
+  fileType       String        // Tipos dos arquivos separados por vírgula
+  vectorStoreId  String?      // ID da Vector Store na OpenAI
+  fileIds        String[]     // Array de IDs dos arquivos na OpenAI
+  fileMetadata   String?      @default("[]") // JSON com metadados dos arquivos (idiomas, etc)
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
-  chunks         KnowledgeBaseChunk[]
 
   @@index([userId])
-}
-
-model KnowledgeBaseChunk {
-  id              String       @id @default(cuid())
-  content         String       @db.Text
-  knowledgeBaseId String
-  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id], onDelete: Cascade)
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-
-  @@index([knowledgeBaseId])
 }
 
 model Prompt {

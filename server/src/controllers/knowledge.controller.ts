@@ -1,44 +1,57 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { createKnowledgeBase, deleteKnowledgeBase } from '../services/knowledge.service.js';
-import { NotFoundError } from '../utils/errors.js';
+import { createKnowledgeBase, deleteKnowledgeBase, listKnowledgeBaseFiles } from '../services/knowledge.service.js';
+import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/errors.js';
 import prisma from '../config/database.js';
+import openai from '../config/openai.js';
 
 // Criar base de conhecimento
 export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
-    console.log('📥 Recebendo requisição para criar base de conhecimento:', {
-        body: req.body
-    });
+    const { name, description } = req.body;
+    const files = req.files as Express.Multer.File[];
+    let existingFileIds = [];
+    
+    try {
+        existingFileIds = req.body.existingFileIds ? JSON.parse(req.body.existingFileIds) : [];
+    } catch (err) {
+        throw new BadRequestError('IDs de arquivos existentes inválidos');
+    }
 
-    const { name, description, sourceLanguage, targetLanguage } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+        throw new UnauthorizedError('Usuário não autenticado');
+    }
+
+    if (!name || !description) {
+        throw new BadRequestError('Nome e descrição são obrigatórios');
+    }
+
+    if ((!files || files.length === 0) && (!existingFileIds || existingFileIds.length === 0)) {
+        throw new BadRequestError('É necessário enviar pelo menos um arquivo ou selecionar arquivos existentes');
+    }
+
+    // Verificar limite de arquivos
+    if ((files?.length || 0) + (existingFileIds?.length || 0) > 20) {
+        throw new BadRequestError('Limite máximo de 20 arquivos por base de conhecimento');
+    }
 
     try {
-        // Verificar se já existe uma base com o mesmo nome
-        const existingBase = await prisma.knowledgeBase.findFirst({
-            where: {
-                name,
-                userId: req.user!.id
-            }
-        });
-
-        if (existingBase) {
-            throw new Error('Já existe uma base de conhecimento com este nome');
-        }
-
-        const knowledgeBase = await createKnowledgeBase({
-            name,
-            description,
-            sourceLanguage,
-            targetLanguage,
-            userId: req.user!.id
-        });
+        const knowledgeBase = await createKnowledgeBase(userId, name, description, files || [], existingFileIds);
 
         res.status(201).json({
             status: 'success',
             data: knowledgeBase
         });
-    } catch (error) {
-        throw error;
+    } catch (err) {
+        // Se o erro já foi tratado, apenas repasse
+        if (err instanceof BadRequestError || err instanceof UnauthorizedError) {
+            throw err;
+        }
+
+        // Caso contrário, trate como erro interno
+        console.error('Erro ao criar base de conhecimento:', err);
+        throw new Error(`Erro ao criar base de conhecimento. ${(err as Error).message}`);
     }
 });
 
@@ -78,54 +91,48 @@ export const getKnowledgeBase = asyncHandler(async (req: Request, res: Response)
 // Atualizar base de conhecimento
 export const updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, description, sourceLanguage, targetLanguage } = req.body;
+    const { name, description } = req.body;
 
-    try {
-        // Verificar se existe e pertence ao usuário
-        const existingBase = await prisma.knowledgeBase.findFirst({
-            where: {
-                id,
-                userId: req.user!.id
-            }
-        });
-
-        if (!existingBase) {
-            throw new NotFoundError('Base de conhecimento não encontrada');
+    // Verificar se existe e pertence ao usuário
+    const existingBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
         }
+    });
 
-        // Verificar nome duplicado
-        if (name !== existingBase.name) {
-            const nameExists = await prisma.knowledgeBase.findFirst({
-                where: {
-                    name,
-                    userId: req.user!.id,
-                    id: { not: id }
-                }
-            });
-
-            if (nameExists) {
-                throw new Error('Já existe uma base de conhecimento com este nome');
-            }
-        }
-
-        const updatedKnowledgeBase = await prisma.knowledgeBase.update({
-            where: { id },
-            data: {
-                name,
-                description,
-                sourceLanguage,
-                targetLanguage,
-                updatedAt: new Date()
-            }
-        });
-
-        res.json({
-            status: 'success',
-            data: updatedKnowledgeBase
-        });
-    } catch (error) {
-        throw error;
+    if (!existingBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
     }
+
+    // Verificar nome duplicado
+    if (name !== existingBase.name) {
+        const nameExists = await prisma.knowledgeBase.findFirst({
+            where: {
+                name,
+                userId: req.user!.id,
+                id: { not: id }
+            }
+        });
+
+        if (nameExists) {
+            throw new Error('Já existe uma base de conhecimento com este nome');
+        }
+    }
+
+    const updatedKnowledgeBase = await prisma.knowledgeBase.update({
+        where: { id },
+        data: {
+            name,
+            description,
+            updatedAt: new Date()
+        }
+    });
+
+    res.json({
+        status: 'success',
+        data: updatedKnowledgeBase
+    });
 });
 
 // Excluir base de conhecimento
@@ -145,6 +152,62 @@ export const deleteKnowledgeBaseHandler = asyncHandler(async (req: Request, res:
 
     await deleteKnowledgeBase(id);
 
+    res.json({
+        status: 'success',
+        data: null
+    });
+});
+
+// Listar arquivos de uma base de conhecimento
+export const getKnowledgeBaseFiles = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: {
+            id,
+            userId: req.user!.id
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    const files = await listKnowledgeBaseFiles(id);
+
+    res.json({
+        status: 'success',
+        data: files
+    });
+});
+
+// Listar arquivos OpenAI
+export const listOpenAIFiles = asyncHandler(async (req: Request, res: Response) => {
+    const files = await openai.files.list();
+    res.json({
+        status: 'success',
+        data: files.data
+    });
+});
+
+// Upload de arquivo OpenAI
+export const uploadOpenAIFile = asyncHandler(async (req: Request, res: Response) => {
+    const file = req.file;
+    if (!file) {
+        throw new BadRequestError('Nenhum arquivo enviado');
+    }
+
+    const result = await openai.files.upload(file.buffer, file.originalname);
+    res.json({
+        status: 'success',
+        data: result
+    });
+});
+
+// Deletar arquivo OpenAI
+export const deleteOpenAIFile = asyncHandler(async (req: Request, res: Response) => {
+    const { fileId } = req.params;
+    await openai.files.delete(fileId);
     res.json({
         status: 'success',
         data: null

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { FileText, Book, MessageSquare, LogOut, Sun, Moon, Settings } from 'lucide-react';
+import { FileText, Book, MessageSquare, LogOut, Sun, Moon, Settings, Files } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function Dashboard() {
@@ -19,6 +19,15 @@ export function Dashboard() {
     const isActive = (path: string) => {
         return location.pathname.startsWith(path);
     };
+
+    const navigation = [
+        { name: 'Traduções', href: '/translations', icon: FileText },
+        { name: 'Bases de Conhecimento', href: '/knowledge-bases', icon: Book },
+        { name: 'Prompts', href: '/prompts', icon: MessageSquare },
+        ...(userRole === 'SUPERUSER' ? [
+            { name: 'Admin', href: '/admin', icon: Settings }
+        ] : []),
+    ];
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -167,6 +176,19 @@ export function Dashboard() {
                             <Book className="h-4 w-4 mr-2" />
                             Bases de Conhecimento
                         </Link>
+                        {userRole === 'SUPERUSER' && (
+                            <Link
+                                to="/files"
+                                className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                                    isActive('/files')
+                                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
+                                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Files className="h-4 w-4 mr-2" />
+                                Arquivos OpenAI
+                            </Link>
+                        )}
                         <Link
                             to="/prompts"
                             className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
@@ -189,6 +211,19 @@ export function Dashboard() {
                             >
                                 <Settings className="h-4 w-4 mr-2" />
                                 Admin
+                            </Link>
+                        )}
+                        {userRole === 'SUPERUSER' && (
+                            <Link
+                                to="/knowledge-bases/files"
+                                className={`block pl-3 pr-4 py-2 border-l-4 text-base font-medium ${
+                                    isActive('/knowledge-bases/files')
+                                        ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900 dark:border-blue-400 dark:text-blue-300'
+                                        : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-300'
+                                }`}
+                            >
+                                <Files className="h-4 w-4 mr-2" />
+                                Arquivos OpenAI
                             </Link>
                         )}
                         <button

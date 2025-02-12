@@ -64,9 +64,9 @@ declare global {
         filePath: string;
         fileSize: number;
         fileType: string;
-        sourceLanguage: string;
-        targetLanguage: string;
         vectorStoreId?: string;
+        fileIds: string[];
+        fileMetadata?: string;
         createdAt: Date;
         updatedAt: Date;
         userId: string;

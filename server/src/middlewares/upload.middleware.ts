@@ -51,23 +51,40 @@ export const uploadUnlock = async (req: Request, res: Response, next: NextFuncti
 
 // Tipos MIME permitidos para cada tipo de arquivo
 const ALLOWED_MIMETYPES: Record<string, string[]> = {
-    // Arquivos de texto
-    'text/plain': ['.txt'],
-    // PDFs
-    'application/pdf': ['.pdf'],
-    // Excel
-    'application/vnd.ms-excel': ['.xls'],
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-    // CSV
-    'text/csv': ['.csv'],
-    'application/csv': ['.csv'],
-    // Word
+    // Documentos
     'application/msword': ['.doc'],
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx']
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+    'application/pdf': ['.pdf'],
+    // Texto
+    'text/plain': ['.txt'],
+    'text/markdown': ['.md'],
+    'text/html': ['.html'],
+    // Código
+    'text/javascript': ['.js'],
+    'application/typescript': ['.ts'],
+    'text/x-python': ['.py'],
+    'text/x-java': ['.java'],
+    'application/json': ['.json'],
+    'text/x-c': ['.c'],
+    'text/x-c++': ['.cpp'],
+    'text/x-csharp': ['.cs'],
+    'text/css': ['.css'],
+    'text/x-golang': ['.go'],
+    'text/x-php': ['.php'],
+    'text/x-ruby': ['.rb'],
+    'application/x-sh': ['.sh'],
+    'text/x-tex': ['.tex']
 };
 
 // Lista de todas as extensões permitidas
-const VALID_EXTENSIONS = ['.txt', '.pdf', '.xls', '.xlsx', '.csv', '.doc', '.docx'];
+const VALID_EXTENSIONS = [
+    '.txt', '.pdf', '.doc', '.docx', '.pptx',
+    '.md', '.html', '.js', '.ts', '.py',
+    '.java', '.json', '.c', '.cpp', '.cs',
+    '.css', '.go', '.php', '.rb', '.sh',
+    '.tex'
+];
 
 // Função para verificar se o arquivo é permitido
 const isFileAllowed = (mimetype: string, originalname: string): boolean => {
@@ -94,25 +111,20 @@ const storage = multer.diskStorage({
     }
 });
 
-const fileFilter = (req: any, file: any, cb: any) => {
-    // Incluir PDF na lista de tipos permitidos
-    const allowedTypes = [
-        'text/plain',
-        'text/csv',
-        'application/pdf',
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ];
-    
-    if (allowedTypes.includes(file.mimetype) || isFileAllowed(file.mimetype, file.originalname)) {
+const fileFilter = (
+    req: Express.Request,
+    file: Express.Multer.File,
+    cb: multer.FileFilterCallback
+) => {
+    if (isFileAllowed(file.mimetype, file.originalname)) {
         cb(null, true);
     } else {
-        cb(new Error('Tipo de arquivo não suportado. Use apenas PDF, TXT, CSV, XLS ou XLSX.'), false);
+        cb(new Error('Tipo de arquivo não suportado. Consulte a documentação para ver os tipos permitidos.'));
     }
 };
 
 export const upload = multer({
-    storage: storage,
+    storage: multer.memoryStorage(),
     fileFilter: fileFilter,
     limits: {
         fileSize: 10 * 1024 * 1024 // 10MB

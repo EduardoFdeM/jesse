@@ -16,9 +16,12 @@ type KnowledgeBase = {
     filePath: string;
     fileSize: number;
     fileType: string;
-    sourceLanguage: string;
-    targetLanguage: string;
     userId: string;
+    vectorStoreId: string | null;
+    fileIds: string[];
+    fileMetadata: string | null;
+    createdAt: Date;
+    updatedAt: Date;
 };
 
 interface PDFParserData {
@@ -204,11 +207,19 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             
             if (knowledgeBaseData) {
                 try {
+                    // Buscar metadados dos arquivos
+                    const fileMetadata = JSON.parse(knowledgeBaseData.fileMetadata || '[]');
                     const relevantContext = await simpleSearchKnowledgeBaseContext(
                         await fs.promises.readFile(params.filePath, 'utf-8'),
                         params.knowledgeBaseId
                     );
-                    customPrompt = `${customPrompt}\n\nContexto relevante:\n${relevantContext}`;
+                    
+                    // Adicionar informações dos idiomas ao prompt
+                    const languageInfo = fileMetadata.map((file: any) => 
+                        `${file.fileName}: ${file.sourceLanguage} -> ${file.targetLanguage}`
+                    ).join('\n');
+                    
+                    customPrompt = `${customPrompt}\n\nContexto relevante:\n${relevantContext}\n\nIdiomas dos arquivos:\n${languageInfo}`;
                 } catch (error) {
                     console.error('Erro ao carregar base de conhecimento:', error);
                 }

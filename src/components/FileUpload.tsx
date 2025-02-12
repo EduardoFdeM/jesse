@@ -1,3 +1,0 @@
-import api, { clearControllers } from '../axiosConfig';
-
-// ... existing code ... 

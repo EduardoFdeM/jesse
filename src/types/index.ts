@@ -169,3 +169,12 @@ export interface ApiResponse<T> {
     data?: T;
     error?: string;
 }
+
+// Tipos do OpenAI
+export interface OpenAIFile {
+    id: string;
+    filename: string;
+    bytes: number;
+    created_at: number;
+    purpose: string;
+}

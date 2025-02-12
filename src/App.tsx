@@ -12,6 +12,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { Editor } from './pages/Editor';
 import { PromptList } from './components/prompt/PromptList';
 import { PromptForm } from './components/prompt/PromptForm';
+import { OpenAIFilesPage } from './pages/OpenAIFiles';
 
 // Componente para proteger rotas de admin
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
