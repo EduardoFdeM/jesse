@@ -9,10 +9,7 @@ import {
     getKnowledgeBase,
     updateKnowledgeBase,
     deleteKnowledgeBaseHandler,
-    getKnowledgeBaseFiles,
-    listOpenAIFiles,
-    uploadOpenAIFile,
-    deleteOpenAIFile
+    getKnowledgeBaseFiles
 } from '../controllers/knowledge.controller.js';
 import { validateRequest } from '../middlewares/validateRequest.middleware.js';
 
@@ -50,10 +47,5 @@ router.get('/:id', getKnowledgeBase);
 router.get('/:id/files', getKnowledgeBaseFiles);
 router.put('/:id', updateKnowledgeBase);
 router.delete('/:id', deleteKnowledgeBaseHandler);
-
-// Rotas de arquivos OpenAI (apenas para SUPERUSER)
-router.get('/openai/files', authorize(['SUPERUSER']), listOpenAIFiles);
-router.post('/openai/files', authorize(['SUPERUSER']), upload.single('file'), uploadOpenAIFile);
-router.delete('/openai/files/:fileId', authorize(['SUPERUSER']), deleteOpenAIFile);
 
 export default router;

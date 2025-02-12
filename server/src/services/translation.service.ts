@@ -195,71 +195,7 @@ const saveTranslatedFile = async (
 };
 
 export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
-    let knowledgeBaseData: KnowledgeBase | null = null;
-    let assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID || '';
-    let customPrompt = DEFAULT_TRANSLATION_PROMPT;
-
     try {
-        // Carregar base de conhecimento se selecionada
-        if (params.useKnowledgeBase && params.knowledgeBaseId) {
-            knowledgeBaseData = await prisma.knowledgeBase.findUnique({
-                where: { id: params.knowledgeBaseId },
-                select: {
-                    id: true,
-                    name: true,
-                    description: true,
-                    fileName: true,
-                    filePath: true,
-                    fileSize: true,
-                    fileType: true,
-                    userId: true,
-                    vectorStoreId: true,
-                    fileIds: true,
-                    fileMetadata: true,
-                    createdAt: true,
-                    updatedAt: true
-                }
-            });
-            
-            if (knowledgeBaseData) {
-                try {
-                    // Buscar metadados dos arquivos
-                    const fileMetadata = JSON.parse(knowledgeBaseData.fileMetadata || '[]');
-                    const relevantContext = await simpleSearchKnowledgeBaseContext(
-                        await fs.promises.readFile(params.filePath, 'utf-8'),
-                        params.knowledgeBaseId
-                    );
-                    
-                    // Adicionar informações dos idiomas ao prompt
-                    const languageInfo = fileMetadata.map((file: any) => 
-                        `${file.fileName}: ${file.sourceLanguage} -> ${file.targetLanguage}`
-                    ).join('\n');
-                    
-                    customPrompt = `${customPrompt}\n\nContexto relevante:\n${relevantContext}\n\nIdiomas dos arquivos:\n${languageInfo}`;
-                } catch (error) {
-                    console.error('Erro ao carregar base de conhecimento:', error);
-                }
-            }
-        }
-
-        // Carregar prompt personalizado
-        if (params.useCustomPrompt && params.promptId) {
-            const prompt = await prisma.prompt.findUnique({
-                where: { id: params.promptId },
-                select: {
-                    id: true,
-                    name: true,
-                    content: true,
-                    assistantId: true
-                }
-            });
-            
-            if (prompt?.assistantId) {
-                assistantId = prompt.assistantId;
-                customPrompt = prompt.content;
-            }
-        }
-
         // Extrair texto do arquivo
         const fileContent = params.filePath.endsWith('.pdf')
             ? await extractTextFromPDF(params.filePath)
@@ -271,40 +207,27 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         // Atualizar com o threadId
         await prisma.translation.update({
             where: { id: params.translationId },
-            data: { threadId: thread.id }
+            data: { 
+                threadId: thread.id,
+                status: 'processing'
+            }
         });
 
         // Adicionar a mensagem com o texto para tradução
         await openai.beta.threads.messages.create(thread.id, {
             role: "user",
-            content: customPrompt
-                .replace('{sourceLanguage}', params.sourceLanguage)
-                .replace('{targetLanguage}', params.targetLanguage)
-                .replace('{text}', fileContent)
+            content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}. Mantenha a formatação original:\n\n${fileContent}`
         });
 
-        // Executar o assistant
+        // Executar o assistant padrão
         const run = await openai.beta.threads.runs.create(thread.id, {
-            assistant_id: assistantId,
-            model: "gpt-4-turbo-preview"
-        });
-
-        // Atualizar com o runId
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: { 
-                runId: run.id,
-                status: 'processing'
-            }
+            assistant_id: process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!
         });
 
         // Aguardar conclusão
         let translatedContent = '';
         while (true) {
-            const runStatus = await openai.beta.threads.runs.retrieve(
-                thread.id,
-                run.id
-            );
+            const runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
 
             if (runStatus.status === 'completed') {
                 const messages = await openai.beta.threads.messages.list(thread.id);
@@ -317,15 +240,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 throw new Error('Falha na tradução');
             }
 
-            // Aguardar 1 segundo antes de verificar novamente
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
-
-        // Armazenar o conteúdo traduzido em texto plano
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: { plainTextContent: translatedContent }
-        });
 
         // Salvar arquivo traduzido
         const savedFile = await saveTranslatedFile(
@@ -342,20 +258,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 filePath: savedFile.filePath,
                 fileSize: savedFile.fileSize,
                 fileName: savedFile.fileName,
-                usedPrompt: params.useCustomPrompt,
-                usedKnowledgeBase: params.useKnowledgeBase,
-                promptId: params.promptId,
-                knowledgeBaseId: params.knowledgeBaseId,
-                translationMetadata: JSON.stringify({
-                    usedKnowledgeBase: params.useKnowledgeBase,
-                    usedPrompt: params.useCustomPrompt,
-                    knowledgeBaseName: knowledgeBaseData?.name || null,
-                    promptName: params.promptId ? 'Custom Prompt' : 'Default'
-                })
-            },
-            include: {
-                knowledgeBase: true,
-                prompt: true
+                plainTextContent: translatedContent
             }
         });
 
