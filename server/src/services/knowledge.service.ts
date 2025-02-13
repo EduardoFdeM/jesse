@@ -1,9 +1,34 @@
 import path from 'path';
 import prisma from '../config/database.js';
-import { KnowledgeBase } from '@prisma/client';
 import { ValidationError, BadRequestError } from '../utils/errors.js';
 import openai from '../config/openai.js';
 import { VectorStore, VectorStoreFileList, files, vectorStore } from '../config/openai.js';
+import { Prisma } from '@prisma/client';
+
+interface KnowledgeBase {
+    id: string;
+    name: string;
+    description: string;
+    userId: string;
+    vectorStoreId: string | null;
+    fileName: string;
+    filePath: string;
+    fileSize: number;
+    fileType: string;
+    fileIds: string[];
+    status: string;
+    user?: {
+        id: string;
+        email: string;
+        name: string;
+    };
+}
+
+interface SearchResult {
+    content: string;
+    relevance: number;
+    metadata?: Record<string, any>;
+}
 
 // Interface para parâmetros
 interface ProcessKnowledgeBaseParams {
@@ -42,6 +67,27 @@ interface ProcessedFile {
     filePath: string;
     fileSize: number;
     fileIds: string[];
+}
+
+interface KnowledgeBaseData {
+    id: string;
+    name: string;
+    description: string;
+    userId: string;
+    vectorStoreId: string | null;
+    fileName: string;
+    filePath: string;
+    fileSize: number;
+    fileType: string;
+    fileIds: string[];
+    status: string;
+}
+
+interface CreateVectorStoreParams {
+    name: string;
+    description: string;
+    files: string[];
+    userId: string;
 }
 
 const SUPPORTED_EXTENSIONS = [
@@ -305,8 +351,9 @@ const extractTextFromXLSX = async (filePath: string): Promise<string> => {
 };
 
 // Funções do Vector Store
-export const createVectorStore = async (name: string): Promise<VectorStore> => {
+export const createVectorStore = async (params: CreateVectorStoreParams): Promise<KnowledgeBase> => {
     try {
+        // Criar Vector Store usando a API direta
         const response = await fetch('https://api.openai.com/v1/vector_stores', {
             method: 'POST',
             headers: {
@@ -314,14 +361,45 @@ export const createVectorStore = async (name: string): Promise<VectorStore> => {
                 'Content-Type': 'application/json',
                 'OpenAI-Beta': 'assistants=v2'
             },
-            body: JSON.stringify({ name })
+            body: JSON.stringify({
+                name: `kb_${params.name}_${Date.now()}`
+            })
         });
 
         if (!response.ok) {
             throw new Error(`Erro ao criar Vector Store: ${response.statusText}`);
         }
 
-        return await response.json();
+        const store = await response.json();
+
+        // Adicionar arquivos à Vector Store
+        for (const fileId of params.files) {
+            await fetch(`https://api.openai.com/v1/vector_stores/${store.id}/files`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json',
+                    'OpenAI-Beta': 'assistants=v2'
+                },
+                body: JSON.stringify({ file_id: fileId })
+            });
+        }
+
+        // Criar registro no banco
+        return await prisma.knowledgeBase.create({
+            data: {
+                name: params.name,
+                description: params.description,
+                vectorStoreId: store.id,
+                fileIds: params.files,
+                userId: params.userId,
+                status: 'active',
+                fileName: '',
+                filePath: 'vector_store',
+                fileSize: 0,
+                fileType: ''
+            }
+        });
     } catch (error) {
         console.error('Erro ao criar Vector Store:', error);
         throw error;
@@ -441,5 +519,70 @@ export const createKnowledgeBase = async (
     } catch (err) {
         console.error('Erro ao criar knowledge base:', err);
         throw err;
+    }
+};
+
+// Função para buscar conteúdo relevante da base de conhecimento
+export const searchKnowledgeBase = async (
+    knowledgeBaseId: string,
+    query: string
+): Promise<string> => {
+    try {
+        const knowledgeBase = await prisma.knowledgeBase.findUnique({
+            where: { id: knowledgeBaseId }
+        });
+
+        if (!knowledgeBase?.vectorStoreId) {
+            throw new BadRequestError('Base de conhecimento não encontrada');
+        }
+
+        // Realizar busca usando a API direta
+        const response = await fetch(`https://api.openai.com/v1/vector_stores/${knowledgeBase.vectorStoreId}/search`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                query,
+                max_results: 5,
+                min_relevance: 0.7
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`Erro na busca: ${response.statusText}`);
+        }
+
+        const searchResponse = await response.json();
+        return searchResponse.matches
+            .map((match: { content: string }) => match.content)
+            .join('\n\n');
+
+    } catch (error) {
+        console.error('❌ Erro ao buscar na base de conhecimento:', error);
+        throw error;
+    }
+};
+
+// Função para atualizar metadados da base de conhecimento
+export const updateKnowledgeBase = async (
+    id: string,
+    data: Partial<Omit<KnowledgeBase, 'id' | 'userId' | 'vectorStoreId'>>
+): Promise<KnowledgeBase> => {
+    try {
+        const knowledgeBase = await prisma.knowledgeBase.update({
+            where: { id },
+            data,
+            include: {
+                user: true
+            }
+        });
+
+        return knowledgeBase;
+    } catch (error) {
+        console.error('❌ Erro ao atualizar base de conhecimento:', error);
+        throw error;
     }
 };

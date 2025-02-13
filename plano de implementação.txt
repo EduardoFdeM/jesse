@@ -1,0 +1,210 @@
+Plano de Implementação - PDF Tradutor
+1. Refatoração do Serviço de Tradução
+1.1. Preparação
+Criar backup do serviço atual
+2. Criar branch específica para refatoração
+Documentar métricas atuais para comparação posterior
+1.2. Migração para Assistants
+Atualizar translation.service.ts:
+Remover função de divisão em chunks
+Manter função extractTextFromPDF (ainda necessária)
+startLine: 74
+endLine: 110
+typescript
+export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
+const fileContent = await extractFileContent(params.filePath);
+// Criar ou reutilizar thread
+const thread = await openai.beta.threads.create();
+// Atualizar status
+await updateTranslationStatus(params.translationId, 'processing', thread.id);
+// Configurar assistant
+const assistantId = params.useCustomPrompt
+? await getCustomAssistantId(params.promptId)
+: process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID;
+// Configurar contexto da base de conhecimento
+if (params.useKnowledgeBase) {
+await addKnowledgeBaseContext(thread.id, params.knowledgeBaseId);
+}
+// Criar mensagem com instruções de tradução
+await createTranslationMessage(thread.id, {
+content: fileContent,
+sourceLanguage: params.sourceLanguage,
+targetLanguage: params.targetLanguage
+});
+// Executar e monitorar tradução
+const translatedContent = await executeAndMonitorTranslation(thread.id, assistantId);
+// Salvar resultado
+return await saveTranslationResult(params, translatedContent);
+};
+prisma
+model KnowledgeBase {
+// Manter campos existentes
+vectorStoreId String?
+fileIds String[]
+// Novos campos
+assistantId String?
+status String @default("active")
+}
+typescript
+const addKnowledgeBaseContext = async (threadId: string, knowledgeBaseId: string) => {
+const kb = await prisma.knowledgeBase.findUnique({
+where: { id: knowledgeBaseId }
+});
+if (kb?.vectorStoreId) {
+await openai.beta.threads.messages.create(threadId, {
+role: "user",
+content: Use o contexto da Vector Store ${kb.vectorStoreId} para melhorar a tradução.
+});
+}
+};
+typescript
+type TranslationStatus =
+| 'pending'
+| 'processing'
+| 'retrieving_context'
+| 'translating'
+| 'formatting'
+| 'completed'
+| 'error';
+typescript
+const emitDetailedProgress = (translationId: string, status: TranslationStatus, progress?: number) => {
+global.io?.emit('translation:progress', {
+translationId,
+status,
+progress,
+timestamp: new Date()
+});
+};
+typescript
+const migrateToVectorStore = async (knowledgeBase: KnowledgeBase) => {
+// Criar nova Vector Store
+const store = await openai.vectorStore.create({
+name: knowledgeBase.name,
+description: knowledgeBase.description
+});
+// Migrar arquivos existentes
+for (const fileId of knowledgeBase.fileIds) {
+await openai.vectorStore.files.add(store.id, fileId);
+}
+// Atualizar registro
+return await prisma.knowledgeBase.update({
+where: { id: knowledgeBase.id },
+data: { vectorStoreId: store.id }
+});
+};
+187:219:src/components/translation/TranslatedDocuments.tsx
+const uploadAndTranslateFile = async (file: File): Promise<void> => {
+try {
+const formData = new FormData();
+formData.append('file', file);
+formData.append('originalname', file.name);
+formData.append('sourceLanguage', sourceLanguage || 'pt');
+formData.append('targetLanguage', targetLanguage || 'en');
+formData.append('useKnowledgeBase', selectedKnowledgeBase ? 'true' : 'false');
+formData.append('useCustomPrompt', selectedPrompt ? 'true' : 'false');
+if (selectedKnowledgeBase) {
+formData.append('knowledgeBaseId', selectedKnowledgeBase);
+}
+if (selectedPrompt) {
+formData.append('promptId', selectedPrompt);
+}
+const response = await api.post('/api/translations', formData, {
+headers: {
+'Content-Type': 'multipart/form-data'
+}
+});
+if (response.data.error) {
+throw new Error(response.data.error);
+}
+toast.success('Arquivo enviado com sucesso!');
+await loadTranslations();
+} catch (error: unknown) {
+handleUploadError(error);
+}
+};
+typescript
+const handleFileUpload = async (files: FileList) => {
+const formData = new FormData();
+Array.from(files).forEach(file => {
+formData.append('files', file);
+});
+// ... resto da implementação
+};
+80:99:server/prisma/schema.prisma
+model Prompt {
+id String @id @default(uuid())
+name String
+description String
+content String @db.Text
+instructions String @db.Text
+tags String[] @default([])
+userId String
+user User @relation(fields: [userId], references: [id])
+createdAt DateTime @default(now())
+updatedAt DateTime @updatedAt
+translations Translation[]
+isPublic Boolean @default(false)
+model String @default("gpt-4-turbo-preview")
+temperature Float @default(0.3)
+assistantId String? // ID do assistant na OpenAI
+status String @default("pending") // pending, active, error
+@@index([userId])
+}
+typescript
+async function migratePromptsToAssistants() {
+const prompts = await prisma.prompt.findMany({
+where: { assistantId: null }
+});
+for (const prompt of prompts) {
+const assistant = await openai.beta.assistants.create({
+name: prompt.name,
+instructions: prompt.instructions,
+model: prompt.model,
+tools: [{ type: "retrieval" }]
+});
+await prisma.prompt.update({
+where: { id: prompt.id },
+data: {
+assistantId: assistant.id,
+status: 'active'
+}
+});
+}
+}
+typescript
+export class OpenAIService {
+private client: OpenAI;
+private defaultAssistantId: string;
+constructor() {
+this.client = new OpenAI({
+apiKey: process.env.OPENAI_API_KEY
+});
+this.defaultAssistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
+}
+async translate(params: TranslationParams) {
+const assistant = params.assistantId || this.defaultAssistantId;
+const thread = await this.client.beta.threads.create();
+// ... implementação
+}
+async vectorStoreSearch(params: SearchParams) {
+// ... implementação
+}
+}
+typescript
+interface CostTracking {
+translationId: string;
+inputTokens: number;
+outputTokens: number;
+model: string;
+cost: number;
+}
+const calculateTranslationCost = (tracking: CostTracking): number => {
+const rates = {
+'gpt-4-turbo-preview': {
+input: 0.01,
+output: 0.03
+}
+// ... outros modelos
+};
+// ... implementação
+};

@@ -1,5 +1,6 @@
-import { getIO } from '../config/socket.js';
-import { Translation, EVENTS, TranslationStatus } from '../types/index.js';
+import { Translation } from '../types';
+import { EVENTS } from '../types';
+import { getIO } from '../config/socket';
 
 export const emitTranslationStarted = (translation: Translation) => {
     try {
@@ -15,7 +16,10 @@ export const emitTranslationStarted = (translation: Translation) => {
     }
 };
 
-export const emitTranslationProgress = (translationId: string, progress: number) => {
+export const emitTranslationProgress = (
+    translationId: string,
+    progress: number
+) => {
     try {
         const io = getIO();
         io.emit(EVENTS.PROGRESS, {
@@ -28,7 +32,25 @@ export const emitTranslationProgress = (translationId: string, progress: number)
     }
 };
 
-export const emitTranslationError = (translationId: string, error: string) => {
+export const emitTranslationCompleted = (translation: Translation) => {
+    try {
+        const io = getIO();
+        io.emit(EVENTS.COMPLETED, {
+            id: translation.id,
+            fileName: translation.fileName,
+            originalName: translation.originalName,
+            status: translation.status,
+            filePath: translation.filePath
+        });
+    } catch (error) {
+        console.error('Erro ao emitir evento de conclusão:', error);
+    }
+};
+
+export const emitTranslationError = (
+    translationId: string,
+    error: string
+) => {
     try {
         const io = getIO();
         io.emit(EVENTS.ERROR, {
@@ -39,28 +61,4 @@ export const emitTranslationError = (translationId: string, error: string) => {
     } catch (error) {
         console.error('Erro ao emitir evento de erro:', error);
     }
-};
-
-export const emitTranslationCompleted = (translation: Translation) => {
-    try {
-        const io = getIO();
-        io.emit(EVENTS.COMPLETED, {
-            id: translation.id,
-            fileName: translation.fileName,
-            originalName: translation.originalName,
-            status: translation.status as TranslationStatus,
-            filePath: translation.filePath
-        });
-    } catch (error) {
-        console.error('Erro ao emitir evento de conclusão:', error);
-    }
-};
-
-export const emitProgress = (translationId: string, status: TranslationStatus, progress?: number) => {
-    global.io?.emit('translation:progress', {
-        translationId,
-        status,
-        progress,
-        timestamp: new Date()
-    });
 }; 

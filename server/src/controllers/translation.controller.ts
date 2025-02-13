@@ -202,7 +202,8 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             promptId: useCustomPrompt ? promptId : undefined,
             useKnowledgeBase,
-            useCustomPrompt
+            useCustomPrompt,
+            fileSize: file.size
         });
 
         res.status(202).json({
