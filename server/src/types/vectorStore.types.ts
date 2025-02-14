@@ -2,9 +2,10 @@ import { KnowledgeBase } from '@prisma/client';
 
 export interface VectorStoreFile {
     id: string;
-    object: 'vector_store.file';
+    filename: string;
+    bytes: number;
     created_at: number;
-    vector_store_id: string;
+    purpose: string;
 }
 
 export interface VectorStoreFileList {
@@ -55,10 +56,21 @@ export interface VectorStoreSearchResponse {
     has_more: boolean;
 }
 
+export interface SearchParams {
+    vectorStoreId: string;
+    query: string;
+    maxResults?: number;
+    threshold?: number;
+    filters?: {
+        minScore?: number;
+        fileType?: string[];
+    };
+}
+
 export interface CreateVectorStoreParams {
     name: string;
     description: string;
-    files: Express.Multer.File[];
+    files: string[];
     userId: string;
 }
 
@@ -71,4 +83,15 @@ export interface VectorStoreResponse {
     status: string;
     createdAt: Date;
     updatedAt: Date;
+}
+
+export interface VectorStoreMatch {
+    score: number;
+    text: string;
+    metadata: {
+        fileType: string;
+    };
+    file: {
+        id: string;
+    };
 } 

@@ -36,9 +36,9 @@ export interface KnowledgeBase {
     filePath: string;
     fileSize: number;
     fileType: string;
-    sourceLanguage: string;
-    targetLanguage: string;
     vectorStoreId: string;
+    fileIds: string[];
+    status: 'active' | 'deleted';
     createdAt: string;
     updatedAt: string;
     userId: string;
@@ -177,4 +177,34 @@ export interface OpenAIFile {
     bytes: number;
     created_at: number;
     purpose: string;
+}
+
+export interface VectorStoreFile {
+    id: string;
+    object: 'vector_store.file';
+    created_at: number;
+    vector_store_id: string;
+    filename: string;
+    bytes: number;
+    purpose: string;
+}
+
+export interface VectorStoreFileList {
+    object: 'list';
+    data: VectorStoreFile[];
+    first_id: string;
+    last_id: string;
+    has_more: boolean;
+}
+
+export interface KnowledgeBaseFormData {
+    name: string;
+    description: string;
+    files: File[];
+    existingFileIds: string[];
+}
+
+export interface KnowledgeBaseSearchResult {
+    text: string;
+    relevance: number;
 }

@@ -21,64 +21,67 @@ enum TranslationStatus {
 }
 
 model User {
-  id             String          @id @default(cuid())
+  id             String             @id @default(cuid())
   name           String
-  email          String          @unique
+  email          String             @unique
   password       String
-  role           String          @default("EDITOR") // SUPERUSER, TRANSLATOR, EDITOR
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  role           String             @default("EDITOR") // SUPERUSER, TRANSLATOR, EDITOR
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
   translations   Translation[]
   knowledgeBases KnowledgeBase[]
   prompts        Prompt[]
   sharedWithMe   TranslationShare[] @relation("shared_with")
   sharedByMe     TranslationShare[] @relation("shared_by")
+  searchMetrics  SearchMetrics[]
 }
 
 model Translation {
-  id              String         @id @default(cuid())
-  fileName        String
-  filePath        String
-  fileSize        Int
-  fileType        String
-  originalName    String         @default("")
-  sourceLanguage  String
-  targetLanguage  String
-  status          TranslationStatus @default(pending)
-  errorMessage    String?
-  translatedUrl   String?
-  costData        String?        @default("{}")
-  usedPrompt      Boolean       @default(false)
-  usedKnowledgeBase Boolean     @default(false)
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  userId          String
-  user            User           @relation(fields: [userId], references: [id])
-  knowledgeBaseId String?
-  knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
-  promptId        String?
-  prompt          Prompt?        @relation(fields: [promptId], references: [id])
-  translationMetadata String?    @default("{}")
-  plainTextContent String?
-  threadId        String?        // ID do thread do Assistant
-  runId           String?        // ID do run do Assistant
-  assistantId     String?        @default("")
-  shares          TranslationShare[]
+  id                  String             @id @default(cuid())
+  fileName            String
+  filePath            String
+  fileSize            Int
+  fileType            String
+  originalName        String             @default("")
+  sourceLanguage      String
+  targetLanguage      String
+  status              TranslationStatus  @default(pending)
+  errorMessage        String?
+  translatedUrl       String?
+  costData            String?            @default("{}")
+  usedPrompt          Boolean            @default(false)
+  usedKnowledgeBase   Boolean            @default(false)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  userId              String
+  user                User               @relation(fields: [userId], references: [id])
+  knowledgeBaseId     String?
+  knowledgeBase       KnowledgeBase?     @relation(fields: [knowledgeBaseId], references: [id])
+  promptId            String?
+  prompt              Prompt?            @relation(fields: [promptId], references: [id])
+  translationMetadata String?            @default("{}")
+  plainTextContent    String?
+  threadId            String? // ID do thread do Assistant
+  runId               String? // ID do run do Assistant
+  assistantId         String?            @default("")
+  shares              TranslationShare[]
 }
 
 model KnowledgeBase {
-  id              String    @id @default(uuid())
-  name            String
-  description     String
-  vectorStoreId   String?   // ID da Vector Store na OpenAI
-  fileIds         String[]  // Array de IDs dos arquivos na OpenAI
-  status          String    @default("active")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  userId          String
-  user            User      @relation(fields: [userId], references: [id])
-  translations    Translation[]
-  isPublic        Boolean   @default(false)
+  id            String          @id @default(uuid())
+  name          String
+  description   String
+  vectorStoreId String? // ID da Vector Store na OpenAI
+  fileIds       String[] // Array de IDs dos arquivos na OpenAI
+  status        String          @default("active")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  userId        String
+  user          User            @relation(fields: [userId], references: [id])
+  translations  Translation[]
+  isPublic      Boolean         @default(false)
+  searchMetrics SearchMetrics[]
+
   @@index([userId])
 }
 
@@ -97,7 +100,7 @@ model Prompt {
   isPublic     Boolean       @default(false)
   model        String        @default("gpt-4-turbo-preview")
   temperature  Float         @default(0.3)
-  assistantId  String?       // ID do assistant na OpenAI
+  assistantId  String? // ID do assistant na OpenAI
   status       String        @default("pending") // pending, active, error
 
   @@index([userId])
@@ -107,9 +110,9 @@ model TranslationShare {
   id            String      @id @default(cuid())
   translationId String
   translation   Translation @relation(fields: [translationId], references: [id])
-  sharedWithId  String      // ID do usuário com quem foi compartilhado
+  sharedWithId  String // ID do usuário com quem foi compartilhado
   sharedWith    User        @relation("shared_with", fields: [sharedWithId], references: [id])
-  sharedById    String      // ID do usuário que compartilhou
+  sharedById    String // ID do usuário que compartilhou
   sharedBy      User        @relation("shared_by", fields: [sharedById], references: [id])
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -120,7 +123,7 @@ model TranslationShare {
 }
 
 model SearchMetrics {
-  id              String        @id @default(uuid())
+  id              String        @id @default(cuid())
   userId          String
   knowledgeBaseId String
   query           String

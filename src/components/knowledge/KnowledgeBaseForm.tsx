@@ -1,37 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import { Save, Upload, AlertCircle, ArrowLeft, Trash2 } from 'lucide-react';
+import { Save, Upload, AlertCircle, ArrowLeft, X, FileText } from 'lucide-react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../../axiosConfig';
-import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'react-hot-toast';
+import { KnowledgeBase, OpenAIFile } from '../../types';
 
+// @ts-ignore - será usado em implementação futura
 interface FileWithLanguages {
     file: File;
     sourceLanguage: string;
     targetLanguage: string;
 }
 
-interface OpenAIFile {
-    id: string;
-    filename: string;
-    bytes: number;
-    created_at: number;
-    purpose: string;
-    status: string;
-}
-
 interface KnowledgeBaseFormProps {
-    initialData?: {
-        id?: string;
-        name: string;
-        description: string;
-        vectorStoreId?: string;
-        fileIds?: string[];
-        updatedAt?: string;
-        createdAt?: string;
-    };
+    initialData?: KnowledgeBase;
 }
 
 // Adicionar aos tipos suportados
@@ -43,6 +27,9 @@ const SUPPORTED_EXTENSIONS = [
     '.tex'
 ];
 
+const MAX_FILES = 10;
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+
 export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
@@ -52,7 +39,7 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
         name: initialData?.name || '',
         description: initialData?.description || ''
     });
-    const [files, setFiles] = useState<FileWithLanguages[]>([]);
+    const [files, setFiles] = useState<File[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [lastFile, setLastFile] = useState<string>('');
@@ -107,88 +94,70 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!formData.name.trim()) {
+            setError('Nome é obrigatório');
+            return;
+        }
+
+        const totalFiles = files.length + selectedExistingFiles.length;
+        if (totalFiles === 0) {
+            setError('Selecione pelo menos um arquivo');
+            return;
+        }
+
         setIsSubmitting(true);
-        setError(null);
+        const data = new FormData();
+        data.append('name', formData.name);
+        data.append('description', formData.description);
+        files.forEach(file => data.append('files', file));
+        data.append('existingFileIds', JSON.stringify(selectedExistingFiles));
 
         try {
-            if (!formData.name.trim()) {
-                setError('O nome é obrigatório');
-                return;
-            }
-
-            if (!id && files.length === 0 && selectedExistingFiles.length === 0) {
-                setError('Selecione pelo menos um arquivo');
-                return;
-            }
-
-            const data = new FormData();
-            data.append('name', formData.name);
-            data.append('description', formData.description);
-
-            // Adicionar novos arquivos
-            files.forEach(fileWithLanguages => {
-                data.append('files', fileWithLanguages.file);
-            });
-
-            // Adicionar IDs dos arquivos existentes
-            if (selectedExistingFiles.length > 0) {
-                data.append('existingFileIds', JSON.stringify(selectedExistingFiles));
-            }
-
-            if (id) {
-                await api.put(`/api/knowledge-bases/${id}`, data);
-                toast.success('Base de conhecimento atualizada com sucesso');
+            if (initialData?.id) {
+                await api.put(`/api/knowledge-bases/${initialData.id}`, data);
+                toast.success('Base de conhecimento atualizada');
             } else {
                 await api.post('/api/knowledge-bases', data);
-                toast.success('Base de conhecimento criada com sucesso');
+                toast.success('Base de conhecimento criada');
             }
-
             navigate('/knowledge-bases');
-        } catch (err: unknown) {
-            console.error('Erro ao salvar base de conhecimento:', err);
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('Erro ao salvar base de conhecimento');
-            }
+        } catch (err) {
+            console.error('Erro:', err);
+            setError('Erro ao salvar base de conhecimento');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const selectedFiles = Array.from(e.target.files || []);
+    const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const selectedFiles = Array.from(event.target.files || []);
+        const totalFiles = files.length + selectedFiles.length + selectedExistingFiles.length;
         
-        // Validar extensões
-        const invalidFiles = selectedFiles.filter(file => {
-            const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-            return !SUPPORTED_EXTENSIONS.includes(extension);
-        });
-
-        if (invalidFiles.length > 0) {
-            const invalidFileNames = invalidFiles.map(f => f.name).join(', ');
-            setError(`Arquivos não suportados: ${invalidFileNames}. Extensões suportadas: ${SUPPORTED_EXTENSIONS.join(', ')}`);
+        if (totalFiles > MAX_FILES) {
+            setError(`Máximo de ${MAX_FILES} arquivos permitidos`);
             return;
         }
 
-        if (selectedFiles.length > 0) {
-            setFiles(selectedFiles.map(file => ({
-                file,
-                sourceLanguage: '',
-                targetLanguage: ''
-            })));
-            setError(null);
-        }
-    };
+        const invalidFiles = selectedFiles.filter(file => {
+            const extension = `.${file.name.split('.').pop()?.toLowerCase()}`;
+            return !SUPPORTED_EXTENSIONS.includes(extension) || file.size > MAX_FILE_SIZE;
+        });
 
-    const updateFileLanguages = (index: number, field: 'sourceLanguage' | 'targetLanguage', value: string) => {
-        setFiles(prev => prev.map((file, i) => 
-            i === index ? { ...file, [field]: value } : file
-        ));
+        if (invalidFiles.length > 0) {
+            setError(`Arquivos inválidos: ${invalidFiles.map(f => f.name).join(', ')}`);
+            return;
+        }
+
+        setFiles(prev => [...prev, ...selectedFiles]);
+        setError(null);
     };
 
     const removeFile = (index: number) => {
         setFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const removeExistingFile = (fileId: string) => {
+        setSelectedExistingFiles(prev => prev.filter(id => id !== fileId));
     };
 
     if (isLoading) {
@@ -270,34 +239,37 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                         <div className="space-y-4">
                             <div>
                                 <h3 className="text-sm font-medium text-gray-700 mb-2">Enviar Novos Arquivos</h3>
-                                <input
-                                    type="file"
-                                    ref={fileInputRef}
-                                    onChange={handleFileChange}
-                                    className="hidden"
-                                    accept=".txt,.pdf,.doc,.docx,.pptx,.md,.html,.js,.ts,.py,.java,.json"
-                                    multiple
-                                />
                                 <button
                                     type="button"
                                     onClick={() => fileInputRef.current?.click()}
-                                    className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                                    className="flex items-center gap-2 px-4 py-2 border rounded hover:bg-gray-50"
                                 >
-                                    <Upload className="h-4 w-4 mr-2" />
-                                    Selecionar Arquivos
+                                    <Upload className="h-5 w-5" />
+                                    Selecionar arquivos
                                 </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    multiple
+                                    accept={SUPPORTED_EXTENSIONS.join(',')}
+                                    onChange={handleFileSelect}
+                                    className="hidden"
+                                />
 
                                 {files.length > 0 && (
                                     <div className="mt-2 space-y-2">
                                         {files.map((file, index) => (
-                                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
-                                                <span className="text-sm text-gray-600">{file.file.name}</span>
+                                            <div key={index} className="flex items-center justify-between p-2 border rounded">
+                                                <div className="flex items-center gap-2">
+                                                    <FileText className="h-5 w-5" />
+                                                    <span>{file.name}</span>
+                                                </div>
                                                 <button
                                                     type="button"
                                                     onClick={() => removeFile(index)}
                                                     className="text-red-500 hover:text-red-700"
                                                 >
-                                                    <Trash2 className="h-4 w-4" />
+                                                    <X className="h-5 w-5" />
                                                 </button>
                                             </div>
                                         ))}
@@ -323,9 +295,7 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                                                         if (e.target.checked) {
                                                             setSelectedExistingFiles([...selectedExistingFiles, file.id]);
                                                         } else {
-                                                            setSelectedExistingFiles(
-                                                                selectedExistingFiles.filter(id => id !== file.id)
-                                                            );
+                                                            removeExistingFile(file.id);
                                                         }
                                                     }}
                                                     className="h-4 w-4 text-blue-600 rounded border-gray-300"

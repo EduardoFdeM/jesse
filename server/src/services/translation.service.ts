@@ -375,7 +375,7 @@ const executeAndMonitorTranslation = async (
             
             emitDetailedProgress(
                 translationId,
-                mapOpenAIStatusToTranslation(status.status),
+                mapOpenAIStatusToTranslation(status.status as RunStatus),
                 calculateRunProgress(status)
             );
         }
@@ -429,7 +429,7 @@ const calculateProgress = (params: ProgressParams): number => {
     return Math.min(Math.max(Math.round(progress), 0), 100);
 };
 
-type RunStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'cancelling' | 'expired' | 'requires_action';
+type RunStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'cancelling' | 'expired' | 'requires_action' | 'incomplete';
 
 interface RunStatusDetails {
     status: RunStatus;
@@ -511,17 +511,15 @@ const saveTranslationResult = async (
     } as Translation;
 };
 
-const handleTranslationError = async (error: unknown, translationId: string) => {
-    console.error('Erro na tradução:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido durante a tradução';
-    await prisma.translation.update({
-        where: { id: translationId },
-        data: {
-            status: TranslationStatus.ERROR,
-            errorMessage
-        }
-    });
-    global.io?.emit('translation:error', { id: translationId, error: errorMessage });
+const handleTranslationError = async (error: any, translationId: string): Promise<void> => {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    await updateTranslationStatus(
+        translationId,
+        TranslationStatus.ERROR,
+        undefined,
+        undefined,
+        errorMessage
+    );
 };
 
 const emitDetailedProgress = (translationId: string, status: TranslationStatus, progress?: number) => {
@@ -542,7 +540,8 @@ interface KnowledgeBaseContext {
 // Função para adicionar contexto da base de conhecimento
 const addKnowledgeBaseContext = async (
     threadId: string, 
-    knowledgeBaseId: string
+    knowledgeBaseId: string,
+    translationId: string
 ): Promise<void> => {
     try {
         const knowledgeBase = await prisma.knowledgeBase.findUnique({
@@ -571,9 +570,9 @@ const addKnowledgeBaseContext = async (
         });
 
         await updateTranslationStatus(
-            threadId, 
+            translationId, 
             TranslationStatus.RETRIEVING_CONTEXT,
-            undefined,
+            threadId,
             undefined,
             `Contextualizando com base de conhecimento: ${knowledgeBase.name}`
         );
@@ -640,45 +639,57 @@ const processTranslation = async (params: TranslateFileParams, content: string):
         ? await getCustomAssistantId(params.promptId)
         : process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
 
-    const translatedContent = await executeAndMonitorTranslation(thread.id, assistantId, params.translationId);
-    return { translatedContent, metadata: { threadId: thread.id, assistantId } };
+    const translatedText = await executeAndMonitorTranslation(thread.id, assistantId, params.translationId);
+    
+    return {
+        content: translatedText,
+        metadata: {
+            completedAt: new Date().toISOString(),
+            model: 'gpt-4-turbo-preview',
+            totalTokens: await countTokens(translatedText),
+            threadId: thread.id,
+            assistantId,
+            status: 'completed'
+        }
+    };
 };
 
-export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
+export const translateFile = async (params: TranslateFileParams): Promise<TranslationResult> => {
+    const thread = await openai.beta.threads.create();
+    
     try {
         const fileContent = await extractFileContent(params.filePath);
-        const { chunks, totalTokens } = await splitIntoChunks(fileContent);
         
-        // Se tiver apenas um chunk, usa o fluxo normal
-        if (chunks.length === 1) {
-            return await processTranslation(params, chunks[0]);
+        // Configurar contexto se necessário
+        if (params.useKnowledgeBase && params.knowledgeBaseId) {
+            await updateTranslationStatus(params.translationId, TranslationStatus.RETRIEVING_CONTEXT);
+            await addKnowledgeBaseContext(thread.id, params.knowledgeBaseId, params.translationId);
         }
 
-        // Para múltiplos chunks, processa cada um e combina os resultados
-        let combinedContent = '';
-        for (let i = 0; i < chunks.length; i++) {
-            const chunkResult = await processTranslation(params, chunks[i]);
-            combinedContent += (i > 0 ? '\n\n' : '') + chunkResult.translatedContent;
-            
-            // Atualizar progresso considerando chunks
-            emitDetailedProgress(
-                params.translationId,
-                TranslationStatus.TRANSLATING,
-                ((i + 1) / chunks.length) * 100
-            );
-        }
+        const assistantId = params.useCustomPrompt && params.promptId 
+            ? params.promptId 
+            : process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
 
-        // Salvar resultado final combinado
-        return await saveTranslationResult({
-            ...params,
-            totalTokens,
-            content: combinedContent
-        });
+        const translatedContent = await executeAndMonitorTranslation(
+            thread.id, 
+            assistantId,
+            params.translationId
+        );
 
+        return {
+            content: translatedContent,
+            metadata: {
+                completedAt: new Date().toISOString(),
+                model: 'gpt-4-turbo-preview',
+                totalTokens: await countTokens(translatedContent),
+                threadId: thread.id,
+                assistantId,
+                status: 'completed'
+            }
+        };
     } catch (error) {
-        console.error('Erro no processo de tradução:', error);
-        await handleTranslationError(error, params.translationId);
-        throw new Error('Falha no processo de tradução');
+        console.error('Erro na tradução:', error);
+        throw error;
     }
 };
 
@@ -697,17 +708,20 @@ const retrieveTranslatedContent = async (threadId: string): Promise<string> => {
     throw new Error('Formato de mensagem não suportado');
 };
 
-const mapOpenAIStatusToTranslation = (status: string): TranslationStatus => {
-    const statusMap: Record<string, TranslationStatus> = {
+const mapOpenAIStatusToTranslation = (status: RunStatus): TranslationStatus => {
+    const statusMap: Record<RunStatus, TranslationStatus> = {
+        'queued': TranslationStatus.PENDING,
+        'in_progress': TranslationStatus.TRANSLATING,
         'completed': TranslationStatus.COMPLETED,
         'failed': TranslationStatus.ERROR,
         'cancelled': TranslationStatus.ERROR,
+        'cancelling': TranslationStatus.PROCESSING,
         'expired': TranslationStatus.ERROR,
-        'in_progress': TranslationStatus.TRANSLATING,
-        'queued': TranslationStatus.PROCESSING
+        'requires_action': TranslationStatus.PROCESSING,
+        'incomplete': TranslationStatus.ERROR
     };
     
-    return statusMap[status] || TranslationStatus.PROCESSING;
+    return statusMap[status] || TranslationStatus.ERROR;
 };
 
 const calculateProgressPercentage = (status: { status: string }): number => {
@@ -808,28 +822,15 @@ export class TranslationService {
         
         try {
             const fileContent = await extractFileContent(params.filePath);
-            await this.updateStatus(params.translationId, TranslationStatus.PROCESSING);
-            await this.updateStatus(params.translationId, TranslationStatus.RETRIEVING_CONTEXT);
-            await this.updateStatus(params.translationId, TranslationStatus.TRANSLATING);
-            await this.updateStatus(params.translationId, TranslationStatus.COMPLETED);
-            await this.updateStatus(params.translationId, TranslationStatus.ERROR);
-
+            
             // Configurar contexto se necessário
             if (params.useKnowledgeBase && params.knowledgeBaseId) {
                 await this.updateStatus(params.translationId, TranslationStatus.RETRIEVING_CONTEXT);
                 await this.addKnowledgeBaseContext(thread.id, params.knowledgeBaseId);
             }
 
-            // Criar mensagem com instruções
-            await this.openai.beta.threads.messages.create(thread.id, {
-                role: 'user',
-                content: `Traduza este texto de ${params.sourceLanguage} para ${params.targetLanguage}, mantendo a formatação original:\n\n${fileContent}`
-            });
-
-            // Executar tradução
-            await this.updateStatus(params.translationId, TranslationStatus.TRANSLATING);
-            const assistantId = params.useCustomAssistant && params.assistantId 
-                ? params.assistantId 
+            const assistantId = params.useCustomPrompt && params.promptId 
+                ? params.promptId 
                 : this.defaultAssistantId;
 
             const translatedContent = await this.executeTranslation(
@@ -841,20 +842,19 @@ export class TranslationService {
                 params.translationId
             );
 
-            // Atualizar status e retornar
-            await this.updateStatus(params.translationId, TranslationStatus.COMPLETED);
-            
             return {
                 content: translatedContent,
                 metadata: {
+                    completedAt: new Date().toISOString(),
+                    model: 'gpt-4-turbo-preview',
+                    totalTokens: await countTokens(translatedContent),
                     threadId: thread.id,
                     assistantId,
                     status: 'completed'
                 }
             };
-
         } catch (error) {
-            await this.updateStatus(params.translationId, TranslationStatus.ERROR);
+            console.error('Erro na tradução:', error);
             throw error;
         }
     }
@@ -871,18 +871,16 @@ const monitorRunStatus = async (
     while (retries < MAX_RETRIES) {
         try {
             const run = await openai.beta.threads.runs.retrieve(threadId, runId);
-            const status = mapOpenAIStatusToTranslation(run.status);
+            const status = mapOpenAIStatusToTranslation(run.status as RunStatus);
             
-            // Atualizar progresso
             await updateTranslationStatus(
                 translationId,
                 status,
-                undefined,
-                undefined,
+                threadId,
+                runId,
                 `Status atual: ${run.status}`
             );
 
-            // Verificar conclusão ou erro
             if (run.status === 'completed') {
                 return { status: run.status };
             } else if (['failed', 'cancelled', 'expired'].includes(run.status)) {
@@ -892,7 +890,6 @@ const monitorRunStatus = async (
                 };
             }
 
-            // Aguardar 5 segundos antes da próxima verificação
             await new Promise(resolve => setTimeout(resolve, 5000));
             retries++;
 

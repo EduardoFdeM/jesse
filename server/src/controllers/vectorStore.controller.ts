@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler';
 import { createVectorStore, deleteVectorStore, listVectorStores } from '../services/vectorStore.service';
 import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/errors';
-import { AuthenticatedRequest } from '../types';
+import { AuthenticatedRequest } from '../middleware/auth';
 
 // Criar Vector Store
 export const create = asyncHandler(async (req: AuthenticatedRequest, res: Response) => {

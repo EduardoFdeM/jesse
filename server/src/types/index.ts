@@ -127,4 +127,15 @@ interface ProcessKnowledgeBaseParams {
     userId: string;
     files: Express.Multer.File[];
     existingFileIds?: string[];
-} 
+}
+
+type RunStatus = 
+    | 'queued' 
+    | 'in_progress' 
+    | 'completed' 
+    | 'failed' 
+    | 'cancelled' 
+    | 'cancelling' 
+    | 'expired' 
+    | 'requires_action'
+    | 'incomplete'; 

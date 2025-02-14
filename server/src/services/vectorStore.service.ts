@@ -2,10 +2,11 @@ import { OpenAI } from 'openai';
 import prisma from '../config/database';
 import openai from '../config/openai';
 import { BadRequestError } from '../utils/errors';
-import { CreateVectorStoreParams, VectorStoreResponse, VectorStoreSearchResult, SearchParams } from '../types/vectorStore.types';
+import { CreateVectorStoreParams, VectorStoreResponse, VectorStoreSearchResult, SearchParams, VectorStoreFile } from '../types/vectorStore.types';
 import { KnowledgeBase } from '@prisma/client';
 import path from 'path';
 import redis from '../config/redis';
+import { VectorStoreFileList } from '../types/vectorStore.types';
 
 export const createVectorStore = async (params: {
     name: string;
@@ -27,11 +28,13 @@ export const createVectorStore = async (params: {
         // 2. Processar arquivos
         for (const file of params.files) {
             const fileData = await openai.files.create({
-                file: file.buffer,
+                file: new File([file.buffer], file.originalname, { type: file.mimetype }),
                 purpose: 'assistants'
             });
             
-            await openai.beta.vectorStores.files.add(store.id, fileData.id);
+            await openai.beta.vectorStores.files.create(store.id, {
+                file_id: fileData.id
+            });
             
             uploadedFiles.push(fileData.id);
             totalSize += file.size;
@@ -47,16 +50,12 @@ export const createVectorStore = async (params: {
                 vectorStoreId: store.id,
                 fileIds: uploadedFiles,
                 userId: params.userId,
-                fileName: fileNames.join(', '),
-                filePath: 'vector_store',
-                fileSize: totalSize,
-                fileType: Array.from(fileTypes).join(', '),
                 status: 'active'
             }
         });
     } catch (error) {
         console.error('Erro ao criar Vector Store:', error);
-        throw new BadRequestError(`Erro ao criar Vector Store: ${error.message}`);
+        throw new BadRequestError(`Erro ao criar Vector Store: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
 };
 
@@ -121,17 +120,20 @@ export const searchVectorStore = async (params: SearchParams): Promise<VectorSto
         }
 
         // Busca na Vector Store
-        const searchResponse = await openai.beta.vectorStores.query({
-            id: vectorStoreId,
-            query,
-            maxResults,
-            threshold
-        });
+        const searchResponse = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/search`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({ query, maxResults, threshold })
+        }).then(res => res.json());
 
         // Processa e filtra resultados
         const results = await Promise.all(
             searchResponse.matches
-                .filter(match => {
+                .filter((match: { score: number; metadata: { fileType: string } }) => {
                     if (!filters) return true;
                     
                     // Aplica filtros
@@ -140,7 +142,7 @@ export const searchVectorStore = async (params: SearchParams): Promise<VectorSto
                     
                     return true;
                 })
-                .map(async match => {
+                .map(async (match: { file: { id: string }; score: number; text: string }) => {
                     const fileInfo = await openai.files.get(match.file.id);
                     
                     return {
@@ -163,6 +165,22 @@ export const searchVectorStore = async (params: SearchParams): Promise<VectorSto
         return results;
     } catch (error) {
         console.error('Erro na busca contextual:', error);
+        throw error;
+    }
+};
+
+export const getFiles = async (vectorStoreId: string): Promise<VectorStoreFile[]> => {
+    try {
+        const response = await openai.beta.vectorStores.files.list(vectorStoreId);
+        return response.data.map((file: { id: string; filename?: string; bytes?: number; purpose?: string; created_at: number }) => ({
+            id: file.id,
+            filename: file.filename || 'Sem nome',
+            bytes: file.bytes || 0,
+            purpose: file.purpose || 'assistants',
+            created_at: file.created_at
+        }));
+    } catch (error) {
+        console.error('Erro ao listar arquivos da Vector Store:', error);
         throw error;
     }
 }; 

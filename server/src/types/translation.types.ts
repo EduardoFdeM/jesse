@@ -16,15 +16,12 @@ export interface TranslateFileParams {
     filePath: string;
     sourceLanguage: string;
     targetLanguage: string;
-    userId: string;
     translationId: string;
-    outputFormat: string;
     originalName: string;
-    knowledgeBaseId?: string;
+    useCustomPrompt?: boolean;
     promptId?: string;
     useKnowledgeBase?: boolean;
-    useCustomPrompt?: boolean;
-    useCustomAssistant?: boolean;
+    knowledgeBaseId?: string;
     assistantId?: string;
 }
 
@@ -46,15 +43,21 @@ export interface SaveTranslationResultParams {
 }
 
 export interface TranslationData {
-    translatedContent: string;
+    id: string;
+    status: TranslationStatus;
+    filePath: string;
     translatedFilePath: string;
+    translatedContent: string;
+    originalName: string;
+    sourceLanguage: string;
+    targetLanguage: string;
     cost: number;
     metadata: {
-        completedAt: string;
+        inputTokens: number;
+        outputTokens: number;
         model: string;
-        totalTokens: number;
-        threadId?: string;
-        runId?: string;
-        assistantId?: string;
+        threadId: string;
+        runId: string;
+        completedAt: string;
     };
 } 

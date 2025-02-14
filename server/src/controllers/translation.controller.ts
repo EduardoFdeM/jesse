@@ -199,6 +199,10 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             knowledgeBase: translation.knowledgeBase ? {
                 id: translation.knowledgeBase.id,
                 name: translation.knowledgeBase.name
+            } : undefined,
+            prompt: translation.prompt ? {
+                id: translation.prompt.id,
+                name: translation.prompt.name
             } : undefined
         });
         

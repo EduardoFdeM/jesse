@@ -147,10 +147,6 @@ export const processKnowledgeBaseFiles = async (params: ProcessKnowledgeBasePara
                 description: params.description,
                 userId: params.userId,
                 vectorStoreId: store.id,
-                fileName: fileNames.join(', '),
-                filePath: 'vector_store',
-                fileSize: totalSize,
-                fileType: Array.from(fileTypes).join(', '),
                 fileIds: uploadedFiles,
                 status: 'active'
             }
@@ -206,7 +202,19 @@ export const listKnowledgeBaseFiles = async (id: string) => {
         throw new BadRequestError('Base de conhecimento não encontrada');
     }
 
-    return vectorStore.files.list(knowledgeBase.vectorStoreId);
+    const response = await fetch(`https://api.openai.com/v1/vector-stores/${knowledgeBase.vectorStoreId}/files`, {
+        headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+            'OpenAI-Beta': 'assistants=v2'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error('Erro ao listar arquivos da Vector Store');
+    }
+
+    return await response.json();
 };
 
 // Função para buscar conteúdo da base de conhecimento
@@ -390,11 +398,7 @@ export const createVectorStore = async (params: CreateVectorStoreParams): Promis
                 vectorStoreId: store.id,
                 fileIds: params.files,
                 userId: params.userId,
-                status: 'active',
-                fileName: '',
-                filePath: 'vector_store',
-                fileSize: 0,
-                fileType: ''
+                status: 'active'
             }
         });
     } catch (error) {
@@ -424,7 +428,29 @@ export const listVectorStores = async (): Promise<VectorStore[]> => {
     }
 };
 
-export const getVectorStore = async (id: string): Promise<any> => {
+export const getVectorStore = async (id: string) => {
     const store = await openai.beta.vectorStores.retrieve(id);
     return store;
+};
+
+export const searchKnowledgeBase = async (query: string, knowledgeBaseId: string): Promise<string> => {
+    const knowledgeBase = await prisma.knowledgeBase.findUnique({
+        where: { id: knowledgeBaseId }
+    });
+
+    if (!knowledgeBase?.vectorStoreId) {
+        throw new Error('Base de conhecimento não encontrada');
+    }
+
+    const response = await fetch(`https://api.openai.com/v1/vector-stores/${knowledgeBase.vectorStoreId}/query`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query })
+    });
+
+    const results = await response.json();
+    return results.documents.join('\n\n');
 };

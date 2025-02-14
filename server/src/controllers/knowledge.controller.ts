@@ -9,8 +9,14 @@ import {
 import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import openai from '../config/openai.js';
-import { getVectorStoreFiles } from '../services/vectorStore.service.js';
 import { searchVectorStore } from '../services/vectorStore.service.js';
+import { VectorStoreFile } from '../types/vectorStore.types';
+import * as vectorStoreService from '../services/vectorStore.service.js';
+import { authenticatedHandler } from '../middlewares/auth.middleware.js';
+
+interface FileRequest extends Request {
+    file: Express.Multer.File;
+}
 
 // Criar base de conhecimento
 export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -148,7 +154,7 @@ export const getKnowledgeBaseFiles = asyncHandler(async (req: Request, res: Resp
         throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
     }
 
-    const files = await getVectorStoreFiles(knowledgeBase.vectorStoreId);
+    const files = await vectorStoreService.getFiles(knowledgeBase.vectorStoreId);
 
     res.json({
         status: 'success',
@@ -227,10 +233,10 @@ export const listKnowledgeBaseFilesHandler = asyncHandler(async (req: Request, r
         throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
     }
 
-    const files = await getVectorStoreFiles(knowledgeBase.vectorStoreId);
+    const files = await vectorStoreService.getFiles(knowledgeBase.vectorStoreId);
     
     res.json({ 
-        data: files.map(file => ({
+        data: files.map((file: VectorStoreFile) => ({
             ...file,
             filename: file.filename || 'Sem nome',
             bytes: file.bytes || 0,
@@ -295,4 +301,8 @@ export const getKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Re
     }
     
     res.json({ data: knowledgeBase });
+});
+
+export const uploadFile = asyncHandler(async (req: Request & { file?: Express.Multer.File }, res: Response) => {
+    // ... resto do código
 });

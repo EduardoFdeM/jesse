@@ -3,24 +3,19 @@ import { Plus, Edit, Trash2, FileText, Clock, ChevronDown, ChevronUp, Book, File
 import { KnowledgeBase } from '../../types/index';
 import api from '../../axiosConfig';
 import { Link } from 'react-router-dom';
-import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { OpenAIFiles } from './OpenAIFiles';
+import { toast } from 'react-toastify';
 
 interface VectorStoreFile {
     id: string;
     object: 'vector_store.file';
     created_at: number;
     vector_store_id: string;
-}
-
-interface VectorStoreFileList {
-    object: 'list';
-    data: VectorStoreFile[];
-    first_id: string;
-    last_id: string;
-    has_more: boolean;
+    filename: string;
+    bytes: number;
+    purpose: string;
 }
 
 export function KnowledgeBaseList() {
@@ -30,7 +25,7 @@ export function KnowledgeBaseList() {
     const [isLoading, setIsLoading] = useState(true);
     const [expandedBase, setExpandedBase] = useState<string | null>(null);
     const [filesLoading, setFilesLoading] = useState<Record<string, boolean>>({});
-    const [baseFiles, setBaseFiles] = useState<Record<string, VectorStoreFileList>>({});
+    const [baseFiles, setBaseFiles] = useState<Record<string, VectorStoreFile[]>>({});
     const userRole = localStorage.getItem('userRole');
 
     const fetchData = async () => {
@@ -61,10 +56,12 @@ export function KnowledgeBaseList() {
 
         try {
             await api.delete(`/api/knowledge-bases/${id}`);
+            toast.success('Base de conhecimento excluída com sucesso');
             await fetchData();
             setError(null);
         } catch (error: unknown) {
             console.error('Erro ao excluir base de conhecimento:', error);
+            toast.error('Erro ao excluir base de conhecimento');
             setError('Erro ao excluir base de conhecimento');
         }
     };
@@ -84,6 +81,7 @@ export function KnowledgeBaseList() {
             setBaseFiles(prev => ({ ...prev, [baseId]: response.data.data }));
         } catch (error) {
             console.error('Erro ao carregar arquivos:', error);
+            toast.error('Erro ao carregar arquivos da base');
         } finally {
             setFilesLoading(prev => ({ ...prev, [baseId]: false }));
         }
@@ -98,21 +96,35 @@ export function KnowledgeBaseList() {
         }
     };
 
-    const renderFileInfo = (file: VectorStoreFile) => {
+    const renderFileList = (base: KnowledgeBase) => {
+        const files = baseFiles[base.id] || [];
+        const isLoading = filesLoading[base.id];
+
+        if (isLoading) {
+            return <div className="p-4 text-center">Carregando arquivos...</div>;
+        }
+
         return (
-            <div key={file.id} className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <FileText className="h-3 w-3" />
-                        <span className="font-medium">{file.id}</span>
+            <div className="space-y-2 p-4 bg-gray-50 rounded-lg">
+                {files.map(file => (
+                    <div key={file.id} className="flex items-center justify-between p-2 bg-white rounded border">
+                        <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-gray-500" />
+                            <div>
+                                <p className="font-medium">{file.filename}</p>
+                                <p className="text-xs text-gray-500">
+                                    {(file.bytes / 1024 / 1024).toFixed(2)} MB • 
+                                    Criado em {format(new Date(file.created_at * 1000), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                {file.purpose}
+                            </span>
+                        </div>
                     </div>
-                    <span className="text-xs text-gray-400">
-                        Vector Store: {file.vector_store_id}
-                    </span>
-                </div>
-                <div className="text-xs text-gray-400 ml-5">
-                    Criado em {format(new Date(file.created_at * 1000), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                </div>
+                ))}
             </div>
         );
     };
@@ -229,23 +241,7 @@ export function KnowledgeBaseList() {
                                         )}
                                     </button>
 
-                                    {expandedBase === kb.id && (
-                                        <div className="mt-2 pl-4 border-l-2 border-gray-200">
-                                            {filesLoading[kb.id] ? (
-                                                <div className="text-sm text-gray-500">
-                                                    Carregando arquivos...
-                                                </div>
-                                            ) : baseFiles[kb.id]?.data.length > 0 ? (
-                                                <div className="space-y-2">
-                                                    {baseFiles[kb.id].data.map(renderFileInfo)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-sm text-gray-500">
-                                                    Nenhum arquivo encontrado
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                    {expandedBase === kb.id && renderFileList(kb)}
                                 </div>
                             </div>
                         ))

@@ -71,7 +71,7 @@ export const emitDetailedProgress = (
     progress: number
 ): void => {
     const io = getIO();
-    io.emit(EVENTS.TRANSLATION_PROGRESS, {
+    io.emit(EVENTS.PROGRESS, {
         translationId,
         status,
         progress,

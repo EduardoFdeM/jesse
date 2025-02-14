@@ -68,3 +68,10 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         });
     }
 };
+
+export const authenticatedHandler = (handler: Function) => async (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+        throw new UnauthorizedError('Usuário não autenticado');
+    }
+    return handler(req, res, next);
+};
