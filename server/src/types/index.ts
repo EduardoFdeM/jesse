@@ -1,14 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 
 // Status possíveis para uma tradução
-export type TranslationStatus =
-    | 'pending'
-    | 'processing'
-    | 'retrieving_context'
-    | 'translating'
-    | 'formatting'
-    | 'completed'
-    | 'error';
+export enum TranslationStatus {
+    PENDING = 'pending',
+    PROCESSING = 'processing',
+    RETRIEVING_CONTEXT = 'retrieving_context',
+    TRANSLATING = 'translating',
+    COMPLETED = 'completed',
+    ERROR = 'error'
+}
 
 // Parâmetros para tradução de arquivo
 export interface TranslateFileParams {
@@ -37,7 +37,7 @@ export interface Translation {
     sourceLanguage: string;
     targetLanguage: string;
     status: TranslationStatus;
-    errorMessage?: string;
+    errorMessage?: string | null;
     translatedUrl?: string | null;
     createdAt: string;
     updatedAt: string;
@@ -47,9 +47,18 @@ export interface Translation {
     translationMetadata: string;
     usedPrompt: boolean;
     usedKnowledgeBase: boolean;
-    threadId?: string;
-    runId?: string;
-    assistantId?: string;
+    threadId?: string | null;
+    runId?: string | null;
+    assistantId?: string | null;
+    costData?: string;
+    knowledgeBase?: {
+        id: string;
+        name: string;
+    };
+    prompt?: {
+        id: string;
+        name: string;
+    };
 }
 
 export interface KnowledgeBase {
@@ -61,11 +70,19 @@ export interface Prompt {
     id: string;
     name: string;
 }
-
 // Dados de retorno da tradução
 export interface TranslationData extends Translation {
-    knowledgeBase?: KnowledgeBase;
-    prompt?: Prompt;
+    knowledgeBase?: {
+        id: string;
+        name: string;
+    };
+    prompt?: {
+        id: string;
+        name: string;
+    };
+    errorMessage?: string;
+    createdAt: string;
+    updatedAt: string;
 }
 
 // Constantes para eventos do Socket
@@ -101,4 +118,13 @@ export interface CostTracking {
     cost: number;
 }
 
-export type FileType = 'translation' | 'knowledge_base'; 
+export type FileType = 'translation' | 'knowledge_base';
+
+interface ProcessKnowledgeBaseParams {
+    id?: string;
+    name: string;
+    description: string;
+    userId: string;
+    files: Express.Multer.File[];
+    existingFileIds?: string[];
+} 

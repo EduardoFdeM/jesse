@@ -10,6 +10,16 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum TranslationStatus {
+  pending
+  processing
+  retrieving_context
+  translating
+  formatting
+  completed
+  error
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -34,7 +44,7 @@ model Translation {
   originalName    String         @default("")
   sourceLanguage  String
   targetLanguage  String
-  status          String         @default("pending")
+  status          TranslationStatus @default(pending)
   errorMessage    String?
   translatedUrl   String?
   costData        String?        @default("{}")
@@ -57,23 +67,18 @@ model Translation {
 }
 
 model KnowledgeBase {
-  id             String        @id @default(cuid())
-  name           String
-  description    String
-  fileName       String        // Nome dos arquivos separados por vírgula
-  filePath       String        // Sempre será 'vector_store'
-  fileSize       Int          // Soma do tamanho dos arquivos
-  fileType       String        // Tipos dos arquivos separados por vírgula
-  vectorStoreId  String?      // ID da Vector Store na OpenAI
-  fileIds        String[]     // Array de IDs dos arquivos na OpenAI
-  fileMetadata   String?      @default("[]") // JSON com metadados dos arquivos (idiomas, etc)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  translations   Translation[]
-  isPublic       Boolean       @default(false)
-
+  id              String    @id @default(uuid())
+  name            String
+  description     String
+  vectorStoreId   String?   // ID da Vector Store na OpenAI
+  fileIds         String[]  // Array de IDs dos arquivos na OpenAI
+  status          String    @default("active")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  translations    Translation[]
+  isPublic        Boolean   @default(false)
   @@index([userId])
 }
 
@@ -112,4 +117,18 @@ model TranslationShare {
   @@unique([translationId, sharedWithId])
   @@index([sharedWithId])
   @@index([sharedById])
+}
+
+model SearchMetrics {
+  id              String        @id @default(uuid())
+  userId          String
+  knowledgeBaseId String
+  query           String
+  resultsCount    Int
+  timestamp       DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id])
+  knowledgeBase   KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id])
+
+  @@index([userId])
+  @@index([knowledgeBaseId])
 }

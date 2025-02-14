@@ -1,16 +1,15 @@
 // server/routes/knowledge.routes.ts
 import { Router } from 'express';
-import { authenticate } from '../middlewares/auth.middleware.js';
-import { upload } from '../middlewares/upload.middleware.js';
+import { upload } from '../config/multer';
+import { authenticate } from '../middlewares/auth.middleware';
 import { authorize } from '../middlewares/authorization.middleware.js';
 import {
     createKnowledgeBaseHandler,
-    getKnowledgeBases,
-    getKnowledgeBase,
-    updateKnowledgeBase,
     deleteKnowledgeBaseHandler,
-    getKnowledgeBaseFiles
-} from '../controllers/knowledge.controller.js';
+    searchKnowledgeBaseHandler,
+    listKnowledgeBasesHandler,
+    getKnowledgeBaseHandler
+} from '../controllers/knowledge.controller';
 import { validateRequest } from '../middlewares/validateRequest.middleware.js';
 
 const router = Router();
@@ -24,7 +23,7 @@ router.use(authorize(['EDITOR', 'TRANSLATOR', 'SUPERUSER']));
 // Rotas para bases de conhecimento com logs
 router.post(
     '/',
-    upload.array('files', 10),
+    upload.array('files', 20),
     validateRequest({
         body: {
             name: { type: 'string', required: true },
@@ -35,17 +34,12 @@ router.post(
     createKnowledgeBaseHandler
 );
 
-router.get('/', 
-    (req, res, next) => {
-        console.log('📋 Listando bases de conhecimento');
-        next();
-    },
-    getKnowledgeBases
-);
+router.get('/', listKnowledgeBasesHandler);
 
-router.get('/:id', getKnowledgeBase);
-router.get('/:id/files', getKnowledgeBaseFiles);
-router.put('/:id', updateKnowledgeBase);
+router.get('/:id', getKnowledgeBaseHandler);
+
+router.get('/:id/search', searchKnowledgeBaseHandler);
+
 router.delete('/:id', deleteKnowledgeBaseHandler);
 
 export default router;

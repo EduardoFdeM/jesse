@@ -63,4 +63,18 @@ export const emitProgress = (translationId: string, status: TranslationStatus, p
         progress,
         timestamp: new Date()
     });
+};
+
+export const emitDetailedProgress = (
+    translationId: string, 
+    status: TranslationStatus, 
+    progress: number
+): void => {
+    const io = getIO();
+    io.emit(EVENTS.TRANSLATION_PROGRESS, {
+        translationId,
+        status,
+        progress,
+        timestamp: new Date().toISOString()
+    });
 }; 

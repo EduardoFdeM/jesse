@@ -1,9 +1,16 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { createKnowledgeBase, deleteKnowledgeBase, listKnowledgeBaseFiles } from '../services/knowledge.service.js';
+import { 
+    processKnowledgeBaseFiles,
+    deleteKnowledgeBase, 
+    listKnowledgeBaseFiles,
+    searchKnowledgeBase
+} from '../services/knowledge.service.js';
 import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import openai from '../config/openai.js';
+import { getVectorStoreFiles } from '../services/vectorStore.service.js';
+import { searchVectorStore } from '../services/vectorStore.service.js';
 
 // Criar base de conhecimento
 export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -18,41 +25,17 @@ export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res:
     }
 
     const userId = req.user?.id;
+    if (!userId) throw new BadRequestError('Usuário não autenticado');
 
-    if (!userId) {
-        throw new UnauthorizedError('Usuário não autenticado');
-    }
+    const knowledgeBase = await processKnowledgeBaseFiles({
+        name,
+        description,
+        files,
+        existingFileIds,
+        userId
+    });
 
-    if (!name || !description) {
-        throw new BadRequestError('Nome e descrição são obrigatórios');
-    }
-
-    if ((!files || files.length === 0) && (!existingFileIds || existingFileIds.length === 0)) {
-        throw new BadRequestError('É necessário enviar pelo menos um arquivo ou selecionar arquivos existentes');
-    }
-
-    // Verificar limite de arquivos
-    if ((files?.length || 0) + (existingFileIds?.length || 0) > 20) {
-        throw new BadRequestError('Limite máximo de 20 arquivos por base de conhecimento');
-    }
-
-    try {
-        const knowledgeBase = await createKnowledgeBase(userId, name, description, files || [], existingFileIds);
-
-        res.status(201).json({
-            status: 'success',
-            data: knowledgeBase
-        });
-    } catch (err) {
-        // Se o erro já foi tratado, apenas repasse
-        if (err instanceof BadRequestError || err instanceof UnauthorizedError) {
-            throw err;
-        }
-
-        // Caso contrário, trate como erro interno
-        console.error('Erro ao criar base de conhecimento:', err);
-        throw new Error(`Erro ao criar base de conhecimento. ${(err as Error).message}`);
-    }
+    res.status(201).json({ data: knowledgeBase });
 });
 
 // Listar bases de conhecimento
@@ -138,24 +121,12 @@ export const updateKnowledgeBase = asyncHandler(async (req: Request, res: Respon
 // Excluir base de conhecimento
 export const deleteKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-
-    const knowledgeBase = await prisma.knowledgeBase.findFirst({
-        where: {
-            id,
-            userId: req.user!.id
-        }
-    });
-
-    if (!knowledgeBase) {
-        throw new NotFoundError('Base de conhecimento não encontrada');
-    }
-
-    await deleteKnowledgeBase(id);
-
-    res.json({
-        status: 'success',
-        data: null
-    });
+    const userId = req.user?.id;
+    
+    if (!userId) throw new BadRequestError('Usuário não autenticado');
+    
+    await deleteKnowledgeBase(id, userId);
+    res.status(204).send();
 });
 
 // Listar arquivos de uma base de conhecimento
@@ -173,10 +144,155 @@ export const getKnowledgeBaseFiles = asyncHandler(async (req: Request, res: Resp
         throw new NotFoundError('Base de conhecimento não encontrada');
     }
 
-    const files = await listKnowledgeBaseFiles(id);
+    if (!knowledgeBase.vectorStoreId) {
+        throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
+    }
+
+    const files = await getVectorStoreFiles(knowledgeBase.vectorStoreId);
 
     res.json({
         status: 'success',
-        data: files
+        data: files.map((file: { filename?: string; bytes?: number; purpose?: string }) => ({
+            ...file,
+            filename: file.filename || 'Sem nome',
+            bytes: file.bytes || 0,
+            purpose: file.purpose || 'assistants'
+        }))
     });
+});
+
+export const searchKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { query, maxResults, threshold, filters } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) throw new UnauthorizedError('Usuário não autenticado');
+
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: { 
+            id,
+            userId // Garante que usuário só acessa suas bases
+        }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    const searchResults = await searchVectorStore({
+        vectorStoreId: knowledgeBase.vectorStoreId,
+        query,
+        maxResults,
+        threshold,
+        filters
+    });
+
+    // Métricas de uso
+    await prisma.searchMetrics.create({
+        data: {
+            userId,
+            knowledgeBaseId: id,
+            query,
+            resultsCount: searchResults.length,
+            timestamp: new Date()
+        }
+    });
+
+    res.json({ 
+        data: searchResults,
+        metadata: {
+            total: searchResults.length,
+            threshold,
+            maxResults
+        }
+    });
+});
+
+// Listar arquivos de uma base de conhecimento
+export const listKnowledgeBaseFilesHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    
+    if (!userId) throw new UnauthorizedError('Usuário não autenticado');
+
+    const knowledgeBase = await prisma.knowledgeBase.findUnique({
+        where: { id }
+    });
+
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    if (!knowledgeBase.vectorStoreId) {
+        throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
+    }
+
+    const files = await getVectorStoreFiles(knowledgeBase.vectorStoreId);
+    
+    res.json({ 
+        data: files.map(file => ({
+            ...file,
+            filename: file.filename || 'Sem nome',
+            bytes: file.bytes || 0,
+            purpose: file.purpose || 'assistants'
+        }))
+    });
+});
+
+// Atualizar base de conhecimento
+export const updateKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const files = req.files as Express.Multer.File[];
+    let existingFileIds: string[] = [];
+    
+    try {
+        existingFileIds = req.body.existingFileIds ? JSON.parse(req.body.existingFileIds) : [];
+        if (!Array.isArray(existingFileIds)) {
+            throw new BadRequestError('existingFileIds deve ser um array');
+        }
+    } catch (err) {
+        throw new BadRequestError('IDs de arquivos existentes inválidos');
+    }
+
+    const userId = req.user?.id;
+    if (!userId) throw new UnauthorizedError('Usuário não autenticado');
+
+    const knowledgeBase = await processKnowledgeBaseFiles({
+        id,
+        name,
+        description,
+        files,
+        existingFileIds,
+        userId
+    });
+
+    res.json({ data: knowledgeBase });
+});
+
+export const listKnowledgeBasesHandler = asyncHandler(async (req: Request, res: Response) => {
+    const knowledgeBases = await prisma.knowledgeBase.findMany({
+        where: { 
+            userId: req.user!.id,
+            status: 'active'
+        }
+    });
+    res.json({ data: knowledgeBases });
+});
+
+export const getKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const knowledgeBase = await prisma.knowledgeBase.findFirst({
+        where: { 
+            id,
+            userId: req.user!.id,
+            status: 'active'
+        }
+    });
+    
+    if (!knowledgeBase) {
+        throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+    
+    res.json({ data: knowledgeBase });
 });

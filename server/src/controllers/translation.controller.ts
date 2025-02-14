@@ -16,6 +16,7 @@ import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
+import { TranslationStatus } from '../types';
 
 // Interfaces para o PDF Parser
 interface PDFTextR {
@@ -170,7 +171,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 originalName: req.body.originalname || file.originalname,
                 sourceLanguage: req.body.sourceLanguage,
                 targetLanguage: req.body.targetLanguage,
-                status: 'processing',
+                status: TranslationStatus.PROCESSING,
                 userId: req.user.id,
                 fileSize: file.size,
                 fileType: file.mimetype,
@@ -178,17 +179,28 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 usedKnowledgeBase: useKnowledgeBase,
                 promptId,
                 knowledgeBaseId,
-                threadId: null,  // Será atualizado durante a tradução
-                runId: null     // Será atualizado durante a tradução
+                threadId: null,
+                runId: null
             },
             include: {
                 knowledgeBase: true,
                 prompt: true
             }
         });
-
         // Emitir evento de início
-        emitTranslationStarted(translation);
+        emitTranslationStarted({
+            ...translation,
+            status: TranslationStatus.PROCESSING,
+            errorMessage: translation.errorMessage || undefined,
+            createdAt: translation.createdAt.toISOString(),
+            updatedAt: translation.updatedAt.toISOString(),
+            translationMetadata: translation.translationMetadata || '',
+            costData: translation.costData || undefined,
+            knowledgeBase: translation.knowledgeBase ? {
+                id: translation.knowledgeBase.id,
+                name: translation.knowledgeBase.name
+            } : undefined
+        });
         
         // Iniciar tradução
         translateFile({
@@ -202,8 +214,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             promptId: useCustomPrompt ? promptId : undefined,
             useKnowledgeBase,
-            useCustomPrompt,
-            fileSize: file.size
+            useCustomPrompt
         });
 
         res.status(202).json({
@@ -539,4 +550,19 @@ export const deleteTranslation = authenticatedHandler(async (req: AuthenticatedR
         console.error('Erro ao deletar tradução:', error);
         throw error;
     }
+});
+
+export const updateTranslationHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const data = req.body;
+
+    const translation = await prisma.translation.update({
+        where: { id },
+        data: {
+            ...data,
+            status: data.status as TranslationStatus
+        }
+    });
+
+    res.json(translation);
 });
