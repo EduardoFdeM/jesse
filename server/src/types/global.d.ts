@@ -133,22 +133,62 @@ declare global {
     }
 
     // OpenAI Types
-    interface AssistantConfig {
-        id: string;
-        name: string;
-        model: string;
-        instructions: string;
-        temperature: number;
+    interface OpenAIClient {
+        vectorStore: {
+            create: (name: string) => Promise<VectorStore>;
+            delete: (id: string) => Promise<void>;
+            files: {
+                add: (vectorStoreId: string, fileId: string) => Promise<VectorStoreFile>;
+                list: (vectorStoreId: string) => Promise<VectorStoreFileList>;
+            };
+        };
+        files: {
+            upload: (buffer: Buffer, filename: string) => Promise<OpenAIFile>;
+            list: () => Promise<{ data: OpenAIFile[] }>;
+            get: (fileId: string) => Promise<OpenAIFile>;
+            delete: (fileId: string) => Promise<void>;
+        };
+        assistant: {
+            list: () => Promise<OpenAIAssistantList>;
+            create: (params: AssistantCreateParams) => Promise<AssistantResponse>;
+            modify: (assistantId: string, params: AssistantModifyParams) => Promise<AssistantResponse>;
+            delete: (assistantId: string) => Promise<void>;
+        };
+        beta: {
+            threads: {
+                create: () => Promise<ThreadResponse>;
+                messages: {
+                    create: (threadId: string, params: MessageCreateParams) => Promise<MessageResponse>;
+                    list: (threadId: string) => Promise<{ data: MessageResponse[] }>;
+                };
+                runs: {
+                    create: (threadId: string, params: RunCreateParams) => Promise<RunResponse>;
+                    retrieve: (threadId: string, runId: string) => Promise<RunResponse>;
+                };
+            };
+        };
     }
 
-    interface CostData {
-        totalCost: number;
-        processingTime: number;
-        tokensUsed: {
-            prompt: number;
-            completion: number;
-            total: number;
-        };
+    interface AssistantCreateParams {
+        name: string;
+        instructions: string;
+        model: string;
+        temperature?: number;
+    }
+
+    interface AssistantModifyParams {
+        name?: string;
+        instructions?: string;
+        model?: string;
+    }
+
+    interface MessageCreateParams {
+        role: string;
+        content: string;
+    }
+
+    interface RunCreateParams {
+        assistant_id: string;
         model: string;
     }
 

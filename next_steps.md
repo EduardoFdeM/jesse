@@ -6,7 +6,7 @@
     Primeiro, passe linha a linha me explicando a lógia e motivo por trás de cada função. Vamos fazer isso para cada arquivo do backend. Começando pelos serviços. Depois vamos para os controllers e routes.
     Segundo, entender a lógica e motivo de cada função, vamos refatorar o código para que tudo seja otimizado e simplificado. E remover duplicidade de código.
     Terceiro, criar uma separação clara (e documentar) entre a função e propósito de cada arquivo, pois também estamos procurando funções que estão no lugar errado. Ex: Função responsável por agrupar a resposta dos Assistants, estar no src/utils/filePerser.ts. invés de estar no server/src/config/openai.ts (ou no server/src/services/translation.service.ts)
-    Quarto, remover funções que não são mais necessárias.
+    E por fim, remover funções que não são mais necessárias.
   Aqui apenas queremos limpar os arquivos, pois nas próximas etapas vamos implementar as novas funções e lógicas transferindo as tarefas para a Plataforma da OpenAI.
 1. Refatorar o service de tradução para os Assistants OpenAI
   Finalizar Service e refatorar o Controllers e Routes

@@ -9,30 +9,13 @@ import { translateFile } from '../services/translation.service.js';
 import { generateSignedUrl, uploadToS3, deleteFromS3 } from '../config/storage.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client } from '../config/storage.js';
-import PDFParser from 'pdf2json';
+import PDFParser, { PDFData, PDFPage, PDFText, PDFTextR } from 'pdf2json';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import { authenticatedHandler } from '../utils/asyncHandler.js';
 import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
-import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
-
-// Interfaces para o PDF Parser
-interface PDFTextR {
-    T: string;
-}
-
-interface PDFText {
-    R: PDFTextR[];
-}
-
-interface PDFPage {
-    Texts: PDFText[];
-}
-
-interface PDFData {
-    Pages: PDFPage[];
-}
+import * as translationService from '../services/translation.service.js';
 
 // Função para gerar arquivo atualizado
 const generateUpdatedFile = async (content: string, fileType: string): Promise<string> => {
@@ -245,34 +228,17 @@ export const downloadTranslation = authenticatedHandler(async (req, res) => {
 
 // Obter uma tradução específica
 export const getTranslation = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const translation = await prisma.translation.findUnique({ where: { id } });
-
+    const translation = await translationService.getTranslation(req.params.id);
     if (!translation) {
         throw new NotFoundError('Tradução não encontrada');
     }
-
-    res.status(200).json({
-        message: 'Tradução encontrada',
-        data: translation,
-    });
+    res.status(200).json({ message: 'Tradução encontrada', data: translation });
 });
 
 // Listar traduções do usuário
-export const getTranslations = authenticatedHandler(async (req, res) => {
-    const translations = await prisma.translation.findMany({
-        where: { userId: req.user!.id },
-        orderBy: { createdAt: 'desc' },
-        include: {
-            knowledgeBase: true,
-            prompt: true
-        }
-    });
-
-    res.json({
-        message: 'Traduções encontradas',
-        data: translations,
-    });
+export const getTranslations = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
+    const translations = await translationService.getTranslations(req.user!.id);
+    res.json({ message: 'Traduções encontradas', data: translations });
 });
 
 // Limpar histórico de traduções

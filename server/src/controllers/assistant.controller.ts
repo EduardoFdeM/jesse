@@ -1,14 +1,19 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { NotFoundError } from '../utils/errors.js';
+import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import openai, { OpenAIAssistant } from '../config/openai.js';
+import { Prompt } from '@prisma/client';
+
+// Verificação de autenticação comum
+const verifyUser = (userId: string | undefined): void => {
+    if (!userId) {
+        throw new UnauthorizedError('Não autenticado');
+    }
+};
 
 export const getAssistants = asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user?.id;
-    if (!userId) {
-        return res.status(401).json({ error: 'Não autenticado' });
-    }
+    verifyUser(req.user?.id);
     
     // Buscar assistants da OpenAI
     const openaiAssistants = await openai.assistant.list();
@@ -17,7 +22,7 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
     const dbAssistants = await prisma.prompt.findMany({ 
         where: { 
             OR: [
-                { userId },
+                { userId: req.user!.id },
                 { isPublic: true }
             ]
         },
@@ -25,7 +30,7 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
     });
 
     // Filtrar apenas os assistants que existem na OpenAI
-    const assistants = dbAssistants.filter(assistant => 
+    const assistants = dbAssistants.filter((assistant: Prompt) => 
         assistant.assistantId && 
         openaiAssistants.data.some((oa: OpenAIAssistant) => oa.id === assistant.assistantId)
     );
@@ -38,10 +43,8 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const createAssistant = asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user?.id;
-    if (!userId) {
-        return res.status(401).json({ error: 'Não autenticado' });
-    }
+    verifyUser(req.user?.id);
+    
     const { name, description, instructions, tags, model, temperature, isPublic } = req.body;
     
     // Criar assistant na OpenAI
@@ -63,7 +66,7 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
             model,
             temperature,
             isPublic,
-            userId,
+            userId: req.user!.id,
             assistantId: openaiAssistant.id,
             status: 'active'
         },
@@ -73,24 +76,34 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
 });
 
 export const getAssistant = asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user?.id;
-    const { id } = req.params;
+    verifyUser(req.user?.id);
     
     const assistant = await prisma.prompt.findFirst({
-        where: { id, userId }
+        where: { 
+            id: req.params.id, 
+            userId: req.user!.id 
+        }
     });
+    
     if (!assistant) {
         throw new NotFoundError('Assistant não encontrado');
     }
+    
     res.json({ status: 'success', data: assistant });
 });
 
 export const updateAssistant = asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user?.id;
-    const { id } = req.params;
+    verifyUser(req.user?.id);
+    
     const { name, description, instructions, tags, model, temperature, isPublic } = req.body;
     
-    const assistant = await prisma.prompt.findFirst({ where: { id, userId } });
+    const assistant = await prisma.prompt.findFirst({ 
+        where: { 
+            id: req.params.id, 
+            userId: req.user!.id 
+        } 
+    });
+    
     if (!assistant) {
         throw new NotFoundError('Assistant não encontrado');
     }
@@ -100,12 +113,12 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
         await openai.assistant.modify(assistant.assistantId, {
             name,
             instructions,
-            model
+            model,
         });
     }
 
     const updatedAssistant = await prisma.prompt.update({
-        where: { id },
+        where: { id: req.params.id },
         data: { 
             name, 
             description, 
@@ -116,14 +129,20 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
             isPublic 
         },
     });
+    
     res.json({ status: 'success', data: updatedAssistant });
 });
 
 export const deleteAssistant = asyncHandler(async (req: Request, res: Response) => {
-    const userId = req.user?.id;
-    const { id } = req.params;
+    verifyUser(req.user?.id);
     
-    const assistant = await prisma.prompt.findFirst({ where: { id, userId } });
+    const assistant = await prisma.prompt.findFirst({ 
+        where: { 
+            id: req.params.id, 
+            userId: req.user!.id 
+        } 
+    });
+    
     if (!assistant) {
         throw new NotFoundError('Assistant não encontrado');
     }
@@ -133,6 +152,6 @@ export const deleteAssistant = asyncHandler(async (req: Request, res: Response) 
         await openai.assistant.delete(assistant.assistantId);
     }
 
-    await prisma.prompt.delete({ where: { id } });
+    await prisma.prompt.delete({ where: { id: req.params.id } });
     res.json({ status: 'success', data: null });
 }); 

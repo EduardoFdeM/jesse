@@ -3,7 +3,6 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { createKnowledgeBase, deleteKnowledgeBase, listKnowledgeBaseFiles } from '../services/knowledge.service.js';
 import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/errors.js';
 import prisma from '../config/database.js';
-import openai from '../config/openai.js';
 
 // Criar base de conhecimento
 export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -13,7 +12,7 @@ export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res:
     
     try {
         existingFileIds = req.body.existingFileIds ? JSON.parse(req.body.existingFileIds) : [];
-    } catch (err) {
+    } catch {
         throw new BadRequestError('IDs de arquivos existentes inválidos');
     }
 
@@ -37,21 +36,27 @@ export const createKnowledgeBaseHandler = asyncHandler(async (req: Request, res:
     }
 
     try {
-        const knowledgeBase = await createKnowledgeBase(userId, name, description, files || [], existingFileIds);
+        const knowledgeBase = await createKnowledgeBase({
+            name,
+            description,
+            userId,
+            files: files || [],
+            existingFileIds
+        });
 
         res.status(201).json({
             status: 'success',
             data: knowledgeBase
         });
-    } catch (err) {
+    } catch (error) {
         // Se o erro já foi tratado, apenas repasse
-        if (err instanceof BadRequestError || err instanceof UnauthorizedError) {
-            throw err;
+        if (error instanceof BadRequestError || error instanceof UnauthorizedError) {
+            throw error;
         }
 
         // Caso contrário, trate como erro interno
-        console.error('Erro ao criar base de conhecimento:', err);
-        throw new Error(`Erro ao criar base de conhecimento. ${(err as Error).message}`);
+        console.error('Erro ao criar base de conhecimento:', error);
+        throw new Error(`Erro ao criar base de conhecimento. ${(error as Error).message}`);
     }
 });
 

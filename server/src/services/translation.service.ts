@@ -5,25 +5,6 @@ import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
-import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
-import { simpleSearchKnowledgeBaseContext } from './knowledge.service.js';
-import { Prompt } from '@prisma/client';
-
-type KnowledgeBase = {
-    id: string;
-    name: string;
-    description: string;
-    fileName: string;
-    filePath: string;
-    fileSize: number;
-    fileType: string;
-    userId: string;
-    vectorStoreId: string | null;
-    fileIds: string[];
-    fileMetadata: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-};
 
 interface PDFParserData {
     Pages: Array<{
@@ -109,8 +90,8 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
     });
 };
 
-// Função para salvar arquivo traduzido
-const saveTranslatedFile = async (
+// Função unificada para salvar/atualizar arquivo
+const saveFileContent = async (
     text: string, 
     fileName: string, 
     outputFormat: string
@@ -189,7 +170,7 @@ const saveTranslatedFile = async (
             fileName: finalFileName
         };
     } catch (err) {
-        console.error('Erro ao salvar arquivo traduzido:', err);
+        console.error('Erro ao salvar arquivo:', err);
         throw err;
     }
 };
@@ -244,7 +225,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         }
 
         // Salvar arquivo traduzido
-        const savedFile = await saveTranslatedFile(
+        const savedFile = await saveFileContent(
             translatedContent,
             params.originalName,
             'pdf'
@@ -282,5 +263,27 @@ const handleTranslationError = async (error: unknown, translationId: string) => 
         }
     });
     global.io?.emit('translation:error', { id: translationId, error: errorMessage });
+};
+
+// Funções de acesso ao banco
+export const getTranslation = async (id: string) => {
+    return prisma.translation.findUnique({ 
+        where: { id },
+        include: {
+            knowledgeBase: true,
+            prompt: true
+        }
+    });
+};
+
+export const getTranslations = async (userId: string) => {
+    return prisma.translation.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+            knowledgeBase: true,
+            prompt: true
+        }
+    });
 };
 

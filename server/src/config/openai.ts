@@ -67,6 +67,60 @@ export interface OpenAIAssistantList {
     has_more: boolean;
 }
 
+// Configuração centralizada
+const getHeaders = (beta: boolean = false) => ({
+    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+    'Content-Type': 'application/json',
+    ...(beta ? { 'OpenAI-Beta': 'assistants=v2' } : {})
+});
+
+// Interfaces de resposta
+interface AssistantResponse extends OpenAIAssistant {
+    status?: string;
+}
+
+interface ThreadResponse {
+    id: string;
+    object: string;
+    created_at: number;
+    metadata: Record<string, unknown>;
+}
+
+interface MessageAnnotation {
+    type: string;
+    text: string;
+    startIndex: number;
+    endIndex: number;
+}
+
+interface MessageResponse {
+    id: string;
+    object: string;
+    created_at: number;
+    thread_id: string;
+    role: string;
+    content: Array<{
+        type: string;
+        text: { 
+            value: string; 
+            annotations: MessageAnnotation[] 
+        };
+    }>;
+}
+
+interface RunResponse {
+    id: string;
+    object: string;
+    created_at: number;
+    thread_id: string;
+    assistant_id: string;
+    status: string;
+    started_at: number | null;
+    completed_at: number | null;
+    model: string;
+    instructions: string | null;
+}
+
 // Funções para Vector Store
 const vectorStoreApi = {
     create: async (name: string): Promise<VectorStore> => {
@@ -202,6 +256,20 @@ const filesApi = {
         return data as OpenAIFile;
     },
 
+    list: async (): Promise<{ data: OpenAIFile[] }> => {
+        const response = await fetch('https://api.openai.com/v1/files', {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Erro ao listar arquivos');
+        }
+        
+        return await response.json();
+    },
+
     get: async (fileId: string): Promise<OpenAIFile> => {
         const response = await fetch(`https://api.openai.com/v1/files/${fileId}`, {
             headers: {
@@ -235,11 +303,7 @@ const filesApi = {
 const assistantApi = {
     list: async (): Promise<OpenAIAssistantList> => {
         const response = await fetch('https://api.openai.com/v1/assistants?order=desc&limit=20', {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            }
+            headers: getHeaders(true)
         });
 
         if (!response.ok) {
@@ -255,14 +319,10 @@ const assistantApi = {
         instructions: string;
         model: string;
         temperature?: number;
-    }): Promise<any> => {
+    }): Promise<AssistantResponse> => {
         const response = await fetch('https://api.openai.com/v1/assistants', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
+            headers: getHeaders(true),
             body: JSON.stringify({
                 name: params.name,
                 instructions: params.instructions,
@@ -283,14 +343,10 @@ const assistantApi = {
         name?: string;
         instructions?: string;
         model?: string;
-    }): Promise<any> => {
+    }): Promise<AssistantResponse> => {
         const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
+            headers: getHeaders(true),
             body: JSON.stringify(params)
         });
 
@@ -304,10 +360,7 @@ const assistantApi = {
     delete: async (assistantId: string): Promise<void> => {
         const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
             method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'assistants=v2'
-            }
+            headers: getHeaders(true)
         });
 
         if (!response.ok) {
@@ -318,14 +371,10 @@ const assistantApi = {
 
 // Funções para Threads e Runs
 const threadsApi = {
-    create: async (): Promise<any> => {
+    create: async (): Promise<ThreadResponse> => {
         const response = await fetch('https://api.openai.com/v1/threads', {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            }
+            headers: getHeaders(true)
         });
 
         if (!response.ok) {
@@ -339,14 +388,10 @@ const threadsApi = {
         create: async (threadId: string, params: {
             role: string;
             content: string;
-        }): Promise<any> => {
+        }): Promise<MessageResponse> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2'
-                },
+                headers: getHeaders(true),
                 body: JSON.stringify(params)
             });
 
@@ -357,13 +402,9 @@ const threadsApi = {
             return await response.json();
         },
 
-        list: async (threadId: string): Promise<any> => {
+        list: async (threadId: string): Promise<{ data: MessageResponse[] }> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2'
-                }
+                headers: getHeaders(true)
             });
 
             if (!response.ok) {
@@ -378,14 +419,10 @@ const threadsApi = {
         create: async (threadId: string, params: {
             assistant_id: string;
             model: string;
-        }): Promise<any> => {
+        }): Promise<RunResponse> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2'
-                },
+                headers: getHeaders(true),
                 body: JSON.stringify(params)
             });
 
@@ -396,13 +433,9 @@ const threadsApi = {
             return await response.json();
         },
 
-        retrieve: async (threadId: string, runId: string): Promise<any> => {
+        retrieve: async (threadId: string, runId: string): Promise<RunResponse> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs/${runId}`, {
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2'
-                }
+                headers: getHeaders(true)
             });
 
             if (!response.ok) {
@@ -414,11 +447,8 @@ const threadsApi = {
     }
 };
 
-// Adicionar as funções ao cliente OpenAI
-const openaiClient = openai;
-
 // Criar um tipo que combina OpenAI com nossas extensões
-type ExtendedOpenAI = OpenAI & {
+type CustomOpenAI = {
     vectorStore: typeof vectorStoreApi;
     files: typeof filesApi;
     assistant: typeof assistantApi;
@@ -427,13 +457,16 @@ type ExtendedOpenAI = OpenAI & {
     };
 };
 
-// Adicionar as propriedades extras
-(openaiClient as any).vectorStore = vectorStoreApi;
-(openaiClient as any).files = filesApi;
-(openaiClient as any).assistant = assistantApi;
-(openaiClient as any).beta = {
-    threads: threadsApi
+// Criar e exportar o cliente customizado
+const openaiClient: CustomOpenAI = {
+    vectorStore: vectorStoreApi,
+    files: filesApi,
+    assistant: assistantApi,
+    beta: {
+        threads: threadsApi
+    }
 };
 
+// Exportar as funções individuais e o cliente
 export { vectorStoreApi as vectorStore, filesApi as files, assistantApi as assistant };
-export default openaiClient as ExtendedOpenAI;
+export default openaiClient;
