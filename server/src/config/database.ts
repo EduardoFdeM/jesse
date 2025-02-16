@@ -1,14 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient({
-  log: ['error'],
-  errorFormat: 'pretty',
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL + '?sslmode=no-verify&connection_limit=5&pool_timeout=0'
-    }
-  }
-});
+const prisma = new PrismaClient();
 
 // Função para gerenciar a conexão com o banco de dados
 export const connectDatabase = async () => {

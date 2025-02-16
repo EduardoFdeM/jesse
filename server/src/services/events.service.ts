@@ -1,6 +1,6 @@
-import { Translation } from '../types';
-import { EVENTS } from '../types';
-import { getIO } from '../config/socket';
+import { Translation } from '../types/translation.types.js';
+import { EVENTS } from '../types/translation.types.js';
+import { getIO } from '../config/socket.js';
 
 export const emitTranslationStarted = (translation: Translation) => {
     try {

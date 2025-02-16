@@ -8,12 +8,13 @@ import authRoutes from './routes/auth.routes.js';
 import translationRoutes from './routes/translation.routes.js';
 import knowledgeRoutes from './routes/knowledge.routes.js';
 import corsOptions from './config/cors.js';
-import promptRoutes from './routes/assistant.routes.js';
 import { authenticate } from './middlewares/auth.middleware.js';
-import { authorize } from './middlewares/authorization.middleware.js';
 import cookieParser from 'cookie-parser';
 import adminRoutes from './routes/admin.routes.js';
 import assistantRoutes from './routes/assistant.routes.js';
+import healthRoutes from './routes/health.routes.js';
+import { notFoundHandler, errorHandler } from './middlewares/error.middleware.js';
+import promptRoutes from './routes/prompt.routes.js';
 
 // Configuração do __dirname para ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -40,134 +41,27 @@ console.log('📂 Diretórios de arquivos configurados:', {
 const app = express();
 
 // Middlewares básicos
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Configuração do CORS
-app.use(cors(corsOptions));
-
-// Adicionar middleware para preflight requests
-app.options('*', cors(corsOptions));
-
 app.use(cookieParser());
 
-// Logging middleware
-app.use((req, _res, next) => {
-    console.log(`📝 ${req.method} ${req.path}`, {
-        headers: req.headers,
-        query: req.query,
-        body: req.body
-    });
-    next();
-});
-
-// Servir arquivos estáticos
-app.use('/uploads', express.static(uploadsPath));
-app.use('/translated_pdfs', express.static(translatedPath));
-
-// Rota raiz
-app.get('/', (_req, res) => {
-    res.json({
-        message: 'API do Tradutor de Documentos',
-        version: '1.0.0',
-        status: 'online',
-        timestamp: new Date().toISOString(),
-        endpoints: {
-            root: '/',
-            auth: '/api/auth',
-            translations: '/api/translations',
-            knowledgeBases: '/api/knowledge-bases',
-            prompts: '/api/prompts',
-            socket: '/socket.io'
-        }
-    });
-});
-
-// Middleware de verificação de rotas
-const routeLogger = (prefix: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
-    console.log(`📝 ${req.method} ${prefix}${req.path}`, {
-        headers: req.headers,
-        query: req.query,
-        body: req.method !== 'GET' ? req.body : undefined
-    });
-    next();
-};
-
-// Rotas da API
-import apiRoutes from './routes/index.js';
-app.use('/api', routeLogger('/api'), apiRoutes);
-
-// Health Check
-import healthRoutes from './routes/health.routes.js';
-app.use('/api/health', healthRoutes);
-
-// Middleware de autenticação
+// Middleware de autenticação para rotas protegidas
 app.use('/api', authenticate);
 
-// Adicionar log para debug
-app.use((req, res, next) => {
-    console.log('🔍 Rota acessada:', {
-        method: req.method,
-        path: req.path,
-        baseUrl: req.baseUrl,
-        originalUrl: req.originalUrl,
-        user: req.user?.id
-    });
-    next();
-});
-
-// Log após registro de rotas
-console.log('✅ Rotas registradas:', {
-    api: '/api',
-    health: '/api/health'
-});
-
-// Middleware para rotas não encontradas (404)
-app.use((req, res) => {
-    const error = {
-        method: req.method,
-        path: req.path,
-        message: 'Rota não encontrada',
-        availableRoutes: [
-            '/api/auth',
-            '/api/translations',
-            '/api/knowledge-bases',
-            '/api/prompts'
-        ]
-    };
-    
-    console.log('❌ Rota não encontrada:', error);
-    
-    res.status(404).json({
-        error: 'Rota não encontrada',
-        details: error,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Substituir o tipo 'any' por um tipo específico
-interface ServerError extends Error {
-    statusCode?: number;
-    code?: string;
-}
-
-// Atualizar o middleware de erro
-app.use((err: ServerError, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error('❌ Erro não tratado:', {
-        method: req.method,
-        path: req.path,
-        error: err,
-        stack: err.stack
-    });
-    res.status(500).json({
-        error: 'Erro interno do servidor',
-        message: err.message,
-        timestamp: new Date().toISOString()
-    });
-    next(); // Adicionado para resolver o warning de variável não utilizada
-});
-
-// Rotas de assistente
+// Rotas da API
+app.use('/api/health', healthRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/translations', translationRoutes);
+app.use('/api/knowledge-bases', knowledgeRoutes);
 app.use('/api/assistants', assistantRoutes);
+app.use('/api/prompts', promptRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Middleware de erro 404 (deve ser o último)
+app.use(notFoundHandler);
+
+// Middleware de erro global
+app.use(errorHandler);
 
 export default app; 

@@ -1,71 +1,137 @@
 import OpenAI from 'openai';
 
+interface OpenAIAssistantList {
+    data: Array<any>;
+    has_more: boolean;
+    first_id: string;
+    last_id: string;
+}
+
+export interface VectorStore {
+    id: string;
+    name: string;
+    description?: string;
+}
+
+interface VectorStoreFile {
+    id: string;
+    vector_store_id: string;
+    file_id: string;
+}
+
+export interface VectorStoreFileList {
+    data: VectorStoreFile[];
+    has_more: boolean;
+}
+
+interface OpenAIFile {
+    id: string;
+    bytes: number;
+    created_at: number;
+    filename: string;
+    purpose: string;
+    status: string;
+}
+
+export interface OpenAIAssistant {
+    id: string;
+    name: string;
+    instructions: string;
+    model: string;
+    tools: Array<{ type: string }>;
+    file_ids?: string[];
+    created_at?: number;
+}
+
 // Configuração do cliente OpenAI
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Interfaces
-export interface VectorStore {
-    id: string;
-    object: 'vector_store';
-    created_at: number;
-    name: string;
-    bytes: number;
-    file_counts: {
-        in_progress: number;
-        completed: number;
-        failed: number;
-        cancelled: number;
-        total: number;
-    };
-}
+// Primeiro declarar o assistantApi
+export const assistantApi = {
+    list: async (): Promise<OpenAIAssistantList> => {
+        const response = await fetch('https://api.openai.com/v1/assistants?order=desc&limit=20', {
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            }
+        });
 
-export interface VectorStoreFile {
-    id: string;
-    object: 'vector_store.file';
-    created_at: number;
-    vector_store_id: string;
-}
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Erro ao listar Assistants: ${error}`);
+        }
 
-export interface VectorStoreFileList {
-    object: 'list';
-    data: VectorStoreFile[];
-    first_id: string;
-    last_id: string;
-    has_more: boolean;
-}
+        return await response.json();
+    },
 
-export interface OpenAIFile {
-    id: string;
-    bytes: number;
-    created_at: number;
-    filename: string;
-    object: string;
-    purpose: string;
-    status: string;
-    status_details: string | null;
-}
+    create: async (params: {
+        name: string;
+        instructions: string;
+        model: string;
+        temperature?: number;
+    }): Promise<any> => {
+        const response = await fetch('https://api.openai.com/v1/assistants', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                name: params.name,
+                instructions: params.instructions,
+                model: params.model,
+                tools: [{ type: "file_search" }]
+            })
+        });
 
-export interface OpenAIAssistant {
-    id: string;
-    object: string;
-    created_at: number;
-    name: string;
-    description: string | null;
-    model: string;
-    instructions: string | null;
-    tools: Array<{ type: string }>;
-    file_ids: string[];
-}
+        if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Erro ao criar Assistant: ${error}`);
+        }
 
-export interface OpenAIAssistantList {
-    object: string;
-    data: OpenAIAssistant[];
-    first_id: string;
-    last_id: string;
-    has_more: boolean;
-}
+        return await response.json();
+    },
+
+    modify: async (assistantId: string, params: {
+        name?: string;
+        instructions?: string;
+        model?: string;
+    }): Promise<any> => {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify(params)
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao modificar Assistant');
+        }
+
+        return await response.json();
+    },
+
+    delete: async (assistantId: string): Promise<void> => {
+        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'OpenAI-Beta': 'assistants=v2'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error('Erro ao deletar Assistant');
+        }
+    }
+};
 
 // Funções para Vector Store
 const vectorStoreApi = {
@@ -231,91 +297,6 @@ const filesApi = {
     }
 };
 
-// Funções para Assistants
-const assistantApi = {
-    list: async (): Promise<OpenAIAssistantList> => {
-        const response = await fetch('https://api.openai.com/v1/assistants?order=desc&limit=20', {
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            }
-        });
-
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`Erro ao listar Assistants: ${error}`);
-        }
-
-        return await response.json();
-    },
-
-    create: async (params: {
-        name: string;
-        instructions: string;
-        model: string;
-        temperature?: number;
-    }): Promise<any> => {
-        const response = await fetch('https://api.openai.com/v1/assistants', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
-            body: JSON.stringify({
-                name: params.name,
-                instructions: params.instructions,
-                model: params.model,
-                tools: [{ type: "file_search" }]
-            })
-        });
-
-        if (!response.ok) {
-            const error = await response.text();
-            throw new Error(`Erro ao criar Assistant: ${error}`);
-        }
-
-        return await response.json();
-    },
-
-    modify: async (assistantId: string, params: {
-        name?: string;
-        instructions?: string;
-        model?: string;
-    }): Promise<any> => {
-        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
-            body: JSON.stringify(params)
-        });
-
-        if (!response.ok) {
-            throw new Error('Erro ao modificar Assistant');
-        }
-
-        return await response.json();
-    },
-
-    delete: async (assistantId: string): Promise<void> => {
-        const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'OpenAI-Beta': 'assistants=v2'
-            }
-        });
-
-        if (!response.ok) {
-            throw new Error('Erro ao deletar Assistant');
-        }
-    }
-};
-
 // Funções para Threads e Runs
 const threadsApi = {
     create: async (): Promise<any> => {
@@ -430,7 +411,6 @@ type ExtendedOpenAI = OpenAI & {
 // Adicionar as propriedades extras
 (openaiClient as any).vectorStore = vectorStoreApi;
 (openaiClient as any).files = filesApi;
-(openaiClient as any).assistant = assistantApi;
 (openaiClient as any).beta = {
     threads: threadsApi
 };

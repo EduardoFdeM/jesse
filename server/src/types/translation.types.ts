@@ -1,4 +1,11 @@
-import { TranslationStatus } from '@prisma/client';
+export enum TranslationStatus {
+    PENDING = 'pending',
+    PROCESSING = 'processing',
+    RETRIEVING_CONTEXT = 'retrieving_context',
+    TRANSLATING = 'translating',
+    COMPLETED = 'completed',
+    ERROR = 'error'
+}
 
 export interface TranslationResult {
     content: string;
@@ -16,13 +23,15 @@ export interface TranslateFileParams {
     filePath: string;
     sourceLanguage: string;
     targetLanguage: string;
+    userId: string;
     translationId: string;
+    outputFormat: string;
     originalName: string;
-    useCustomPrompt?: boolean;
-    promptId?: string;
-    useKnowledgeBase?: boolean;
     knowledgeBaseId?: string;
-    assistantId?: string;
+    promptId?: string;
+    useKnowledgeBase: boolean;
+    useCustomPrompt: boolean;
+    fileSize: number;
 }
 
 export interface TranslationMessage {
@@ -60,4 +69,36 @@ export interface TranslationData {
         runId: string;
         completedAt: string;
     };
-} 
+}
+
+export interface Translation {
+    id: string;
+    fileName: string;
+    originalName: string;
+    filePath: string;
+    fileSize: number;
+    fileType: string;
+    sourceLanguage: string;
+    targetLanguage: string;
+    status: TranslationStatus;
+    errorMessage?: string;
+    translatedUrl?: string | null;
+    createdAt: string;
+    updatedAt: string;
+    userId: string;
+    knowledgeBaseId: string | null;
+    promptId: string | null;
+    translationMetadata: string;
+    usedPrompt: boolean;
+    usedKnowledgeBase: boolean;
+    threadId?: string;
+    runId?: string;
+    assistantId?: string;
+}
+
+export const EVENTS = {
+    STARTED: 'translation:started',
+    PROGRESS: 'translation:progress',
+    COMPLETED: 'translation:completed',
+    ERROR: 'translation:error'
+}; 

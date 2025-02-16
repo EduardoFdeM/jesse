@@ -12,7 +12,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { Editor } from './pages/Editor';
 import { AssistantList } from './components/assistant/AssistantList';
 import { AssistantForm } from './components/assistant/AssistantForm';
-import { OpenAIFilesPage } from './pages/OpenAIFiles';
+import { OpenAIFiles } from './components/knowledge/OpenAIFiles';
 
 // Componente para proteger rotas de admin
 const AdminRoute = ({ children }: { children: React.ReactNode }) => {
@@ -44,7 +44,8 @@ export default function App() {
                     <Route path="/login" element={<Login />} />
                     <Route path="/register" element={<Register />} />
                     <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>}>
-                        <Route index element={<Navigate to="/translations" replace />} />
+                        <Route index element={<TranslatedDocuments />} />
+                        
                         <Route path="translations" element={<TranslatedDocuments />} />
                         
                         <Route path="knowledge-bases" element={<TranslatorRoute>
@@ -55,7 +56,7 @@ export default function App() {
                             </Routes>
                         </TranslatorRoute>} />
                         
-                        <Route path="assistants" element={<TranslatorRoute>
+                        <Route path="assistants/*" element={<TranslatorRoute>
                             <Routes>
                                 <Route index element={<AssistantList />} />
                                 <Route path="new" element={<AssistantForm />} />

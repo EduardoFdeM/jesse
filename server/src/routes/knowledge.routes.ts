@@ -1,7 +1,7 @@
 // server/routes/knowledge.routes.ts
 import { Router } from 'express';
-import { upload } from '../config/multer';
-import { authenticate } from '../middlewares/auth.middleware';
+import { upload } from '../config/multer.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 import { authorize } from '../middlewares/authorization.middleware.js';
 import {
     createKnowledgeBaseHandler,
@@ -9,8 +9,9 @@ import {
     searchKnowledgeBaseHandler,
     listKnowledgeBasesHandler,
     getKnowledgeBaseHandler
-} from '../controllers/knowledge.controller';
+} from '../controllers/knowledge.controller.js';
 import { validateRequest } from '../middlewares/validateRequest.middleware.js';
+
 
 const router = Router();
 

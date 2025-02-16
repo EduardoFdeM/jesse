@@ -70,6 +70,17 @@ app.get('/', (_req, res) => {
     });
 });
 
+const PORT = process.env.PORT || 4000;
+
+httpServer.listen(PORT, () => {
+    console.log(`=================================`);
+    console.log(`✨ Servidor rodando em http://localhost:${PORT}`);
+    console.log(`Endpoints disponíveis:`);
+    console.log(`- http://localhost:${PORT}/`);
+    console.log(`- http://localhost:${PORT}/socket.io/`);
+    console.log(`=================================`);
+});
+
 // Health Check
 app.use('/api/health', healthRoutes);
 
@@ -91,26 +102,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// Tratamento de erros 404
-app.use((req, res) => {
-    console.log('❌ Rota não encontrada:', {
-        method: req.method,
-        path: req.path,
-        headers: req.headers
-    });
-    res.status(404).json({
-        error: 'Rota não encontrada',
-        method: req.method,
-        path: req.path,
-        timestamp: new Date().toISOString(),
-        availableEndpoints: {
-            root: '/',
-            auth: '/api/auth',
-            translations: '/api/translations',
-            knowledgeBases: '/api/knowledge-bases'
-        }
-    });
-});
 
 // Middleware de Erro
 interface ServerError extends Error {
@@ -149,15 +140,5 @@ app.use((req, res, next) => {
   next();
 });
 
-const PORT = process.env.PORT || 4000;
-
-httpServer.listen(PORT, () => {
-    console.log(`=================================`);
-    console.log(`✨ Servidor rodando em http://localhost:${PORT}`);
-    console.log(`Endpoints disponíveis:`);
-    console.log(`- http://localhost:${PORT}/`);
-    console.log(`- http://localhost:${PORT}/socket.io/`);
-    console.log(`=================================`);
-});
 
 export default app;

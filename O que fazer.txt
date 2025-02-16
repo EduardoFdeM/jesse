@@ -1,0 +1,33 @@
+# Implementação da Base de Conhecimento
+
+## 1. Backend:
+- **Gerenciamento de Base de Conhecimento:**
+  - Certifique-se de que o serviço `knowledge.service.ts` está configurado para buscar e manipular dados da base de conhecimento, integrando com o vector store da OpenAI.
+- **Endpoints:**
+  - Verifique se os endpoints para gerenciar a base de conhecimento estão implementados no `knowledge.controller.ts`.
+
+## 2. Frontend:
+- **Interface de Usuário:**
+  - Implemente componentes React para gerenciar e visualizar a base de conhecimento, conforme descrito na seção de frontend do `INSIDE_README.md`.
+
+# Implementação dos Prompts (Assistants Personalizados)
+
+## 1. Backend:
+- **Gerenciamento de Assistants:**
+  - Certifique-se de que o `assistant.controller.ts` está configurado para gerenciar os endpoints dos assistants.
+- **Integração com OpenAI:**
+  - Verifique se a lógica para criar e gerenciar assistants está implementada no `openai.ts`.
+
+## 2. Frontend:
+- **Interface de Usuário:**
+  - Implemente componentes React para permitir que o usuário crie, edite ou delete assistants personalizados.
+
+# Integração com OpenAI e AWS S3
+
+## 1. OpenAI:
+- **Configuração:**
+  - Certifique-se de que o arquivo `openai.ts` está configurado corretamente para interagir com a API da OpenAI, incluindo operações com vector store, files e assistants.
+
+## 2. AWS S3:
+- **Armazenamento de Arquivos:**
+  - Verifique se o `storage.ts` está configurado para fazer upload e gerenciar arquivos no AWS S3.

@@ -2,9 +2,9 @@ import path from 'path';
 import prisma from '../config/database.js';
 import { ValidationError, BadRequestError, NotFoundError } from '../utils/errors.js';
 import openai from '../config/openai.js';
-import { VectorStore, VectorStoreFileList, files, vectorStore } from '../config/openai.js';
-import { Prisma } from '@prisma/client';
-import { KnowledgeBase } from '@prisma/client';
+import type { VectorStore, VectorStoreFileList } from '../config/openai.js';
+import { files, vectorStore } from '../config/openai.js';
+import { Prisma, KnowledgeBase } from '@prisma/client';
 
 interface SearchResult {
     content: string;

@@ -6,3 +6,6 @@ export const countTokens = async (text: string): Promise<number> => {
     encoder.free();
     return tokens.length;
 }; 
+
+export default countTokens; 
+

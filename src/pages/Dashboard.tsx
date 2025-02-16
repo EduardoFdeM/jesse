@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, useNavigate, useLocation, Link } from 'react-router-dom';
-import { FileText, Book, MessageSquare, LogOut, Sun, Moon, Settings, Files } from 'lucide-react';
+import { FileText, Book, MessageSquare, LogOut, Sun, Moon, Settings } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 
 export function Dashboard() {
@@ -25,7 +25,7 @@ export function Dashboard() {
         { name: 'Bases de Conhecimento', href: '/knowledge-bases', icon: Book, roles: ['SUPERUSER', 'TRANSLATOR'] },
         { name: 'Assistants', href: '/assistants', icon: MessageSquare, roles: ['SUPERUSER', 'TRANSLATOR'] },
         { name: 'Admin', href: '/admin', icon: Settings, roles: ['SUPERUSER'] }
-    ].filter(item => item.roles.includes(userRole));
+    ].filter(item => userRole && item.roles.includes(userRole));
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

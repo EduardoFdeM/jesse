@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { toast } from 'react-hot-toast';
 
 const SOCKET_URL = 'https://pdf-tradutor-production.up.railway.app';
 

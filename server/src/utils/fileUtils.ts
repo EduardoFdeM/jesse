@@ -1,7 +1,7 @@
-import { s3Client } from '../config/storage';
+import { s3Client } from '../config/storage.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Readable } from 'stream';
-import { streamToBuffer } from './streamToBuffer';
+import { streamToBuffer } from './streamToBuffer.js';
 import path from 'path';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
@@ -40,3 +40,7 @@ export const generateTranslatedFileName = (originalName: string): string => {
     const baseName = path.basename(originalName, extension);
     return `translated_${baseName}_${timestamp}${extension}`;
 }; 
+
+export default extractFileContent; 
+
+

@@ -1,4 +1,4 @@
-import { TranslationStatus } from '../types';
+import { TranslationStatus } from '../types/translation.types.js';
 
 export const calculateProgress = ({ status }: { status: TranslationStatus }): number => {
     const progressMap = {
@@ -12,3 +12,5 @@ export const calculateProgress = ({ status }: { status: TranslationStatus }): nu
     
     return progressMap[status] || 0;
 }; 
+
+export default calculateProgress; 

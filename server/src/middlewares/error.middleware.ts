@@ -9,16 +9,12 @@ export const errorHandler = (
   next: NextFunction
 ) => {
   // Log error with request details for debugging
-  console.error('❌ Erro detectado:', {
+  console.error('❌ Erro detalhado:', {
     message: err.message,
-    name: err.name,
     stack: err.stack,
     path: req.path,
     method: req.method,
-    timestamp: new Date().toISOString(),
-    headers: req.headers,
-    query: req.query,
-    body: req.method === 'POST' ? req.body : undefined
+    user: req.user?.id
   });
 
   // Handle Zod validation errors

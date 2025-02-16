@@ -1,5 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 
+// Exportar apenas uma vez
+
 // Status possíveis para uma tradução
 export enum TranslationStatus {
     PENDING = 'pending',
@@ -120,7 +122,7 @@ export interface CostTracking {
 
 export type FileType = 'translation' | 'knowledge_base';
 
-interface ProcessKnowledgeBaseParams {
+export interface ProcessKnowledgeBaseParams {
     id?: string;
     name: string;
     description: string;
@@ -129,7 +131,7 @@ interface ProcessKnowledgeBaseParams {
     existingFileIds?: string[];
 }
 
-type RunStatus = 
+export type RunStatus = 
     | 'queued' 
     | 'in_progress' 
     | 'completed' 
@@ -138,4 +140,7 @@ type RunStatus =
     | 'cancelling' 
     | 'expired' 
     | 'requires_action'
-    | 'incomplete'; 
+    | 'incomplete';
+
+export * from './translation.types.js';
+export * from './vectorStore.types.js'; 

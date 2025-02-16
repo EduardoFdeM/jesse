@@ -10,9 +10,10 @@ import { NotFoundError, UnauthorizedError, BadRequestError } from '../utils/erro
 import prisma from '../config/database.js';
 import openai from '../config/openai.js';
 import { searchVectorStore } from '../services/vectorStore.service.js';
-import { VectorStoreFile } from '../types/vectorStore.types';
+import { VectorStoreFile } from '../types/vectorStore.types.js';
 import * as vectorStoreService from '../services/vectorStore.service.js';
 import { authenticatedHandler } from '../middlewares/auth.middleware.js';
+import type { ProcessKnowledgeBaseParams } from '../types/index.js';
 
 interface FileRequest extends Request {
     file: Express.Multer.File;
@@ -150,11 +151,12 @@ export const getKnowledgeBaseFiles = asyncHandler(async (req: Request, res: Resp
         throw new NotFoundError('Base de conhecimento não encontrada');
     }
 
-    if (!knowledgeBase.vectorStoreId) {
+    const vectorStoreId = knowledgeBase?.vectorStoreId;
+    if (!vectorStoreId) {
         throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
     }
 
-    const files = await vectorStoreService.getFiles(knowledgeBase.vectorStoreId);
+    const files = await vectorStoreService.getFiles(vectorStoreId);
 
     res.json({
         status: 'success',
@@ -183,6 +185,10 @@ export const searchKnowledgeBaseHandler = asyncHandler(async (req: Request, res:
 
     if (!knowledgeBase) {
         throw new NotFoundError('Base de conhecimento não encontrada');
+    }
+
+    if (!knowledgeBase.vectorStoreId) {
+        throw new BadRequestError('Base de conhecimento não possui Vector Store associada');
     }
 
     const searchResults = await searchVectorStore({

@@ -1,16 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 
-type AsyncRequestHandler = (
-  req: Request | AuthenticatedRequest,
+export type AsyncRequestHandler = (
+  req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
 ) => Promise<any>;
 
-export const asyncHandler = (fn: AsyncRequestHandler) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
-  };
+export const asyncHandler = (fn: AsyncRequestHandler) => (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
 };
 
 export const authenticatedHandler = <T>(

@@ -6,10 +6,12 @@ import {
     updateAssistant,
     deleteAssistant
 } from '../controllers/assistant.controller.js';
+import { authorize } from '../middlewares/authorization.middleware.js';
 
 const router = Router();
 
-// Remover o middleware de autenticação daqui pois já está no app.ts
+router.use(authorize(['TRANSLATOR', 'SUPERUSER']));
+
 router.get('/', getAssistants);
 router.post('/', createAssistant);
 router.get('/:id', getAssistant);

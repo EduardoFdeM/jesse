@@ -9,3 +9,5 @@ export const streamToBuffer = async (stream: Readable): Promise<Buffer> => {
         stream.on('end', () => resolve(Buffer.concat(chunks)));
     });
 }; 
+
+export default streamToBuffer; 

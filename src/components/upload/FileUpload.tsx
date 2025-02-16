@@ -15,7 +15,7 @@ interface FileUploadProps {
   selectedKnowledgeBase?: string | null;
   selectedPrompt?: string | null;
   onKnowledgeBaseSelect?: (id: string) => void;
-  onPromptSelect?: (id: string) => void;
+  onPromptSelect?: (id: string | null) => void;
 }
 
 interface UploadQueueItem {

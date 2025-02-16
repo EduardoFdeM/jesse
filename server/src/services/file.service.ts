@@ -1,7 +1,7 @@
 import { Readable } from 'stream';
 import pdf from 'pdf-parse';
 import mammoth from 'mammoth';
-import { streamToBuffer } from '../utils/streamToBuffer';
+import { streamToBuffer } from '../utils/streamToBuffer.js';
 
 interface ExtractedContent {
     text: string;

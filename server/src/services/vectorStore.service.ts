@@ -1,12 +1,18 @@
 import { OpenAI } from 'openai';
-import prisma from '../config/database';
-import openai from '../config/openai';
-import { BadRequestError } from '../utils/errors';
-import { CreateVectorStoreParams, VectorStoreResponse, VectorStoreSearchResult, SearchParams, VectorStoreFile } from '../types/vectorStore.types';
+import prisma from '../config/database.js';
+import openai from '../config/openai.js';
+import { BadRequestError } from '../utils/errors.js';
+import { 
+    CreateVectorStoreParams, 
+    VectorStoreResponse, 
+    VectorStoreSearchResult, 
+    SearchParams, 
+    VectorStoreFile,
+    VectorStoreFileList 
+} from '../types/vectorStore.types.js';
 import { KnowledgeBase } from '@prisma/client';
 import path from 'path';
-import redis from '../config/redis';
-import { VectorStoreFileList } from '../types/vectorStore.types';
+import redis from '../config/redis.js';
 
 export const createVectorStore = async (params: {
     name: string;

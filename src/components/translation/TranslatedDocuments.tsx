@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2 } from 'lucide-react';
-import { Translation, KnowledgeBase, Prompt, User } from '../../types/index';
+import { Translation, KnowledgeBase, Prompt, User, TranslationStatus } from '../../types/index';
 import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
@@ -109,11 +109,11 @@ export function TranslatedDocuments() {
             setTranslations(prev => sortTranslations([...prev, data]));
         };
 
-        const handleProgress = ({ id, progress }: { id: string; progress: number }) => {
+        const handleProgress = ({ id }: { id: string }) => {
             setTranslations(prev => 
                 prev.map(t => 
                     t.id === id 
-                        ? { ...t, status: `processing (${progress}%)` }
+                        ? { ...t, status: TranslationStatus.PROCESSING as const }
                         : t
                 )
             );
@@ -458,9 +458,9 @@ export function TranslatedDocuments() {
 
     const handleUploadError = (error: unknown) => {
         if (error instanceof Error) {
-            handleError(error.message);
+            toast.error(error.message);
         } else {
-            handleError('Erro desconhecido ao fazer upload do arquivo');
+            toast.error('Erro desconhecido ao fazer upload do arquivo');
         }
     };
 

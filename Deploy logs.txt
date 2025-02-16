@@ -1,0 +1,101 @@
+Starting Container
+
+npm warn config production Use `--omit=dev` instead.
+
+Prisma schema loaded from prisma/schema.prisma
+
+Datasource "db": PostgreSQL database "railway", schema "public" at "junction.proxy.rlwy.net:58730"
+
+ 
+
+The database is already in sync with the Prisma schema.
+
+ 
+
+Running generate... (Use --skip-generate to skip the generators)
+
+Running generate... - Prisma Client
+
+✔ Generated Prisma Client (v5.22.0) to ./../node_modules/@prisma/client in 231ms
+
+ 
+
+Stopping Container
+
+Starting Container
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> vite-react-typescript-starter@0.0.0 server:start
+
+> cd server && node dist/index.js
+
+ 
+
+node:internal/modules/esm/resolve:257
+
+    throw new ERR_MODULE_NOT_FOUND(
+
+          ^
+
+ 
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/server/dist/config/storage' imported from /app/server/dist/services/translation.service.js
+
+    at finalizeResolution (node:internal/modules/esm/resolve:257:11)
+
+    at moduleResolve (node:internal/modules/esm/resolve:913:10)
+
+    at defaultResolve (node:internal/modules/esm/resolve:1037:11)
+
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:650:12)
+
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:599:25)
+
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:582:38)
+
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:241:38)
+
+    at ModuleJob._link (node:internal/modules/esm/module_job:132:49) {
+
+  code: 'ERR_MODULE_NOT_FOUND',
+
+  url: 'file:///app/server/dist/config/storage'
+
+}
+
+ 
+
+Node.js v22.10.0
+
+npm warn config production Use `--omit=dev` instead.
+
+ 
+
+> vite-react-typescript-starter@0.0.0 server:start
+
+> cd server && node dist/index.js
+
+ 
+
+node:internal/modules/esm/resolve:257
+
+    throw new ERR_MODULE_NOT_FOUND(
+
+          ^
+
+ 
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/app/server/dist/config/storage' imported from /app/server/dist/services/translation.service.js
+
+    at finalizeResolution (node:internal/modules/esm/resolve:257:11)
+
+    at moduleResolve (node:internal/modules/esm/resolve:913:10)
+
+    at defaultResolve (node:internal/modules/esm/resolve:1037:11)
+
+    at ModuleLoader.defaultResolve (node:internal/modules/esm/loader:650:12)
+
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:599:25)

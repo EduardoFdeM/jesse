@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
-import * as vectorStoreController from '../controllers/vectorStore.controller';
-import { authenticate } from '../middlewares/auth.middleware';
+import * as vectorStoreController from '../controllers/vectorStore.controller.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });

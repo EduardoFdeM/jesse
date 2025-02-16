@@ -38,7 +38,7 @@ export function AssistantForm({ initialData }: AssistantFormProps) {
         description: initialData?.description || '',
         instructions: initialData?.instructions || '',
         tags: initialData?.tags || [],
-        model: initialData?.model || 'gpt-4-turbo-preview',
+        model: initialData?.model || 'gpt-4o-mini',
         temperature: initialData?.temperature || 0.3,
         isPublic: initialData?.isPublic || false
     });

@@ -1,4 +1,3 @@
-import { PrismaClient } from '@prisma/client';
 import { OpenAI } from 'openai';
 import fs from 'fs/promises';
 import { 
@@ -6,32 +5,33 @@ import {
     Translation,
     Prompt,
     EVENTS,
-    FileType
-} from '../types';
+    FileType,
+    TranslateFileParams,
+    TranslationResult 
+} from '../types/index.js';
 import { 
     emitTranslationStarted, 
     emitTranslationProgress, 
     emitTranslationCompleted,
-    emitTranslationError 
-} from './socket.service';
-import prisma from '../config/database';
-import openai from '../config/openai';
+    emitTranslationError
+} from './socket.service.js';
+import prisma from '../config/database.js';
+import openai from '../config/openai.js';
 import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
-import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts';
-import { simpleSearchKnowledgeBaseContext } from './knowledge.service';
-import { uploadToS3 } from '../config/storage';
+import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
+import { simpleSearchKnowledgeBaseContext } from './knowledge.service.js';
+import { generateSignedUrl, uploadToS3, deleteFromS3 } from '../config/storage.js';
 import path from 'path';
 import pdf from 'pdf-parse';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { streamToBuffer } from '../utils/streamToBuffer';
+import { streamToBuffer } from '../utils/streamToBuffer.js';
 import mammoth from 'mammoth';
 import { Readable } from 'stream';
-import { s3Client } from '../config/storage';
-import { calculateTranslationCost } from '../utils/costCalculator';
-import { BadRequestError } from '../utils/errors';
-import { TranslateFileParams, TranslationResult } from '../types/translation.types';
+import { s3Client } from '../config/storage.js';
+import { calculateTranslationCost } from '../utils/costCalculator.js';
+import { BadRequestError } from '../utils/errors.js';
 
 type KnowledgeBase = {
     id: string;
@@ -244,7 +244,11 @@ const updateTranslationStatus = async (
         const progress = calculateProgress({ status });
         
         // Emite evento de progresso detalhado
-        emitDetailedProgress(translationId, status, progress);
+        emitDetailedProgress(
+            translationId,
+            mapOpenAIStatusToTranslation(status as unknown as RunStatus),
+            calculateRunProgress(status as unknown as RunStatusDetails)
+        );
 
         // Emite eventos específicos baseados no status
         if (status === TranslationStatus.COMPLETED) {
@@ -375,8 +379,8 @@ const executeAndMonitorTranslation = async (
             
             emitDetailedProgress(
                 translationId,
-                mapOpenAIStatusToTranslation(status.status as RunStatus),
-                calculateRunProgress(status)
+                mapOpenAIStatusToTranslation(status as unknown as RunStatus),
+                calculateRunProgress(status as unknown as RunStatusDetails)
             );
         }
 
@@ -649,7 +653,7 @@ const processTranslation = async (params: TranslateFileParams, content: string):
             totalTokens: await countTokens(translatedText),
             threadId: thread.id,
             assistantId,
-            status: 'completed'
+            status: TranslationStatus.COMPLETED
         }
     };
 };
@@ -684,7 +688,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 totalTokens: await countTokens(translatedContent),
                 threadId: thread.id,
                 assistantId,
-                status: 'completed'
+                status: TranslationStatus.COMPLETED
             }
         };
     } catch (error) {
@@ -850,7 +854,7 @@ export class TranslationService {
                     totalTokens: await countTokens(translatedContent),
                     threadId: thread.id,
                     assistantId,
-                    status: 'completed'
+                    status: TranslationStatus.COMPLETED
                 }
             };
         } catch (error) {

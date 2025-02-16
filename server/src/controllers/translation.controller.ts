@@ -16,7 +16,7 @@ import { Readable } from 'stream';
 import PDFDocument from 'pdfkit';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import { DEFAULT_TRANSLATION_PROMPT } from '../constants/prompts.js';
-import { TranslationStatus } from '../types';
+import { TranslationStatus, TranslateFileParams } from '../types/translation.types.js';
 
 // Interfaces para o PDF Parser
 interface PDFTextR {
@@ -211,14 +211,15 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             filePath: s3FilePath,
             sourceLanguage: req.body.sourceLanguage,
             targetLanguage: req.body.targetLanguage,
-            userId: req.user.id,
             translationId: translation.id,
-            outputFormat: file.mimetype,
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             promptId: useCustomPrompt ? promptId : undefined,
             useKnowledgeBase,
-            useCustomPrompt
+            useCustomPrompt,
+            userId: req.user!.id,
+            fileSize: file.size,
+            outputFormat: path.extname(file.originalname).toLowerCase()
         });
 
         res.status(202).json({
