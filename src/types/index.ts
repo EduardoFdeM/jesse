@@ -13,9 +13,12 @@ export enum TranslationStatus {
 }
 
 export enum ViewStatus {
-    VISIBLE = 'visible',
-    HIDDEN = 'hidden',
-    ARCHIVED = 'archived'
+    ALL = "all",
+    TO_EDIT = "to_edit",
+    EDITED = "edited",
+    APPROVED = "approved",
+    REVIEW = "review",
+    ARCHIVED = "archived"
 }
 
 // Tipos de usuário
@@ -51,6 +54,17 @@ export interface KnowledgeBase {
 }
 
 // Tipos de tradução
+export interface TranslationShare {
+    id: string;
+    translationId: string;
+    sharedWithId: string;
+    sharedById: string;
+    createdAt: string;
+    updatedAt: string;
+    sharedBy: User;
+    sharedWith: User;
+}
+
 export interface Translation {
     id: string;
     fileName: string;
@@ -62,22 +76,25 @@ export interface Translation {
     targetLanguage: string;
     status: TranslationStatus;
     viewStatus: ViewStatus;
-    errorMessage?: string | null;
-    translatedUrl?: string | null;
-    costData?: string | null;
-    userId: string;
-    knowledgeBaseId?: string | null;
-    threadId?: string | null;
-    runId?: string | null;
-    assistantId?: string | null;
+    errorMessage?: string;
+    translatedUrl?: string;
+    costData?: string;
+    usedPrompt: boolean;
+    usedKnowledgeBase: boolean;
     createdAt: string;
     updatedAt: string;
+    userId: string;
+    user: User;
+    knowledgeBaseId?: string;
+    knowledgeBase?: KnowledgeBase;
+    promptId?: string;
+    prompt?: Prompt;
     translationMetadata?: string;
     plainTextContent?: string;
-    knowledgeBase?: KnowledgeBase;
-    prompt?: Prompt;
-    usedKnowledgeBase?: boolean;
-    usedAssistant?: boolean;
+    threadId?: string;
+    runId?: string;
+    assistantId?: string;
+    shares: TranslationShare[];
 }
 
 // Tipos de prompt/assistente

@@ -19,6 +19,16 @@ interface TranslationMetadata {
     assistantName?: string;
 }
 
+// Atualizar o enum ViewStatus
+enum ViewStatus {
+    ALL = "all",
+    TO_EDIT = "to_edit",
+    EDITED = "edited",
+    APPROVED = "approved",
+    REVIEW = "review",
+    ARCHIVED = "archived"
+}
+
 export function TranslatedDocuments() {
     const [translations, setTranslations] = useState<Translation[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -42,7 +52,7 @@ export function TranslatedDocuments() {
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const userRole = localStorage.getItem('userRole');
-    const [viewFilter, setViewFilter] = useState<ViewStatus>(ViewStatus.VISIBLE);
+    const [viewFilter, setViewFilter] = useState<ViewStatus>(ViewStatus.ALL);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]): Translation[] => {
@@ -272,6 +282,16 @@ export function TranslatedDocuments() {
         }
     };
 
+    // Função para contar documentos por status
+    const getStatusCounts = useCallback(() => {
+        return translations.reduce((acc, translation) => {
+            if (translation.viewStatus !== ViewStatus.ALL) {
+                acc[translation.viewStatus as ViewStatus] = (acc[translation.viewStatus as ViewStatus] || 0) + 1;
+            }
+            return acc;
+        }, {} as Record<ViewStatus, number>);
+    }, [translations]);
+
     // Função para filtrar por data
     const getFilteredTranslations = useCallback(() => {
         return translations.filter(translation => {
@@ -301,7 +321,7 @@ export function TranslatedDocuments() {
             }
 
             // Filtro por status de visualização
-            if (viewFilter !== translation.viewStatus) {
+            if (viewFilter !== ViewStatus.ALL && viewFilter !== translation.viewStatus) {
                 return false;
             }
 
@@ -665,14 +685,6 @@ export function TranslatedDocuments() {
         }
     };
 
-    // Função para contar documentos por status
-    const getStatusCounts = useCallback(() => {
-        return translations.reduce((acc, translation) => {
-            acc[translation.viewStatus] = (acc[translation.viewStatus] || 0) + 1;
-            return acc;
-        }, {} as Record<ViewStatus, number>);
-    }, [translations]);
-
     return (
         <div className="space-y-6">
             <div className="sm:flex sm:items-center">
@@ -682,13 +694,19 @@ export function TranslatedDocuments() {
                     </h1>
                     {userRole === 'EDITOR' && (
                         <div className="mt-2 flex gap-4 text-sm text-gray-600">
-                            <span title="Documentos ativos que estão sendo trabalhados" className="flex items-center gap-1">
-                                👁️ Visíveis: {getStatusCounts()[ViewStatus.VISIBLE] || 0}
+                            <span title="Documentos aguardando edição" className="flex items-center gap-1">
+                                ✏️ A editar: {getStatusCounts()[ViewStatus.TO_EDIT] || 0}
                             </span>
-                            <span title="Documentos temporariamente ocultos (em revisão/pausa)" className="flex items-center gap-1">
-                                🔒 Ocultos: {getStatusCounts()[ViewStatus.HIDDEN] || 0}
+                            <span title="Documentos editados" className="flex items-center gap-1">
+                                ✅ Editados: {getStatusCounts()[ViewStatus.EDITED] || 0}
                             </span>
-                            <span title="Documentos finalizados/histórico" className="flex items-center gap-1">
+                            <span title="Documentos aprovados" className="flex items-center gap-1">
+                                🎯 Aprovados: {getStatusCounts()[ViewStatus.APPROVED] || 0}
+                            </span>
+                            <span title="Documentos em revisão" className="flex items-center gap-1">
+                                🔍 Revisão: {getStatusCounts()[ViewStatus.REVIEW] || 0}
+                            </span>
+                            <span title="Documentos arquivados" className="flex items-center gap-1">
                                 📦 Arquivados: {getStatusCounts()[ViewStatus.ARCHIVED] || 0}
                             </span>
                         </div>
@@ -792,9 +810,12 @@ export function TranslatedDocuments() {
                                 className="border rounded-lg px-4 py-2 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                 title="Filtrar documentos por status"
                             >
-                                <option value={ViewStatus.VISIBLE}>👁️ Mostrar Visíveis</option>
-                                <option value={ViewStatus.HIDDEN}>🔒 Mostrar Ocultos</option>
-                                <option value={ViewStatus.ARCHIVED}>📦 Mostrar Arquivados</option>
+                                <option value={ViewStatus.ALL}>👀 Mostrar Todos</option>
+                                <option value={ViewStatus.TO_EDIT}>✏️ A editar</option>
+                                <option value={ViewStatus.EDITED}>✅ Editados</option>
+                                <option value={ViewStatus.APPROVED}>🎯 Aprovados</option>
+                                <option value={ViewStatus.REVIEW}>🔍 Em Revisão</option>
+                                <option value={ViewStatus.ARCHIVED}>📦 Arquivados</option>
                             </select>
                         )}
 
@@ -929,27 +950,32 @@ export function TranslatedDocuments() {
                             {userRole === 'EDITOR' && (
                                 <div className="mt-2 flex items-center gap-2">
                                     <span className={`px-2 py-1 text-sm rounded-full ${
-                                        translation.viewStatus === ViewStatus.VISIBLE
+                                        translation.viewStatus === ViewStatus.TO_EDIT
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : translation.viewStatus === ViewStatus.EDITED
+                                            ? 'bg-blue-100 text-blue-800'
+                                            : translation.viewStatus === ViewStatus.APPROVED
                                             ? 'bg-green-100 text-green-800'
-                                            : translation.viewStatus === ViewStatus.HIDDEN
-                                            ? 'bg-gray-100 text-gray-800'
-                                            : 'bg-yellow-100 text-yellow-800'
+                                            : translation.viewStatus === ViewStatus.REVIEW
+                                            ? 'bg-purple-100 text-purple-800'
+                                            : 'bg-gray-100 text-gray-800'
                                     }`}>
-                                        {translation.viewStatus === ViewStatus.VISIBLE
-                                            ? '👁️ Visível'
-                                            : translation.viewStatus === ViewStatus.HIDDEN
-                                            ? '🔒 Oculto'
+                                        {translation.viewStatus === ViewStatus.TO_EDIT
+                                            ? '✏️ A editar'
+                                            : translation.viewStatus === ViewStatus.EDITED
+                                            ? '✅ Editado'
+                                            : translation.viewStatus === ViewStatus.APPROVED
+                                            ? '🎯 Aprovado'
+                                            : translation.viewStatus === ViewStatus.REVIEW
+                                            ? '🔍 Em Revisão'
                                             : '📦 Arquivado'}
                                     </span>
-                                    <select
-                                        value={translation.viewStatus}
-                                        onChange={(e) => handleViewStatusChange(translation.id, e.target.value as ViewStatus)}
-                                        className="border rounded-lg px-3 py-1 text-sm bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    >
-                                        <option value={ViewStatus.VISIBLE}>👁️ Marcar como Visível</option>
-                                        <option value={ViewStatus.HIDDEN}>🔒 Ocultar</option>
-                                        <option value={ViewStatus.ARCHIVED}>📦 Arquivar</option>
-                                    </select>
+                                    {/* Adicionar informação de quem compartilhou */}
+                                    {translation.shares && translation.shares.length > 0 && (
+                                        <span className="text-sm text-gray-600">
+                                            Compartilhado por: {translation.shares[0].sharedBy.name}
+                                        </span>
+                                    )}
                                 </div>
                             )}
                         </div>
