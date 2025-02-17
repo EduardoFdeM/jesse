@@ -1,4 +1,4 @@
-import { FileParser, ParseResult, ParserOptions } from '../types';
+import { FileParser, ParseResult, ParserOptions } from '../types.js';
 
 export class TxtParser implements FileParser {
     async parse(buffer: Buffer, options?: ParserOptions): Promise<ParseResult> {

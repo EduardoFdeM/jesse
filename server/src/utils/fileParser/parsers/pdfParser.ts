@@ -1,6 +1,6 @@
-import { FileParser, ParseResult, ParserOptions } from '../types';
+import { FileParser, ParseResult, ParserOptions } from '../types.js';
 import * as pdfjsLib from 'pdfjs-dist';
-import { OCRService } from '../services/ocrService';
+import { OCRService } from '../services/ocrService.js';
 
 interface TextItem {
     str: string;

@@ -1,4 +1,4 @@
-import { FileParser, ParseResult, ParserOptions } from '../types';
+import { FileParser, ParseResult, ParserOptions } from '../types.js';
 import mammoth from 'mammoth';
 
 export class DocxParser implements FileParser {

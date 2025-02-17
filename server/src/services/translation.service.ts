@@ -7,7 +7,7 @@ import openaiClient from '../config/openai.js';
 import { emitTranslationCompleted, emitTranslationError, emitTranslationProgress } from './socket.service.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import { BaseError } from '../utils/errors.js';
-import { parseFile } from '../utils/fileParser';
+import { parseFile } from '../utils/fileParser/index.js';
 
 interface TranslationData {
     id: string;

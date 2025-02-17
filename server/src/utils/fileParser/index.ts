@@ -1,7 +1,7 @@
-import { PDFParser } from './parsers/pdfParser';
-import { DocxParser } from './parsers/docxParser';
-import { TxtParser } from './parsers/txtParser';
-import { ParseResult, ParserOptions } from './types';
+import { PDFParser } from './parsers/pdfParser.js';
+import { DocxParser } from './parsers/docxParser.js';
+import { TxtParser } from './parsers/txtParser.js';
+import { ParseResult, ParserOptions } from './types.js';
 
 const parsers = [
     new PDFParser(),
