@@ -1,5 +1,4 @@
 import fs from 'fs';
-import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
@@ -38,42 +37,18 @@ interface TranslateFileParams {
     assistantId?: string;
 }
 
-// Função para extrair texto do PDF com timeout
-const extractTextFromPDF = (filePath: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            reject(new Error('Timeout ao extrair texto do PDF'));
-        }, 30000);
-
-        const pdfParser = new PDFParser();
-        
-        pdfParser.on('pdfParser_dataReady', (data) => {
-            clearTimeout(timeout);
-            try {
-                const text = data.Pages.map((page) => {
-                    return page.Texts.map((text) => 
-                        text.R.map((r) => decodeURIComponent(r.T)).join('')
-                    ).join('\n');
-                }).join('\n\n---PAGE---\n\n');
-
-                resolve(text);
-            } catch {
-                reject(new Error('Erro ao processar texto do PDF'));
-            }
-        });
-        
-        pdfParser.on('pdfParser_dataError', (error) => {
-            clearTimeout(timeout);
-            reject(error);
-        });
-
-        try {
-            pdfParser.loadPDF(filePath);
-        } catch (error) {
-            clearTimeout(timeout);
-            reject(error instanceof Error ? error : new Error('Erro desconhecido'));
-        }
-    });
+// Função para extrair texto do PDF
+const extractTextFromPDF = async (filePath: string): Promise<string> => {
+    try {
+        const dataBuffer = await fs.promises.readFile(filePath);
+        // Importação dinâmica do pdf-parse para evitar o erro de inicialização
+        const pdfParse = (await import('pdf-parse')).default;
+        const data = await pdfParse(dataBuffer);
+        return data.text;
+    } catch (error) {
+        console.error('Erro ao extrair texto do PDF:', error);
+        throw new Error('Falha ao extrair texto do PDF');
+    }
 };
 
 // Função unificada para salvar/atualizar arquivo

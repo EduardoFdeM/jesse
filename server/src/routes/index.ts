@@ -21,9 +21,14 @@ router.use(authenticate);
 // Rotas protegidas
 router.use('/translations', authorize(['SUPERUSER', 'TRANSLATOR']), translationRoutes);
 router.use('/knowledge-bases', authorize(['SUPERUSER', 'TRANSLATOR']), knowledgeRoutes);
-router.use('/assistant', authorize(['SUPERUSER', 'TRANSLATOR']), assistantRoutes);
+router.use('/assistants', authorize(['SUPERUSER', 'TRANSLATOR']), assistantRoutes);
 router.use('/files', authorize(['SUPERUSER']), filesRoutes);
 router.use('/admin', authorize(['SUPERUSER']), adminRoutes);
+
+// Redirecionar /assistant para /assistants (compatibilidade)
+router.use('/assistant', (req, res) => {
+    res.redirect(307, req.url.replace('/assistant', '/assistants'));
+});
 
 export default router;
 

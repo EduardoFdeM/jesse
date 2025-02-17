@@ -26,8 +26,8 @@ api.interceptors.request.use(
             config.headers.Authorization = `Bearer ${token}`;
         }
 
-        // Criar um novo controller apenas se não existir um para a rota
-        if (config.url && !controllerMap.has(config.url)) {
+        // Criar um novo controller apenas para requisições não-GET
+        if (config.url && config.method !== 'get' && !controllerMap.has(config.url)) {
             const controller = new AbortController();
             controllerMap.set(config.url, controller);
             config.signal = controller.signal;

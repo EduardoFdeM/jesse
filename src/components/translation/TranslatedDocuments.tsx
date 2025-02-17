@@ -440,13 +440,13 @@ export function TranslatedDocuments() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [kbResponse, promptsResponse] = await Promise.all([
+                const [kbResponse, assistantsResponse] = await Promise.all([
                     api.get('/api/knowledge-bases'),
-                    api.get('/api/prompts')
+                    api.get('/api/assistants')
                 ]);
 
                 setKnowledgeBases(kbResponse.data.data);
-                setPrompts(promptsResponse.data.data);
+                setPrompts(assistantsResponse.data.data);
             } catch (error) {
                 console.error('Erro ao carregar dados:', error);
                 toast.error('Erro ao carregar dados necessários');

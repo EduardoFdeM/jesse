@@ -9,11 +9,10 @@ import { translateFile } from '../services/translation.service.js';
 import { generateSignedUrl, uploadToS3, deleteFromS3 } from '../config/storage.js';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client } from '../config/storage.js';
-import PDFParser, { PDFData, PDFPage, PDFText, PDFTextR } from 'pdf2json';
+import PDFDocument from 'pdfkit';
 import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import { authenticatedHandler } from '../utils/asyncHandler.js';
 import { Readable } from 'stream';
-import PDFDocument from 'pdfkit';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
 import * as translationService from '../services/translation.service.js';
 
@@ -373,69 +372,18 @@ export const getTranslationContent = authenticatedHandler(async (req, res) => {
                 const response = await s3Client.send(command);
 
                 if (translation.fileType === 'application/pdf') {
-                    content = await new Promise<string>((resolve, reject) => {
-                        const chunks: Buffer[] = [];
-                        
-                        if (response.Body instanceof Readable) {
-                            response.Body
-                                .on('data', (chunk: Buffer) => chunks.push(chunk))
-                                .on('end', async () => {
-                                    try {
-                                        const buffer = Buffer.concat(chunks);
-                                        const tempDir = path.join(process.cwd(), 'temp');
-                                        
-                                        // Garantir que o diretório temp existe
-                                        if (!fs.existsSync(tempDir)) {
-                                            await fs.promises.mkdir(tempDir, { recursive: true });
-                                        }
-                                        
-                                        // Criar arquivo temporário
-                                        const tempFile = path.join(tempDir, `temp_${Date.now()}.pdf`);
-                                        await fs.promises.writeFile(tempFile, buffer);
-                                        
-                                        const pdfParser = new PDFParser();
-                                        
-                                        pdfParser.on('pdfParser_dataReady', (pdfData: PDFData) => {
-                                            try {
-                                                const text = pdfData.Pages
-                                                    .map((page: PDFPage) => 
-                                                        page.Texts.map((text: PDFText) => 
-                                                            text.R.map((r: PDFTextR) => r.T)
-                                                                .join(' '))
-                                                            .join('\n'))
-                                                        .join('\n\n');
-                                                
-                                                // Limpar arquivo temporário
-                                                fs.unlink(tempFile, (err) => {
-                                                    if (err) console.error('Erro ao deletar arquivo temporário:', err);
-                                                });
-                                                
-                                                resolve(decodeURIComponent(text));
-                                            } catch {
-                                                reject(new Error('Erro ao processar PDF'));
-                                            }
-                                        });
-                                        
-                                        pdfParser.on('pdfParser_dataError', () => {
-                                            // Limpar arquivo temporário em caso de erro
-                                            fs.unlink(tempFile, (err) => {
-                                                if (err) console.error('Erro ao deletar arquivo temporário:', err);
-                                            });
-                                            reject(new Error('Erro ao processar PDF'));
-                                        });
-
-                                        pdfParser.loadPDF(tempFile);
-                                    } catch {
-                                        reject(new Error('Erro ao processar buffer do PDF'));
-                                    }
-                                })
-                                .on('error', (error: Error) => {
-                                    reject(error);
-                                });
-                        } else {
-                            reject(new Error('Formato de resposta inválido do S3'));
+                    const chunks: Buffer[] = [];
+                    
+                    if (response.Body instanceof Readable) {
+                        for await (const chunk of response.Body) {
+                            chunks.push(Buffer.from(chunk));
                         }
-                    });
+                        const buffer = Buffer.concat(chunks);
+                        // Importação dinâmica do pdf-parse
+                        const pdfParse = (await import('pdf-parse')).default;
+                        const data = await pdfParse(buffer);
+                        content = data.text;
+                    }
                 } else {
                     content = await response.Body?.transformToString() || '';
                 }
