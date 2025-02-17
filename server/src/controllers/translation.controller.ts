@@ -97,27 +97,37 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         const useKnowledgeBase = req.body.useKnowledgeBase === 'true';
         const useCustomPrompt = req.body.useCustomPrompt === 'true';
         const knowledgeBaseId = useKnowledgeBase ? req.body.knowledgeBaseId : null;
-        const promptId = useCustomPrompt ? req.body.promptId : null;
+        const assistantId = useCustomPrompt ? req.body.assistantId : null;
 
-        console.log('📝 Iniciando tradução:', {
-            file: file?.originalname,
+        console.log('📝 Iniciando processo de tradução:', {
+            fileName: file?.originalname,
+            fileSize: file?.size,
+            fileType: file?.mimetype,
             useKnowledgeBase,
             useCustomPrompt,
             knowledgeBaseId,
-            promptId
+            assistantId,
+            userId: req.user?.id
         });
 
         if (!file) {
+            console.error('❌ Erro: Nenhum arquivo enviado');
             throw new BadRequestError('Nenhum arquivo foi enviado');
         }
 
         // Validações iniciais
         if (!req.body.sourceLanguage || !req.body.targetLanguage || !req.user?.id) {
+            console.error('❌ Erro: Dados inválidos', {
+                sourceLanguage: req.body.sourceLanguage,
+                targetLanguage: req.body.targetLanguage,
+                userId: req.user?.id
+            });
             throw new ValidationError('Dados inválidos para tradução');
         }
 
         // Validar base de conhecimento se selecionada
         if (useKnowledgeBase && knowledgeBaseId) {
+            console.log('🔍 Verificando base de conhecimento:', knowledgeBaseId);
             const knowledgeBase = await prisma.knowledgeBase.findFirst({
                 where: { 
                     id: knowledgeBaseId,
@@ -125,26 +135,18 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 }
             });
             if (!knowledgeBase) {
+                console.error('❌ Erro: Base de conhecimento não encontrada');
                 throw new ValidationError('Base de conhecimento não encontrada');
             }
+            console.log('✅ Base de conhecimento validada');
         }
 
-        // Validar prompt se selecionado
-        if (useCustomPrompt && promptId) {
-            const prompt = await prisma.prompt.findFirst({
-                where: { 
-                    id: promptId,
-                    userId: req.user.id
-                }
-            });
-            if (!prompt) {
-                throw new ValidationError('Prompt não encontrado');
-            }
-        }
-
+        console.log('📤 Fazendo upload do arquivo para S3...');
         // Fazer upload do arquivo para S3 usando o buffer
         const s3FilePath = await uploadToS3(file.buffer, file.originalname);
+        console.log('✅ Upload concluído:', s3FilePath);
 
+        console.log('💾 Criando registro da tradução...');
         // Criar o registro com os dados corretos
         const translation = await prisma.translation.create({
             data: {
@@ -159,20 +161,20 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 fileType: file.mimetype,
                 usedPrompt: useCustomPrompt,
                 usedKnowledgeBase: useKnowledgeBase,
-                promptId,
                 knowledgeBaseId,
-                threadId: null,  // Será atualizado durante a tradução
-                runId: null     // Será atualizado durante a tradução
+                assistantId
             },
             include: {
-                knowledgeBase: true,
-                prompt: true
+                knowledgeBase: true
             }
         });
+        console.log('✅ Registro criado:', translation.id);
 
         // Emitir evento de início
+        console.log('📡 Emitindo evento de início...');
         emitTranslationStarted(translation);
         
+        console.log('🚀 Iniciando processo de tradução...');
         // Iniciar tradução
         translateFile({
             filePath: s3FilePath,
@@ -183,18 +185,20 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             outputFormat: file.mimetype,
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
-            promptId: useCustomPrompt ? promptId : undefined,
-            useKnowledgeBase,
-            useCustomPrompt
+            assistantId: useCustomPrompt ? assistantId : undefined
         });
 
+        console.log('✅ Processo iniciado com sucesso');
         res.status(202).json({
             message: 'Tradução iniciada com sucesso',
             translation
         });
 
     } catch (error) {
-        console.error('❌ Erro no processo de tradução:', error);
+        console.error('❌ Erro crítico no processo de tradução:', error);
+        if (error instanceof Error) {
+            emitTranslationError(req.params.id, error.message);
+        }
         throw error;
     }
 });
@@ -421,7 +425,7 @@ export const getTranslationContent = authenticatedHandler(async (req, res) => {
                                         });
 
                                         pdfParser.loadPDF(tempFile);
-                                    } catch (error) {
+                                    } catch {
                                         reject(new Error('Erro ao processar buffer do PDF'));
                                     }
                                 })

@@ -5,6 +5,7 @@ import knowledgeRoutes from './knowledge.routes.js';
 import assistantRoutes from './assistant.routes.js';
 import adminRoutes from './admin.routes.js';
 import filesRoutes from './files.routes.js';
+import healthRoutes from './health.routes.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { authorize } from '../middlewares/authorization.middleware.js';
 
@@ -12,6 +13,7 @@ const router = Router();
 
 // Rotas públicas
 router.use('/auth', authRoutes);
+router.use('/health', healthRoutes);
 
 // Middleware de autenticação para todas as rotas protegidas
 router.use(authenticate);
@@ -29,4 +31,5 @@ export { default as assistantRoutes } from './assistant.routes.js';
 export { default as authRoutes } from './auth.routes.js';
 export { default as translationRoutes } from './translation.routes.js';
 export { default as knowledgeRoutes } from './knowledge.routes.js';
-export { default as filesRoutes } from './files.routes.js'; 
+export { default as filesRoutes } from './files.routes.js';
+export { default as healthRoutes } from './health.routes.js'; 

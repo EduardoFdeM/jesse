@@ -1,9 +1,9 @@
 import OpenAI from 'openai';
 
 // Configuração do cliente OpenAI
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-});
+// const openai = new OpenAI({
+//     apiKey: process.env.OPENAI_API_KEY,
+// });
 
 // Interfaces
 export interface VectorStore {
@@ -117,8 +117,6 @@ interface RunResponse {
     status: string;
     started_at: number | null;
     completed_at: number | null;
-    model: string;
-    instructions: string | null;
 }
 
 // Funções para Vector Store
@@ -371,10 +369,11 @@ const assistantApi = {
 
 // Funções para Threads e Runs
 const threadsApi = {
-    create: async (): Promise<ThreadResponse> => {
+    create: async (params: { messages: Array<{ role: string; content: string }> }): Promise<ThreadResponse> => {
         const response = await fetch('https://api.openai.com/v1/threads', {
             method: 'POST',
-            headers: getHeaders(true)
+            headers: getHeaders(true),
+            body: JSON.stringify(params)
         });
 
         if (!response.ok) {
@@ -385,23 +384,6 @@ const threadsApi = {
     },
 
     messages: {
-        create: async (threadId: string, params: {
-            role: string;
-            content: string;
-        }): Promise<MessageResponse> => {
-            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
-                method: 'POST',
-                headers: getHeaders(true),
-                body: JSON.stringify(params)
-            });
-
-            if (!response.ok) {
-                throw new Error('Erro ao criar mensagem');
-            }
-
-            return await response.json();
-        },
-
         list: async (threadId: string): Promise<{ data: MessageResponse[] }> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
                 headers: getHeaders(true)
@@ -418,7 +400,6 @@ const threadsApi = {
     runs: {
         create: async (threadId: string, params: {
             assistant_id: string;
-            model: string;
         }): Promise<RunResponse> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
                 method: 'POST',

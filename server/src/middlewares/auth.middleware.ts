@@ -26,27 +26,34 @@ export interface AuthenticatedRequest extends Request {
     };
 }
 
-export const authenticate = async (req: Request, res: Response, next: NextFunction) => {
-    console.log('🔍 Autenticação iniciada:', {
-        path: req.path,
-        headers: {
-            authorization: req.headers.authorization,
-            origin: req.headers.origin
-        }
-    });
-    
+// Lista de rotas públicas que não requerem autenticação
+const PUBLIC_ROUTES = [
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/health'
+];
+
+export const authenticate = async (req: Request, _res: Response, next: NextFunction) => {
     try {
+        // Verificar se é uma rota pública
+        if (PUBLIC_ROUTES.includes(req.path)) {
+            return next();
+        }
+
         const authHeader = req.headers.authorization;
         
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            console.log('❌ Token não fornecido ou formato inválido');
             throw new UnauthorizedError('Token não fornecido ou formato inválido');
         }
 
         const token = authHeader.split(' ')[1];
         
-        console.log('🔑 Verificando token...');
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key') as { id: string };
+        let decoded: { id: string };
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET || 'default_secret_key') as { id: string };
+        } catch (_jwtError) {
+            throw new UnauthorizedError('Token inválido ou expirado');
+        }
         
         const user = await prisma.user.findUnique({
             where: { id: decoded.id },
@@ -54,17 +61,17 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
         });
 
         if (!user) {
-            console.log('❌ Usuário não encontrado para o token');
             throw new UnauthorizedError('Usuário não encontrado');
         }
 
-        console.log('✅ Usuário autenticado:', user.email);
         req.user = user;
         next();
     } catch (error) {
-        console.error('❌ Erro na autenticação:', error);
-        res.status(401).json({
-            error: error instanceof Error ? error.message : 'Erro de autenticação'
-        });
+        // Garantir que sempre passamos um UnauthorizedError para o próximo middleware
+        if (error instanceof UnauthorizedError) {
+            next(error);
+        } else {
+            next(new UnauthorizedError('Erro de autenticação'));
+        }
     }
 };

@@ -15,26 +15,7 @@ export enum TranslationStatus {
 
 declare global {
     // Socket.IO global instance
-    var io: Server | undefined;
-
-    // User Types
-    interface User {
-        id: string;
-        name: string;
-        email: string;
-        password: string;
-        role: string;
-        createdAt: Date;
-        updatedAt: Date;
-        translations?: Translation[];
-        knowledgeBases?: KnowledgeBase[];
-        prompts?: Prompt[];
-        _count?: {
-            translations: number;
-            knowledgeBases: number;
-            prompts: number;
-        };
-    }
+    let io: Server | undefined;
 
     // Translation Types
     interface Translation {
@@ -81,14 +62,6 @@ declare global {
         userId: string;
     }
 
-    interface KnowledgeBaseChunk {
-        id: string;
-        content: string;
-        knowledgeBaseId: string;
-        createdAt: Date;
-        updatedAt: Date;
-    }
-
     // Prompt/Assistant Types
     interface Prompt {
         id: string;
@@ -103,17 +76,6 @@ declare global {
         isPublic: boolean;
         model: string;
         temperature: number;
-    }
-
-    interface PromptVersion {
-        id: string;
-        version: string;
-        content: string;
-        description?: string;
-        tags: string[];
-        createdAt: Date;
-        promptId: string;
-        userId: string;
     }
 
     // Socket Events
@@ -168,70 +130,6 @@ declare global {
             };
         };
     }
-
-    interface AssistantCreateParams {
-        name: string;
-        instructions: string;
-        model: string;
-        temperature?: number;
-    }
-
-    interface AssistantModifyParams {
-        name?: string;
-        instructions?: string;
-        model?: string;
-    }
-
-    interface MessageCreateParams {
-        role: string;
-        content: string;
-    }
-
-    interface RunCreateParams {
-        assistant_id: string;
-        model: string;
-    }
-
-    // Translation Metadata
-    interface TranslationMetadata {
-        usedKnowledgeBase: boolean;
-        usedPrompt: boolean;
-        knowledgeBaseName: string | null;
-        promptName: string | null;
-    }
-
-    // Stats Types
-    interface UserStats {
-        translations: Translation[];
-        translationStats: Record<string, number>;
-        costByMonth: Record<string, number>;
-        successRate: number;
-        averageTranslationTime: number;
-        recentActivity: Array<{
-            id: string;
-            type: 'translation' | 'prompt';
-            action: string;
-            timestamp: string;
-            details: Record<string, string | number | boolean | null>;
-        }>;
-    }
-
-    interface UserActivity {
-        id: string;
-        type: 'translation' | 'prompt' | 'knowledge_base' | 'edit';
-        action: string;
-        timestamp: string;
-        details: {
-            fileName?: string;
-            fileType?: string;
-            status?: TranslationStatus;
-            cost?: number;
-            promptName?: string;
-            knowledgeBaseName?: string;
-        };
-    }
 }
 
-export {};
-
-// Não é necessário exportar nada em arquivos de declaração 
+export {}; 

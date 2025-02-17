@@ -1,20 +1,11 @@
 import fs from 'fs';
-import OpenAI from 'openai';
 import PDFParser from 'pdf2json';
 import PDFDocument from 'pdfkit';
 import prisma from '../config/database.js';
 import { uploadToS3 } from '../config/storage.js';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
-
-interface PDFParserData {
-    Pages: Array<{
-        Texts: Array<{
-            R: Array<{
-                T: string;
-            }>;
-        }>;
-    }>;
-}
+import openaiClient from '../config/openai.js';
+import { emitTranslationCompleted, emitTranslationError, emitTranslationProgress } from './socket.service.js';
 
 interface TranslationData {
     id: string;
@@ -30,6 +21,9 @@ interface TranslationData {
     costData?: string | null;
     userId: string;
     knowledgeBaseId?: string | null;
+    threadId?: string | null;
+    runId?: string | null;
+    assistantId?: string | null;
 }
 
 interface TranslateFileParams {
@@ -37,20 +31,12 @@ interface TranslateFileParams {
     sourceLanguage: string;
     targetLanguage: string;
     userId: string;
-    knowledgeBasePath?: string;
     translationId: string;
     outputFormat: string;
     originalName: string;
-    promptId?: string;
-    promptVersion?: string;
     knowledgeBaseId?: string;
-    useKnowledgeBase: boolean;
-    useCustomPrompt: boolean;
+    assistantId?: string;
 }
-
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-});
 
 // Função para extrair texto do PDF com timeout
 const extractTextFromPDF = (filePath: string): Promise<string> => {
@@ -61,7 +47,7 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
 
         const pdfParser = new PDFParser();
         
-        pdfParser.on('pdfParser_dataReady', (data: PDFParserData) => {
+        pdfParser.on('pdfParser_dataReady', (data) => {
             clearTimeout(timeout);
             try {
                 const text = data.Pages.map((page) => {
@@ -76,7 +62,7 @@ const extractTextFromPDF = (filePath: string): Promise<string> => {
             }
         });
         
-        pdfParser.on('pdfParser_dataError', (error: Error) => {
+        pdfParser.on('pdfParser_dataError', (error) => {
             clearTimeout(timeout);
             reject(error);
         });
@@ -182,8 +168,13 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             ? await extractTextFromPDF(params.filePath)
             : await fs.promises.readFile(params.filePath, 'utf-8');
 
-        // Criar thread para a tradução
-        const thread = await openai.beta.threads.create();
+        // Criar thread com a mensagem inicial
+        const thread = await openaiClient.beta.threads.create({
+            messages: [{
+                role: "user",
+                content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
+            }]
+        });
 
         // Atualizar com o threadId
         await prisma.translation.update({
@@ -194,24 +185,28 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             }
         });
 
-        // Adicionar a mensagem com o texto para tradução
-        await openai.beta.threads.messages.create(thread.id, {
-            role: "user",
-            content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}. Mantenha a formatação original:\n\n${fileContent}`
+        // Criar run com o assistant apropriado
+        const assistantId = params.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
+        const run = await openaiClient.beta.threads.runs.create(thread.id, {
+            assistant_id: assistantId
         });
 
-        // Executar o assistant padrão
-        const run = await openai.beta.threads.runs.create(thread.id, {
-            assistant_id: process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!
+        // Atualizar com o runId
+        await prisma.translation.update({
+            where: { id: params.translationId },
+            data: { 
+                runId: run.id,
+                assistantId
+            }
         });
 
         // Aguardar conclusão
         let translatedContent = '';
         while (true) {
-            const runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id);
+            const runStatus = await openaiClient.beta.threads.runs.retrieve(thread.id, run.id);
 
             if (runStatus.status === 'completed') {
-                const messages = await openai.beta.threads.messages.list(thread.id);
+                const messages = await openaiClient.beta.threads.messages.list(thread.id);
                 const assistantMessage = messages.data.find(m => m.role === 'assistant');
                 if (assistantMessage?.content[0]?.type === 'text') {
                     translatedContent = assistantMessage.content[0].text.value;
@@ -221,6 +216,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
                 throw new Error('Falha na tradução');
             }
 
+            // Emitir progresso
+            emitTranslationProgress(params.translationId, 50);
             await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
@@ -228,7 +225,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         const savedFile = await saveFileContent(
             translatedContent,
             params.originalName,
-            'pdf'
+            params.outputFormat
         );
 
         // Atualizar registro da tradução
@@ -243,7 +240,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
             }
         });
 
-        global.io?.emit('translation:completed', updatedTranslation);
+        emitTranslationCompleted(updatedTranslation);
         return updatedTranslation;
 
     } catch (error) {
@@ -253,8 +250,8 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
 };
 
 const handleTranslationError = async (error: unknown, translationId: string) => {
-    console.error('Erro na tradução:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido durante a tradução';
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido na tradução';
+    
     await prisma.translation.update({
         where: { id: translationId },
         data: {
@@ -262,7 +259,8 @@ const handleTranslationError = async (error: unknown, translationId: string) => 
             errorMessage
         }
     });
-    global.io?.emit('translation:error', { id: translationId, error: errorMessage });
+
+    emitTranslationError(translationId, errorMessage);
 };
 
 // Funções de acesso ao banco

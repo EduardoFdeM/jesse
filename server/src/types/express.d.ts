@@ -1,4 +1,5 @@
 import { Request } from 'express';
+import { UserRole } from './global';
 
 declare global {
     namespace Express {
