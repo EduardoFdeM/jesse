@@ -15,12 +15,23 @@ export class KnowledgeController {
   createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
     const { name, description } = req.body;
     const files = req.files as Express.Multer.File[];
-    let existingFileIds = [];
+    let existingFileIds: string[] = [];
     
     try {
-        existingFileIds = req.body.existingFileIds ? JSON.parse(req.body.existingFileIds) : [];
-    } catch {
-        throw new BadRequestError('IDs de arquivos existentes inválidos');
+        // Tratar tanto JSON direto quanto string JSON do FormData
+        if (req.body.existingFileIds) {
+            const parsed = typeof req.body.existingFileIds === 'string' 
+                ? JSON.parse(req.body.existingFileIds)
+                : req.body.existingFileIds;
+
+            if (!Array.isArray(parsed)) {
+                throw new BadRequestError("O campo 'existingFileIds' deve ser um array de strings");
+            }
+            existingFileIds = parsed;
+        }
+    } catch (error) {
+        if (error instanceof BadRequestError) throw error;
+        throw new BadRequestError("O campo 'existingFileIds' deve ser enviado como uma string JSON contendo um array de IDs");
     }
 
     const userId = req.user?.id;

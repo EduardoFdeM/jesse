@@ -29,7 +29,7 @@ router.post(
         body: {
             name: { type: 'string', required: true },
             description: { type: 'string', required: true },
-            existingFileIds: { type: 'array', items: { type: 'string' }, required: false }
+            existingFileIds: { type: 'string', required: false }
         }
     }),
     controller.createKnowledgeBase
@@ -90,5 +90,8 @@ router.delete(
 router.get('/files', controller.listOpenAIFiles);
 router.post('/files', upload.single('file'), controller.createOpenAIFile);
 router.delete('/files/:fileId', controller.deleteOpenAIFile);
+
+// OpenAI Vector Stores
+router.get('/vector_stores/openai', controller.listVectorStores);
 
 export default router;

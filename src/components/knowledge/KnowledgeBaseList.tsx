@@ -11,8 +11,20 @@ import { OpenAIFiles } from './OpenAIFiles';
 interface VectorStoreFile {
     id: string;
     object: 'vector_store.file';
+    usage_bytes: number;
     created_at: number;
     vector_store_id: string;
+    status: string;
+    last_error: null | string;
+    chunking_strategy: {
+        type: string;
+        static: {
+            max_chunk_size_tokens: number;
+            chunk_overlap_tokens: number;
+        };
+    };
+    attributes: Record<string, unknown>;
+    filename?: string;
 }
 
 interface VectorStoreFileList {
@@ -81,7 +93,30 @@ export function KnowledgeBaseList() {
         try {
             setFilesLoading(prev => ({ ...prev, [baseId]: true }));
             const response = await api.get(`/api/knowledge-bases/${baseId}/files`);
-            setBaseFiles(prev => ({ ...prev, [baseId]: response.data.data }));
+            const vectorStoreFiles = response.data.data;
+
+            const filesWithDetails = await Promise.all(
+                vectorStoreFiles.data.map(async (file) => {
+                    try {
+                        const fileDetails = await api.get(`/api/files/${file.id}`);
+                        return {
+                            ...file,
+                            filename: fileDetails.data.data.filename
+                        };
+                    } catch (error) {
+                        console.error(`Erro ao buscar detalhes do arquivo ${file.id}:`, error);
+                        return file;
+                    }
+                })
+            );
+
+            setBaseFiles(prev => ({
+                ...prev,
+                [baseId]: {
+                    ...response.data.data,
+                    data: filesWithDetails
+                }
+            }));
         } catch (error) {
             console.error('Erro ao carregar arquivos:', error);
         } finally {
@@ -98,16 +133,60 @@ export function KnowledgeBaseList() {
         }
     };
 
+    // Função para abreviar IDs
+    const formatId = (id: string, maxLength: number = 20) => {
+        if (id.length <= maxLength) return id;
+        const start = id.slice(0, maxLength - 10);
+        const end = id.slice(-7);
+        return `${start}...${end}`;
+    };
+
+    // Função para formatar o ID do arquivo
+    const formatFileId = (id: string) => {
+        // Pega apenas os primeiros 8 caracteres do ID
+        return id.slice(0, 8) + '...';
+    };
+
+    // Função para formatar o nome do arquivo
+    const formatFileName = (filename: string, maxLength: number = 20) => {
+        if (!filename) return '';
+        if (filename.length <= maxLength) return filename;
+        const extension = filename.split('.').pop() || '';
+        const name = filename.slice(0, maxLength - 3 - extension.length);
+        return `${name}...${extension}`;
+    };
+
     const renderFileInfo = (file: VectorStoreFile) => {
+        // Tentar obter o nome do arquivo de várias formas possíveis
+        const getDisplayName = () => {
+            // Se tivermos o nome do arquivo diretamente
+            if (file.filename) return file.filename;
+            
+            // Se tivermos o nome em metadata
+            if (file.metadata?.filename) return file.metadata.filename;
+            
+            // Se o ID começar com 'file-', remover esse prefixo
+            if (file.id.startsWith('file-')) {
+                return file.id.substring(5);
+            }
+            
+            // Último caso, usar o ID
+            return file.id;
+        };
+
+        const displayName = getDisplayName();
+        
         return (
             <div key={file.id} className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <FileText className="h-3 w-3" />
-                        <span className="font-medium">{file.id}</span>
+                        <span className="font-medium" title={displayName}>
+                            {formatFileName(displayName)}
+                        </span>
                     </div>
-                    <span className="text-xs text-gray-400">
-                        Vector Store: {file.vector_store_id}
+                    <span className="text-xs text-gray-400" title={file.id}>
+                        ID: {file.id.slice(0, 8)}...
                     </span>
                 </div>
                 <div className="text-xs text-gray-400 ml-5">
@@ -116,6 +195,54 @@ export function KnowledgeBaseList() {
             </div>
         );
     };
+
+    const renderKnowledgeBase = (kb: KnowledgeBase) => (
+        <div key={kb.id} className="p-4 bg-white rounded-lg border border-gray-200 space-y-3">
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className="font-medium">{kb.name}</h3>
+                    <p className="text-sm text-gray-500">{kb.description}</p>
+                </div>
+                <div className="flex gap-2">
+                    <Link
+                        to={`/knowledge-bases/${kb.id}/edit`}
+                        className="p-1 text-gray-400 hover:text-blue-500"
+                        title="Editar"
+                    >
+                        <Edit className="h-4 w-4" />
+                    </Link>
+                    <button
+                        onClick={() => handleDelete(kb.id)}
+                        className="p-1 text-gray-400 hover:text-red-500"
+                        title="Excluir"
+                    >
+                        <Trash2 className="h-4 w-4" />
+                    </button>
+                </div>
+            </div>
+
+            {kb.vectorStoreId && (
+                <div className="mt-2 text-sm">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="text-gray-500">ID da Vector Store:</div>
+                        <div className="font-mono truncate" title={kb.vectorStoreId}>
+                            {formatId(kb.vectorStoreId)}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="text-sm text-gray-500">
+                <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    {kb.updatedAt 
+                        ? `Atualizado em ${formatDate(kb.updatedAt)}`
+                        : `Criado em ${formatDate(kb.createdAt)}`
+                    }
+                </div>
+            </div>
+        </div>
+    );
 
     return (
         <div className="space-y-4">
@@ -148,10 +275,7 @@ export function KnowledgeBaseList() {
                         Arquivos OpenAI
                     </button>
                 </div>
-            </div>
-
-            {activeTab === 'bases' && (
-                <div className="flex justify-end border-b pb-4">
+                {activeTab === 'bases' && (
                     <Link
                         to="/knowledge-bases/new"
                         className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
@@ -159,8 +283,8 @@ export function KnowledgeBaseList() {
                         <Plus className="h-4 w-4" />
                         Nova Base
                     </Link>
-                </div>
-            )}
+                )}
+            </div>
 
             {error && (
                 <div className="p-3 text-red-600 bg-red-50 rounded-md">
@@ -181,87 +305,7 @@ export function KnowledgeBaseList() {
                             Nenhuma base de conhecimento encontrada
                         </div>
                     ) : (
-                        knowledgeBases.map((kb) => (
-                            <div
-                                key={kb.id}
-                                className="p-4 bg-white rounded-lg border border-gray-200 space-y-3"
-                            >
-                                <div className="flex justify-between items-start">
-                                    <div>
-                                        <h3 className="font-medium">{kb.name}</h3>
-                                        <p className="text-sm text-gray-500">{kb.description}</p>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <Link
-                                            to={`/knowledge-bases/${kb.id}/edit`}
-                                            className="p-1 text-gray-400 hover:text-blue-500"
-                                            title="Editar"
-                                        >
-                                            <Edit className="h-4 w-4" />
-                                        </Link>
-                                        <button
-                                            onClick={() => handleDelete(kb.id)}
-                                            className="p-1 text-gray-400 hover:text-red-500"
-                                            title="Excluir"
-                                        >
-                                            <Trash2 className="h-4 w-4" />
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {kb.vectorStoreId && (
-                                    <div className="mt-2 text-sm">
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <div className="text-gray-500">ID da Vector Store:</div>
-                                            <div className="font-mono">{kb.vectorStoreId}</div>
-                                            <div className="text-gray-500">Total de Arquivos:</div>
-                                            <div>{kb.fileIds?.length || 0}</div>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="text-sm text-gray-500 space-y-1">
-                                    <div className="flex items-center gap-2">
-                                        <Clock className="h-4 w-4" />
-                                        {kb.updatedAt 
-                                            ? `Atualizado em ${formatDate(kb.updatedAt)}`
-                                            : `Criado em ${formatDate(kb.createdAt)}`
-                                        }
-                                    </div>
-
-                                    <button
-                                        onClick={() => toggleExpand(kb.id)}
-                                        className="flex items-center gap-2 text-blue-600 hover:text-blue-700"
-                                    >
-                                        <FileText className="h-4 w-4" />
-                                        Ver arquivos
-                                        {expandedBase === kb.id ? (
-                                            <ChevronUp className="h-4 w-4" />
-                                        ) : (
-                                            <ChevronDown className="h-4 w-4" />
-                                        )}
-                                    </button>
-
-                                    {expandedBase === kb.id && (
-                                        <div className="mt-2 pl-4 border-l-2 border-gray-200">
-                                            {filesLoading[kb.id] ? (
-                                                <div className="text-sm text-gray-500">
-                                                    Carregando arquivos...
-                                                </div>
-                                            ) : baseFiles[kb.id]?.data.length > 0 ? (
-                                                <div className="space-y-2">
-                                                    {baseFiles[kb.id].data.map(renderFileInfo)}
-                                                </div>
-                                            ) : (
-                                                <div className="text-sm text-gray-500">
-                                                    Nenhum arquivo encontrado
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        ))
+                        knowledgeBases.map(renderKnowledgeBase)
                     )}
                 </div>
             )}

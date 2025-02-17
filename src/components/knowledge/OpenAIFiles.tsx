@@ -4,6 +4,7 @@ import api from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { VECTOR_STORE_EXTENSIONS_LIST } from '../../constants/filesTypes';
 
 interface OpenAIFile {
     id: string;
@@ -21,21 +22,27 @@ export function OpenAIFiles() {
     const [uploadingFile, setUploadingFile] = useState(false);
 
     useEffect(() => {
+        const loadFiles = async () => {
+            try {
+                setIsLoading(true);
+                const response = await api.get('/api/files');
+                setFiles(filterSupportedFiles(response.data.data));
+            } catch (error) {
+                console.error('Erro ao carregar arquivos:', error);
+                setError('Erro ao carregar arquivos');
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
         loadFiles();
     }, []);
 
-    const loadFiles = async () => {
-        try {
-            setIsLoading(true);
-            const response = await api.get('/api/files');
-            setFiles(response.data.data);
-            setError(null);
-        } catch (error) {
-            console.error('Erro ao carregar arquivos:', error);
-            setError('Erro ao carregar arquivos');
-        } finally {
-            setIsLoading(false);
-        }
+    const filterSupportedFiles = (files: OpenAIFile[]) => {
+        return files.filter(file => {
+            const extension = '.' + file.filename.split('.').pop()?.toLowerCase();
+            return VECTOR_STORE_EXTENSIONS_LIST.includes(extension);
+        });
     };
 
     const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {

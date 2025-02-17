@@ -6,9 +6,14 @@ import openai from '../config/openai.js';
 // Listar arquivos OpenAI
 export const listOpenAIFiles = asyncHandler(async (req: Request, res: Response) => {
     const files = await openai.files.list();
+    // Garantir que cada arquivo tenha o campo filename
+    const filesWithNames = files.data.map(file => ({
+        ...file,
+        filename: file.filename || `file-${file.id}` // Fallback para um nome baseado no ID
+    }));
     res.json({
         status: 'success',
-        data: files.data
+        data: filesWithNames
     });
 });
 
@@ -33,5 +38,15 @@ export const deleteOpenAIFile = asyncHandler(async (req: Request, res: Response)
     res.json({
         status: 'success',
         data: null
+    });
+});
+
+// Adicionar este método
+export const getOpenAIFile = asyncHandler(async (req: Request, res: Response) => {
+    const { fileId } = req.params;
+    const file = await openai.files.get(fileId);
+    res.json({
+        status: 'success',
+        data: file
     });
 }); 

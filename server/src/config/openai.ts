@@ -32,6 +32,7 @@ export interface VectorStoreFile {
     usage_bytes: number;
     created_at: number;
     vector_store_id: string;
+    filename: string;
     status: string;
     last_error: string | null;
     chunking_strategy: {

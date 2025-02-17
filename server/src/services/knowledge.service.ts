@@ -29,7 +29,11 @@ interface ProcessKnowledgeBaseParams {
 }
 
 // Adicionar após a linha 31
-const ALLOWED_FILE_TYPES = ['pdf', 'txt', 'doc', 'docx'];
+const ALLOWED_FILE_TYPES = [
+    'txt', 'pdf', 'doc', 'docx', 'pptx', 'md', 'html',
+    'js', 'ts', 'py', 'java', 'json', 'c', 'cpp', 'cs',
+    'css', 'go', 'php', 'rb', 'sh', 'tex'
+];
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 function validateFile(file: Express.Multer.File) {

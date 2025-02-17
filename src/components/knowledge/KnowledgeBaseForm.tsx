@@ -6,6 +6,7 @@ import { LANGUAGES } from '../../constants/languages';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'react-hot-toast';
+import { VECTOR_STORE_EXTENSIONS_LIST } from '../../constants/filesTypes';
 
 interface FileWithLanguages {
     file: File;
@@ -34,15 +35,6 @@ interface KnowledgeBaseFormProps {
     };
 }
 
-// Adicionar aos tipos suportados
-const SUPPORTED_EXTENSIONS = [
-    '.txt', '.pdf', '.doc', '.docx', '.pptx',
-    '.md', '.html', '.js', '.ts', '.py',
-    '.java', '.json', '.c', '.cpp', '.cs',
-    '.css', '.go', '.php', '.rb', '.sh',
-    '.tex'
-];
-
 export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
@@ -58,6 +50,13 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const [selectedExistingFiles, setSelectedExistingFiles] = useState<string[]>(initialData?.fileIds || []);
     const [existingFiles, setExistingFiles] = useState<OpenAIFile[]>([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(true);
+
+    const filterSupportedFiles = (files: OpenAIFile[]) => {
+        return files.filter(file => {
+            const extension = '.' + file.filename.split('.').pop()?.toLowerCase();
+            return VECTOR_STORE_EXTENSIONS_LIST.includes(extension);
+        });
+    };
 
     useEffect(() => {
         const loadKnowledgeBase = async () => {
@@ -91,7 +90,7 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
         try {
             setIsLoadingFiles(true);
             const response = await api.get('/api/files');
-            setExistingFiles(response.data.data);
+            setExistingFiles(filterSupportedFiles(response.data.data));
         } catch (error) {
             toast.error('Erro ao carregar arquivos existentes');
             console.error(error);
@@ -117,23 +116,39 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                 return;
             }
 
-            // Preparar FormData
-            const formDataToSend = new FormData();
-            formDataToSend.append('name', formData.name);
-            formDataToSend.append('description', formData.description || '');
-            formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
+            // Validar limite total de arquivos
+            if (files.length + selectedExistingFiles.length > 10) {
+                setError('O limite máximo é de 10 arquivos por base de conhecimento');
+                return;
+            }
 
-            // Adicionar novos arquivos
-            files.forEach(fileWithLanguages => {
-                formDataToSend.append('files', fileWithLanguages.file);
-            });
+            if (files.length > 0) {
+                // Se tiver novos arquivos, usar FormData
+                const formDataToSend = new FormData();
+                formDataToSend.append('name', formData.name);
+                formDataToSend.append('description', formData.description);
+                
+                // Garantir que existingFileIds seja sempre um array, mesmo vazio
+                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles || []));
 
-            // Enviar requisição
-            const response = await api.post('/api/knowledge-bases', formDataToSend, {
-                headers: {
-                    'Content-Type': 'multipart/form-data'
-                }
-            });
+                // Adicionar arquivos
+                files.forEach(fileWithLanguages => {
+                    formDataToSend.append('files', fileWithLanguages.file);
+                });
+
+                await api.post('/api/knowledge-bases', formDataToSend, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+            } else {
+                // Se só tiver arquivos existentes, enviar como JSON
+                await api.post('/api/knowledge-bases', {
+                    name: formData.name,
+                    description: formData.description,
+                    existingFileIds: JSON.stringify(selectedExistingFiles || []) // Convertendo para string JSON
+                });
+            }
 
             toast.success('Base de conhecimento criada com sucesso');
             navigate('/knowledge-bases');
@@ -152,12 +167,12 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
         // Validar extensões
         const invalidFiles = selectedFiles.filter(file => {
             const extension = '.' + file.name.split('.').pop()?.toLowerCase();
-            return !SUPPORTED_EXTENSIONS.includes(extension);
+            return !VECTOR_STORE_EXTENSIONS_LIST.includes(extension);
         });
 
         if (invalidFiles.length > 0) {
             const invalidFileNames = invalidFiles.map(f => f.name).join(', ');
-            setError(`Arquivos não suportados: ${invalidFileNames}. Extensões suportadas: ${SUPPORTED_EXTENSIONS.join(', ')}`);
+            setError(`Arquivos não suportados: ${invalidFileNames}. Extensões suportadas: ${VECTOR_STORE_EXTENSIONS_LIST.join(', ')}`);
             return;
         }
 
@@ -255,7 +270,7 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                                     ref={fileInputRef}
                                     onChange={handleFileChange}
                                     className="hidden"
-                                    accept=".txt,.pdf,.doc,.docx,.pptx,.md,.html,.js,.ts,.py,.java,.json"
+                                    accept={VECTOR_STORE_EXTENSIONS_LIST.join(',')}
                                     multiple
                                 />
                                 <button
