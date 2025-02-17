@@ -119,46 +119,48 @@ export function KnowledgeBaseList() {
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="border-b pb-4">
                 <h2 className="text-lg font-medium">Bases de Conhecimento</h2>
-                <div className="flex items-center gap-4">
-                    {userRole === 'SUPERUSER' && (
-                        <div className="flex space-x-4">
-                            <button
-                                onClick={() => setActiveTab('bases')}
-                                className={`flex items-center px-4 py-2 rounded-lg ${
-                                    activeTab === 'bases'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                }`}
-                            >
-                                <Book className="w-5 h-5 mr-2" />
-                                Bases de Conhecimento
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('files')}
-                                className={`flex items-center px-4 py-2 rounded-lg ${
-                                    activeTab === 'files'
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                                }`}
-                            >
-                                <Files className="w-5 h-5 mr-2" />
-                                Arquivos OpenAI
-                            </button>
-                        </div>
-                    )}
-                    {activeTab === 'bases' && (
-                        <Link
-                            to="/knowledge-bases/new"
-                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                        >
-                            <Plus className="h-4 w-4" />
-                            Nova Base
-                        </Link>
-                    )}
+            </div>
+
+            <div className="flex justify-between items-center">
+                <div className="flex space-x-4">
+                    <button
+                        onClick={() => setActiveTab('bases')}
+                        className={`flex items-center px-4 py-2 rounded-lg ${
+                            activeTab === 'bases'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                    >
+                        <Book className="w-5 h-5 mr-2" />
+                        Bases de Conhecimento
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('files')}
+                        className={`flex items-center px-4 py-2 rounded-lg ${
+                            activeTab === 'files'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                    >
+                        <Files className="w-5 h-5 mr-2" />
+                        Arquivos OpenAI
+                    </button>
                 </div>
             </div>
+
+            {activeTab === 'bases' && (
+                <div className="flex justify-end border-b pb-4">
+                    <Link
+                        to="/knowledge-bases/new"
+                        className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Nova Base
+                    </Link>
+                </div>
+            )}
 
             {error && (
                 <div className="p-3 text-red-600 bg-red-50 rounded-md">
@@ -206,6 +208,17 @@ export function KnowledgeBaseList() {
                                         </button>
                                     </div>
                                 </div>
+
+                                {kb.vectorStoreId && (
+                                    <div className="mt-2 text-sm">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="text-gray-500">ID da Vector Store:</div>
+                                            <div className="font-mono">{kb.vectorStoreId}</div>
+                                            <div className="text-gray-500">Total de Arquivos:</div>
+                                            <div>{kb.fileIds?.length || 0}</div>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="text-sm text-gray-500 space-y-1">
                                     <div className="flex items-center gap-2">

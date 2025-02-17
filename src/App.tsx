@@ -47,13 +47,23 @@ export default function App() {
                         <Route index element={<Navigate to="/translations" replace />} />
                         <Route path="translations" element={<TranslatedDocuments />} />
                         
-                        <Route path="knowledge-bases" element={<TranslatorRoute>
-                            <Routes>
-                                <Route index element={<KnowledgeBaseList />} />
-                                <Route path="new" element={<KnowledgeBaseForm />} />
-                                <Route path=":id/edit" element={<KnowledgeBaseForm />} />
-                            </Routes>
-                        </TranslatorRoute>} />
+                        <Route path="knowledge-bases">
+                            <Route index element={
+                                <TranslatorRoute>
+                                    <KnowledgeBaseList />
+                                </TranslatorRoute>
+                            } />
+                            <Route path="new" element={
+                                <TranslatorRoute>
+                                    <KnowledgeBaseForm />
+                                </TranslatorRoute>
+                            } />
+                            <Route path=":id/edit" element={
+                                <TranslatorRoute>
+                                    <KnowledgeBaseForm />
+                                </TranslatorRoute>
+                            } />
+                        </Route>
                         
                         <Route path="assistants" element={<TranslatorRoute>
                             <Routes>

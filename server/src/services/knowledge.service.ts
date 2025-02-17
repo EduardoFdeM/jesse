@@ -285,21 +285,52 @@ export class KnowledgeService {
     public async createKnowledgeBase(params: ProcessKnowledgeBaseParams) {
         let createdStore;
         try {
+            // Validar limite de arquivos
             if ((params.files?.length || 0) + (params.existingFileIds?.length || 0) > MAX_FILES_PER_STORE) {
                 throw new BadRequestError(`Limite máximo de ${MAX_FILES_PER_STORE} arquivos por base de conhecimento`);
             }
 
-            createdStore = await vectorStore.create(`kb_${params.name}_${Date.now()}`);
+            // 1. Primeiro criar a Vector Store
+            createdStore = await vectorStore.create(params.name);
             const uploadedFiles: KnowledgeBaseFile[] = [];
 
-            if (params.existingFileIds?.length) {
-                await processExistingFiles(createdStore.id, params.existingFileIds, uploadedFiles, this);
-            }
-
+            // 2. Se tiver arquivos novos, fazer upload primeiro
             if (params.files?.length) {
-                await processNewFiles(createdStore.id, params.files, uploadedFiles, this);
+                for (const file of params.files) {
+                    const fileData = await files.upload(file.buffer, file.originalname);
+                    await vectorStore.files.add(createdStore.id, fileData.id);
+                    uploadedFiles.push({
+                        id: fileData.id,
+                        fileName: file.originalname,
+                        fileSize: file.size,
+                        fileType: file.originalname.split('.').pop() || 'unknown',
+                        metadata: {
+                            lastUpdated: new Date(),
+                            language: this.detectLanguage(file.originalname)
+                        }
+                    });
+                }
             }
 
+            // 3. Adicionar arquivos existentes à Vector Store
+            if (params.existingFileIds?.length) {
+                for (const fileId of params.existingFileIds) {
+                    const fileInfo = await files.get(fileId);
+                    await vectorStore.files.add(createdStore.id, fileId);
+                    uploadedFiles.push({
+                        id: fileId,
+                        fileName: fileInfo.filename,
+                        fileSize: fileInfo.bytes,
+                        fileType: fileInfo.filename.split('.').pop() || 'unknown',
+                        metadata: {
+                            lastUpdated: new Date(),
+                            language: this.detectLanguage(fileInfo.filename)
+                        }
+                    });
+                }
+            }
+
+            // 4. Criar registro no banco
             const knowledgeBase = await prisma.knowledgeBase.create({
                 data: {
                     name: params.name,
@@ -308,14 +339,16 @@ export class KnowledgeService {
                     vectorStoreId: createdStore.id,
                     fileIds: uploadedFiles.map(f => f.id),
                     fileMetadata: JSON.stringify(uploadedFiles.map(f => f.metadata)),
-                    fileName: uploadedFiles[0]?.fileName || 'knowledge_base',
-                    filePath: uploadedFiles[0]?.fileName || '',
+                    fileName: uploadedFiles.map(f => f.fileName).join(', '),
+                    filePath: 'vector_store', // Agora sempre será vector_store
                     fileSize: uploadedFiles.reduce((acc, file) => acc + file.fileSize, 0),
-                    fileType: uploadedFiles[0]?.fileType || 'application/json'
+                    fileType: uploadedFiles.map(f => f.fileType).join(', ')
                 }
             });
+
             return knowledgeBase;
         } catch (error) {
+            // Se falhar, limpar Vector Store
             if (createdStore?.id) {
                 await vectorStore.delete(createdStore.id);
             }

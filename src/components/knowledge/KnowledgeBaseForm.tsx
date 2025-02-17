@@ -46,7 +46,7 @@ const SUPPORTED_EXTENSIONS = [
 export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
-    const [isLoading, setIsLoading] = useState(true);
+    const [isLoading, setIsLoading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [formData, setFormData] = useState({
         name: initialData?.name || '',
@@ -55,10 +55,8 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const [files, setFiles] = useState<FileWithLanguages[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [lastFile, setLastFile] = useState<string>('');
-    const [lastUpdate, setLastUpdate] = useState<string>('');
+    const [selectedExistingFiles, setSelectedExistingFiles] = useState<string[]>(initialData?.fileIds || []);
     const [existingFiles, setExistingFiles] = useState<OpenAIFile[]>([]);
-    const [selectedExistingFiles, setSelectedExistingFiles] = useState<string[]>([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(true);
 
     useEffect(() => {
@@ -72,16 +70,13 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                         name: data.name,
                         description: data.description,
                     });
-                    setLastFile(data.fileName || '');
-                    setLastUpdate(data.updatedAt || data.createdAt);
+                    setSelectedExistingFiles(data.fileIds || []);
                 } catch (err) {
                     console.error('Erro ao carregar base de conhecimento:', err);
                     setError('Erro ao carregar base de conhecimento');
                 } finally {
                     setIsLoading(false);
                 }
-            } else {
-                setIsLoading(false);
             }
         };
 
@@ -122,44 +117,30 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                 return;
             }
 
-            // Enviar como JSON puro
-            const jsonData = {
-                name: formData.name,
-                description: formData.description || '',
-                existingFileIds: selectedExistingFiles
-            };
+            // Preparar FormData
+            const formDataToSend = new FormData();
+            formDataToSend.append('name', formData.name);
+            formDataToSend.append('description', formData.description || '');
+            formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
 
-            // Se houver arquivos, usar FormData
-            if (files.length > 0) {
-                const formDataToSend = new FormData();
-                
-                // Adicionar dados do JSON
-                formDataToSend.append('name', jsonData.name);
-                formDataToSend.append('description', jsonData.description);
-                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
+            // Adicionar novos arquivos
+            files.forEach(fileWithLanguages => {
+                formDataToSend.append('files', fileWithLanguages.file);
+            });
 
-                // Adicionar arquivos
-                files.forEach(fileWithLanguages => {
-                    formDataToSend.append('files', fileWithLanguages.file);
-                });
-
-                const response = await api.post('/api/knowledge-bases', formDataToSend, {
-                    headers: {
-                        'Content-Type': 'multipart/form-data'
-                    }
-                });
-                console.log('Resposta (FormData):', response.data);
-            } else {
-                // Sem arquivos, enviar JSON direto
-                const response = await api.post('/api/knowledge-bases', jsonData);
-                console.log('Resposta (JSON):', response.data);
-            }
+            // Enviar requisição
+            const response = await api.post('/api/knowledge-bases', formDataToSend, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
 
             toast.success('Base de conhecimento criada com sucesso');
             navigate('/knowledge-bases');
-        } catch (err: any) {
-            console.error('Detalhes do erro:', err.response?.data);
-            setError(err.response?.data?.message || 'Erro ao salvar base de conhecimento');
+        } catch (err: unknown) {
+            const error = err as { response?: { data?: { message?: string } } };
+            console.error('Detalhes do erro:', error.response?.data);
+            setError(error.response?.data?.message || 'Erro ao salvar base de conhecimento');
         } finally {
             setIsSubmitting(false);
         }
@@ -223,16 +204,6 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                         {id ? 'Editar Base de Conhecimento' : 'Nova Base de Conhecimento'}
                     </h2>
                 </div>
-                {lastFile && (
-                    <div className="text-sm text-gray-500">
-                        <p>Último arquivo: {lastFile}</p>
-                        <p>
-                            {lastUpdate
-                                ? `Última atualização: ${format(new Date(lastUpdate), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", { locale: ptBR })}`
-                                : 'Sem atualizações'}
-                        </p>
-                    </div>
-                )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">

@@ -11,7 +11,7 @@ export interface VectorStore {
     object: 'vector_store';
     created_at: number;
     name: string;
-    bytes: number;
+    usage_bytes: number;
     file_counts: {
         in_progress: number;
         completed: number;
@@ -19,13 +19,28 @@ export interface VectorStore {
         cancelled: number;
         total: number;
     };
+    status: string;
+    expires_after: number | null;
+    expires_at: number | null;
+    last_active_at: number;
+    metadata: Record<string, unknown>;
 }
 
 export interface VectorStoreFile {
     id: string;
     object: 'vector_store.file';
+    usage_bytes: number;
     created_at: number;
     vector_store_id: string;
+    status: string;
+    last_error: string | null;
+    chunking_strategy: {
+        type: string;
+        static: {
+            max_chunk_size_tokens: number;
+            chunk_overlap_tokens: number;
+        };
+    };
 }
 
 export interface VectorStoreFileList {
