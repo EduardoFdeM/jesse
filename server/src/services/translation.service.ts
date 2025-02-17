@@ -5,6 +5,9 @@ import { uploadToS3 } from '../config/storage.js';
 import { Document, Paragraph, Packer, TextRun } from 'docx';
 import openaiClient from '../config/openai.js';
 import { emitTranslationCompleted, emitTranslationError, emitTranslationProgress } from './socket.service.js';
+import * as pdfjsLib from 'pdfjs-dist';
+import { BaseError } from '../utils/errors.js';
+import { parseFile } from '../utils/fileParser';
 
 interface TranslationData {
     id: string;
@@ -37,17 +40,27 @@ interface TranslateFileParams {
     assistantId?: string;
 }
 
-// Função para extrair texto do PDF
-const extractTextFromPDF = async (filePath: string): Promise<string> => {
+// Função para extrair texto de diferentes tipos de arquivo
+const extractTextFromBuffer = async (buffer: Buffer, mimeType: string): Promise<string> => {
     try {
-        const dataBuffer = await fs.promises.readFile(filePath);
-        // Importação dinâmica do pdf-parse para evitar o erro de inicialização
-        const pdfParse = (await import('pdf-parse')).default;
-        const data = await pdfParse(dataBuffer);
-        return data.text;
-    } catch (error) {
-        console.error('Erro ao extrair texto do PDF:', error);
-        throw new Error('Falha ao extrair texto do PDF');
+        const result = await parseFile(buffer, mimeType);
+        return result.content;
+    } catch (error: unknown) {
+        console.error('Erro ao extrair texto:', error);
+        
+        if (error instanceof Error) {
+            throw new BaseError(
+                `Falha ao extrair texto do arquivo: ${error.message}`,
+                500,
+                'EXTRACTION_ERROR'
+            );
+        }
+        
+        throw new BaseError(
+            'Falha ao extrair texto do arquivo',
+            500,
+            'EXTRACTION_ERROR'
+        );
     }
 };
 
@@ -62,11 +75,13 @@ const saveFileContent = async (
         const finalFileName = fileName.replace(/\.[^/.]+$/, `.${outputFormat}`);
 
         switch (outputFormat.toLowerCase()) {
-            case 'txt': {
+            case 'txt':
+            case 'text': {
                 fileBuffer = Buffer.from(text, 'utf-8');
                 break;
             }
-            case 'docx': {
+            case 'docx':
+            case 'document': {
                 const doc = new Document({
                     sections: [{
                         properties: {},
@@ -136,20 +151,33 @@ const saveFileContent = async (
     }
 };
 
-export const translateFile = async (params: TranslateFileParams): Promise<TranslationData> => {
+export const translateFile = async (params: TranslateFileParams & { fileBuffer: Buffer }): Promise<TranslationData> => {
     try {
-        // Extrair texto do arquivo
-        const fileContent = params.filePath.endsWith('.pdf')
-            ? await extractTextFromPDF(params.filePath)
-            : await fs.promises.readFile(params.filePath, 'utf-8');
+        // Extrair texto do buffer do arquivo
+        const outputFormat = params.outputFormat.split('/').pop() || 'txt'; // Pega apenas a extensão
+        const fileContent = await extractTextFromBuffer(params.fileBuffer, params.outputFormat);
 
         // Criar thread com a mensagem inicial
-        const thread = await openaiClient.beta.threads.create({
-            messages: [{
-                role: "user",
-                content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
-            }]
+        const response = await fetch('https://api.openai.com/v1/threads', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                messages: [{
+                    role: "user",
+                    content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
+                }]
+            })
         });
+
+        if (!response.ok) {
+            throw new Error('Erro ao criar thread');
+        }
+
+        const thread = await response.json();
 
         // Atualizar com o threadId
         await prisma.translation.update({
@@ -200,7 +228,7 @@ export const translateFile = async (params: TranslateFileParams): Promise<Transl
         const savedFile = await saveFileContent(
             translatedContent,
             params.originalName,
-            params.outputFormat
+            outputFormat // Usando a extensão extraída
         );
 
         // Atualizar registro da tradução

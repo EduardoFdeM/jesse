@@ -132,4 +132,29 @@ declare global {
     }
 }
 
+declare module 'tesseract.js' {
+    interface RecognizeResult {
+        data: {
+            text: string;
+            confidence: number;
+            lines: any[];
+            words: any[];
+        };
+    }
+
+    interface Worker {
+        loadLanguage(language: string): Promise<void>;
+        initialize(language: string): Promise<void>;
+        recognize(image: Buffer | string): Promise<RecognizeResult>;
+        terminate(): Promise<void>;
+    }
+
+    interface WorkerOptions {
+        logger?: (message: any) => void;
+        errorHandler?: (error: Error) => void;
+    }
+
+    export function createWorker(options?: WorkerOptions): Promise<Worker>;
+}
+
 export {}; 

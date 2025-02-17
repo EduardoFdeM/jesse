@@ -40,6 +40,7 @@
       Retorna-se o arquivo final para o bucket de arquivos.
       Salva-se o histórico de tradução no banco de dados.
       Atualiza o frontend para que seja possível visualizar o histórico de traduções e os novos arquivos traduzidos.
+  Implementar OCR API para extrair texto de imagens.
 ~~2. Cargos e roles para os usuários (Superuser; Tradutor; Editor)~~
   ~~Refatorar o front, com funções específicas para cada cargo.~~
 ~~3. Uma nova aba de Admin, disponível apenas para Superuser~~

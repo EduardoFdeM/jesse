@@ -174,17 +174,18 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         emitTranslationStarted(translation);
         
         console.log('🚀 Iniciando processo de tradução...');
-        // Iniciar tradução
+        // Iniciar tradução com o buffer do arquivo
         translateFile({
             filePath: s3FilePath,
             sourceLanguage: req.body.sourceLanguage,
             targetLanguage: req.body.targetLanguage,
             userId: req.user.id,
             translationId: translation.id,
-            outputFormat: file.mimetype,
+            outputFormat: file.mimetype.split('/')[1],
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
-            assistantId: useCustomPrompt ? assistantId : undefined
+            assistantId: useCustomPrompt ? assistantId : undefined,
+            fileBuffer: file.buffer // Passar o buffer do arquivo
         });
 
         console.log('✅ Processo iniciado com sucesso');
