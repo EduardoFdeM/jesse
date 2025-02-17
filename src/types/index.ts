@@ -55,28 +55,22 @@ export interface Translation {
     sourceLanguage: string;
     targetLanguage: string;
     status: TranslationStatus;
-    errorMessage?: string;
+    errorMessage?: string | null;
     translatedUrl?: string | null;
+    costData?: string | null;
+    userId: string;
+    knowledgeBaseId?: string | null;
+    threadId?: string | null;
+    runId?: string | null;
+    assistantId?: string | null;
     createdAt: string;
     updatedAt: string;
-    userId: string;
-    knowledgeBaseId: string | null;
-    promptId: string | null;
-    translationMetadata: string;
-    usedPrompt: boolean;
-    usedKnowledgeBase: boolean;
-    knowledgeBase?: {
-        id: string;
-        name: string;
-    };
-    prompt?: {
-        id: string;
-        name: string;
-    };
-    costData?: string;
-    threadId?: string;
-    runId?: string;
-    assistantId?: string;
+    translationMetadata?: string;
+    plainTextContent?: string;
+    knowledgeBase?: KnowledgeBase;
+    prompt?: Prompt;
+    usedKnowledgeBase?: boolean;
+    usedAssistant?: boolean;
 }
 
 // Tipos de prompt/assistente

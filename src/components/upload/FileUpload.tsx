@@ -15,7 +15,7 @@ interface FileUploadProps {
   selectedKnowledgeBase?: string | null;
   selectedPrompt?: string | null;
   onKnowledgeBaseSelect?: (id: string) => void;
-  onPromptSelect?: (id: string) => void;
+  onPromptSelect?: (id: string | null) => void;
 }
 
 interface UploadQueueItem {
@@ -41,6 +41,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   onPromptSelect
 }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
+  const [useAssistant, setUseAssistant] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -61,17 +62,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     };
   }, []);
 
-  const validatePromptSelection = () => {
-    return true;
-  };
-
   const handleSubmit = async () => {
     if (!selectedFile) {
       toast.error('Selecione um arquivo primeiro');
       return;
     }
 
-    // Prevenir múltiplos envios
     if (isLoading) {
       return;
     }
@@ -86,13 +82,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       formData.append('targetLanguage', targetLanguage);
       formData.append('originalname', selectedFile.name);
       formData.append('useKnowledgeBase', useKnowledgeBase.toString());
-      formData.append('useCustomPrompt', (selectedPrompt !== null).toString());
+      formData.append('useCustomAssistant', useAssistant.toString());
       
       if (useKnowledgeBase && selectedKnowledgeBase) {
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
       }
-      if (selectedPrompt) {
-        formData.append('promptId', selectedPrompt);
+      if (useAssistant && selectedPrompt) {
+        formData.append('assistantId', selectedPrompt);
       }
 
       const controller = new AbortController();
@@ -113,13 +109,17 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       toast.success('Arquivo enviado com sucesso!');
       setSelectedFile(null);
       onReset();
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        toast.error('Upload cancelado');
-      } else if (error.response?.data?.message) {
-        toast.error(error.response.data.message);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          toast.error('Upload cancelado');
+        } else if ('response' in error && error.response?.data?.message) {
+          toast.error(error.response.data.message);
+        } else {
+          toast.error(error.message);
+        }
       } else {
-        toast.error('Erro ao fazer upload do arquivo');
+        toast.error('Erro desconhecido ao fazer upload do arquivo');
       }
       console.error('Erro detalhado no upload:', error);
     } finally {
@@ -146,6 +146,20 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     disabled: isLoading || processingRef.current,
     multiple: false
   });
+
+  // Efeito para limpar o assistant selecionado quando desmarcar o checkbox
+  useEffect(() => {
+    if (!useAssistant) {
+      onPromptSelect?.(null);
+    }
+  }, [useAssistant, onPromptSelect]);
+
+  // Efeito para limpar a base de conhecimento quando desmarcar o checkbox
+  useEffect(() => {
+    if (!useKnowledgeBase) {
+      onKnowledgeBaseSelect?.('');
+    }
+  }, [useKnowledgeBase, onKnowledgeBaseSelect]);
 
   return (
     <div className="space-y-4">
@@ -180,28 +194,28 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         )}
       </div>
 
-      {/* Seção de Prompt */}
+      {/* Seção de Assistant */}
       <div className="space-y-2">
         <div className="flex items-center space-x-2">
           <input
             type="checkbox"
-            id="useCustomPrompt"
-            checked={selectedPrompt !== null}
-            onChange={(e) => onPromptSelect?.(e.target.checked ? prompts[0].id : null)}
+            id="useCustomAssistant"
+            checked={useAssistant}
+            onChange={(e) => setUseAssistant(e.target.checked)}
             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <label htmlFor="useCustomPrompt" className="text-sm text-gray-700">
-            Usar prompt personalizado
+          <label htmlFor="useCustomAssistant" className="text-sm text-gray-700">
+            Usar assistant personalizado
           </label>
         </div>
 
-        {selectedPrompt && (
+        {useAssistant && (
           <select
-            value={selectedPrompt}
-            onChange={(e) => onPromptSelect?.(e.target.value)}
+            value={selectedPrompt || ''}
+            onChange={(e) => onPromptSelect?.(e.target.value || null)}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
           >
-            <option value="">Selecione um prompt...</option>
+            <option value="">Selecione um assistant</option>
             {prompts.map((prompt) => (
               <option key={prompt.id} value={prompt.id}>
                 {prompt.name}

@@ -26,13 +26,12 @@
     Escolhe o idioma de origem e o de destino. Seleciona o arquivo que deseja traduzir.
     Caso deseje, seleciona uma base de conhecimento e/ou um assistant personalizado.
     Clica em traduzir.
-    Captura-se o conteúdo do arquivo enviado para enviar apenas o texto para openai já que não é possível enviar o arquivo inteiro nas requisições.
+    Faz-se o Parse do conteúdo do arquivo para enviar apenas o texto para openai já que não é possível enviar o arquivo inteiro nas requisições.
     Verifica-se o tamanho do arquivo e se respeita o limite de 128k de tokens do modelo que está sendo utilizado (GPT-4o-mini).
       Caso o tamanho do arquivo seja maior que o limite, é feito um split do arquivo em partes menores, que tenham menos de 128k de tokens cada e um leve overlap para não perder informações e contexto.
     O sistema faz a requisição para o OpenAI:
       Cria-se uma thread (/v1/threads).
         Caso seja selecionado uma base de conhecimento, é adicionado o ID da vector store na requisição de criação da thread.
-      Cria-se uma message (/v1/threads/{thread_id}/messages). Aqui é adicionado o conteúdo do arquivo texto e o role de 'user'. Pois aqui é como se fosse o usuário enviando o arquivo para o assistant traduzir. O assistant já foi configurado na thread.
       Cria-se uma run (/v1/threads/{thread_id}/runs).
         Caso seja selecionado um assistant personalizado, é adicionado o ID do assistant personalizado na requisição de criação da run.
       É feito um loop de requisição para capturar o status da run e assim pegar o retorno do OpenAI (/v1/threads/{thread_id}/runs/{run_id}).
@@ -40,7 +39,7 @@
       Retorna-se o arquivo final para o bucket de arquivos.
       Salva-se o histórico de tradução no banco de dados.
       Atualiza o frontend para que seja possível visualizar o histórico de traduções e os novos arquivos traduzidos.
-  Implementar OCR API para extrair texto de imagens.
+  ~~Implementar OCR API para extrair texto de imagens.~~
 ~~2. Cargos e roles para os usuários (Superuser; Tradutor; Editor)~~
   ~~Refatorar o front, com funções específicas para cada cargo.~~
 ~~3. Uma nova aba de Admin, disponível apenas para Superuser~~

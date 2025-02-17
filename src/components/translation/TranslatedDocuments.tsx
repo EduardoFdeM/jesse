@@ -14,9 +14,9 @@ const OUTPUT_TOKEN_RATE = 0.0000006;  // $0.600 / 1M tokens
 
 interface TranslationMetadata {
     usedKnowledgeBase: boolean;
-    usedPrompt: boolean;
+    usedAssistant: boolean;
     knowledgeBaseName?: string;
-    promptName?: string;
+    assistantName?: string;
 }
 
 export function TranslatedDocuments() {
@@ -59,7 +59,7 @@ export function TranslatedDocuments() {
             const translationsWithMetadata = response.data.data.map((translation: Translation) => {
                 let metadata: TranslationMetadata = {
                     usedKnowledgeBase: false,
-                    usedPrompt: false
+                    usedAssistant: false
                 };
                 try {
                     if (translation.translationMetadata) {
@@ -72,9 +72,9 @@ export function TranslatedDocuments() {
                 return {
                     ...translation,
                     usedKnowledgeBase: metadata.usedKnowledgeBase || false,
-                    usedPrompt: metadata.usedPrompt || false,
+                    usedAssistant: metadata.usedAssistant || false,
                     knowledgeBaseName: metadata.knowledgeBaseName || translation.knowledgeBase?.name,
-                    promptName: metadata.promptName || translation.prompt?.name
+                    assistantName: metadata.assistantName || translation.prompt?.name
                 };
             });
             
@@ -131,7 +131,7 @@ export function TranslatedDocuments() {
                             ? {
                                 ...translation,
                                 usedKnowledgeBase: translationMetadata.usedKnowledgeBase || false,
-                                usedPrompt: translationMetadata.usedPrompt || false,
+                                usedAssistant: translationMetadata.usedAssistant || false,
                                 knowledgeBase: translation.knowledgeBase,
                                 prompt: translation.prompt
                             }
@@ -465,7 +465,7 @@ export function TranslatedDocuments() {
     };
 
     // Atualizar a exibição dos metadados
-    const renderMetadata = (translation: Translation & { knowledgeBaseName?: string; promptName?: string }) => {
+    const renderMetadata = (translation: Translation & { knowledgeBaseName?: string; assistantName?: string }) => {
         return (
             <>
                 {translation.usedKnowledgeBase && (
@@ -473,9 +473,9 @@ export function TranslatedDocuments() {
                         Base de Conhecimento: {translation.knowledgeBaseName || translation.knowledgeBase?.name || 'Não especificada'}
                     </div>
                 )}
-                {translation.usedPrompt && (
+                {translation.usedAssistant && (
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Prompt: {translation.promptName || translation.prompt?.name || 'Não especificado'}
+                        Assistant: {translation.assistantName || translation.prompt?.name || 'Não especificado'}
                     </div>
                 )}
             </>
@@ -485,15 +485,11 @@ export function TranslatedDocuments() {
     // Função para compartilhar tradução
     const handleShare = async (translationId: string) => {
         try {
-            // Carregar usuários disponíveis para compartilhamento
-            const response = await api.get('/api/users/available');
-            setAvailableUsers(response.data.users);
-            
             const translation = translations.find(t => t.id === translationId);
             setSelectedTranslationForShare(translation || null);
             setShowShareModal(true);
         } catch (error) {
-            toast.error('Erro ao carregar usuários');
+            toast.error('Erro ao preparar compartilhamento');
         }
     };
 
@@ -502,10 +498,7 @@ export function TranslatedDocuments() {
         if (!selectedTranslationForShare) return;
         
         try {
-            await api.post(`/api/translations/${selectedTranslationForShare.id}/share`, {
-                userIds: selectedUsers
-            });
-            
+            // TODO: Implementar lógica de compartilhamento quando a API estiver pronta
             toast.success('Documento compartilhado com sucesso');
             setShowShareModal(false);
             setSelectedUsers([]);
@@ -804,8 +797,8 @@ export function TranslatedDocuments() {
                                     )}
                                 </div>
                                 <div className="flex items-center">
-                                    <span className="mr-2">Prompt Personalizado:</span>
-                                    {translation.usedPrompt && translation.prompt ? (
+                                    <span className="mr-2">Assistant Personalizado:</span>
+                                    {translation.usedAssistant && translation.prompt ? (
                                         <span className="text-green-600" title={translation.prompt.name}>✓</span>
                                     ) : (
                                         <span className="text-red-600">✗</span>

@@ -23,7 +23,7 @@ export function LanguageSelector({ value, onChange, label }: LanguageSelectorPro
           onChange={(e) => onChange(e.target.value)}
           className="pl-10 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
         >
-          <option value="">Select language</option>
+          <option value="">Selecione o idioma</option>
           {LANGUAGES.map((lang) => (
             <option key={lang.code} value={lang.code}>
               {lang.name}
