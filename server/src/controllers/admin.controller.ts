@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import prisma from '../config/database.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { NotFoundError, ValidationError } from '../utils/errors.js';
+import { NotFoundError, ValidationError, UnauthorizedError } from '../utils/errors.js';
 import OpenAI from 'openai';
 import bcrypt from 'bcrypt';
 
@@ -322,4 +322,40 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
     });
 
     res.status(201).json({ user });
-}); 
+});
+
+// Buscar usuários disponíveis para compartilhamento
+export const getAvailableUsers = asyncHandler(async (req: Request, res: Response) => {
+    if (!req.user?.id) {
+        throw new UnauthorizedError('Usuário não autenticado');
+    }
+
+    const users = await prisma.user.findMany({
+        where: {
+            id: { not: req.user.id }, // Excluir o usuário atual
+            role: { in: ['SUPERUSER', 'EDITOR', 'TRANSLATOR'] }
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true
+        },
+        orderBy: [
+            {
+                role: 'asc'
+            },
+            {
+                name: 'asc'
+            }
+        ]
+    });
+
+    // Reordenar manualmente para garantir a ordem SUPERUSER > EDITOR > TRANSLATOR
+    const sortedUsers = users.sort((a, b) => {
+        const roleOrder = { SUPERUSER: 1, EDITOR: 2, TRANSLATOR: 3 };
+        return (roleOrder[a.role as keyof typeof roleOrder] || 0) - (roleOrder[b.role as keyof typeof roleOrder] || 0);
+    });
+
+    res.json({ users: sortedUsers });
+});

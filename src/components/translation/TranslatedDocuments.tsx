@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2 } from 'lucide-react';
-import { Translation, KnowledgeBase, Prompt, User } from '../../types/index';
+import { Translation, KnowledgeBase, Prompt, User, ViewStatus } from '../../types/index';
 import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
@@ -42,6 +42,7 @@ export function TranslatedDocuments() {
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const userRole = localStorage.getItem('userRole');
+    const [viewFilter, setViewFilter] = useState<ViewStatus>(ViewStatus.VISIBLE);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]): Translation[] => {
@@ -85,21 +86,31 @@ export function TranslatedDocuments() {
         }
     }, [userRole]);
 
-    // Função para carregar bases de conhecimento
-    const loadKnowledgeBases = useCallback(async () => {
-        try {
-            const response = await api.get('/api/knowledge-bases');
-            setKnowledgeBases(response.data.data);
-        } catch (err) {
-            console.error('Erro ao carregar bases de conhecimento:', err);
-        }
-    }, []);
-
     // Efeito para carregar traduções inicialmente
     useEffect(() => {
         loadTranslations();
-        loadKnowledgeBases();
-    }, [loadTranslations, loadKnowledgeBases]);
+    }, [loadTranslations]);
+
+    // Efeito para carregar bases de conhecimento e prompts apenas para usuários não-editores
+    useEffect(() => {
+        const loadData = async () => {
+            if (userRole !== 'EDITOR') {
+                try {
+                    const [kbResponse, assistantsResponse] = await Promise.all([
+                        api.get('/api/knowledge-bases'),
+                        api.get('/api/assistants')
+                    ]);
+
+                    setKnowledgeBases(kbResponse.data.data);
+                    setPrompts(assistantsResponse.data.data);
+                } catch (error) {
+                    console.error('Erro ao carregar dados:', error);
+                }
+            }
+        };
+
+        loadData();
+    }, [userRole]);
 
     // Efeito para configurar eventos do Socket.IO
     useEffect(() => {
@@ -289,9 +300,14 @@ export function TranslatedDocuments() {
                 return false;
             }
 
+            // Filtro por status de visualização
+            if (viewFilter !== translation.viewStatus) {
+                return false;
+            }
+
             return true;
         });
-    }, [translations, dateFilter, searchTerm]);
+    }, [translations, dateFilter, searchTerm, viewFilter]);
 
     // Função para deletar tradução
     const handleDelete = async (id: string) => {
@@ -437,25 +453,6 @@ export function TranslatedDocuments() {
         setSelectedPrompt(null);
     };
 
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [kbResponse, assistantsResponse] = await Promise.all([
-                    api.get('/api/knowledge-bases'),
-                    api.get('/api/assistants')
-                ]);
-
-                setKnowledgeBases(kbResponse.data.data);
-                setPrompts(assistantsResponse.data.data);
-            } catch (error) {
-                console.error('Erro ao carregar dados:', error);
-                toast.error('Erro ao carregar dados necessários');
-            }
-        };
-
-        loadData();
-    }, []);
-
     const handleUploadError = (error: unknown) => {
         if (error instanceof Error) {
             handleError(error.message);
@@ -482,32 +479,7 @@ export function TranslatedDocuments() {
         );
     };
 
-    // Função para compartilhar tradução
-    const handleShare = async (translationId: string) => {
-        try {
-            const translation = translations.find(t => t.id === translationId);
-            setSelectedTranslationForShare(translation || null);
-            setShowShareModal(true);
-        } catch (error) {
-            toast.error('Erro ao preparar compartilhamento');
-        }
-    };
-
-    // Função para salvar compartilhamento
-    const handleSaveShare = async () => {
-        if (!selectedTranslationForShare) return;
-        
-        try {
-            // TODO: Implementar lógica de compartilhamento quando a API estiver pronta
-            toast.success('Documento compartilhado com sucesso');
-            setShowShareModal(false);
-            setSelectedUsers([]);
-        } catch (error) {
-            toast.error('Erro ao compartilhar documento');
-        }
-    };
-
-    // Adicionar botão de compartilhamento na lista de ações
+    // Função para renderizar ações
     const renderActions = (translation: Translation) => {
         if (userRole === 'EDITOR') {
             return (
@@ -561,50 +533,145 @@ export function TranslatedDocuments() {
         );
     };
 
+    // Carregar usuários disponíveis para compartilhamento
+    const loadAvailableUsers = async () => {
+        try {
+            const response = await api.get('/api/admin/users/available');
+            setAvailableUsers(response.data.users);
+        } catch (error) {
+            console.error('Erro ao carregar usuários:', error);
+            toast.error('Erro ao carregar lista de usuários');
+        }
+    };
+
+    // Atualizar handleShare para carregar usuários
+    const handleShare = async (translationId: string) => {
+        try {
+            const translation = translations.find(t => t.id === translationId);
+            setSelectedTranslationForShare(translation || null);
+            await loadAvailableUsers(); // Carregar usuários antes de abrir o modal
+            setShowShareModal(true);
+        } catch (error) {
+            toast.error('Erro ao preparar compartilhamento');
+        }
+    };
+
+    // Atualizar handleSaveShare para implementar o compartilhamento
+    const handleSaveShare = async () => {
+        if (!selectedTranslationForShare || selectedUsers.length === 0) {
+            toast.error('Selecione pelo menos um usuário para compartilhar');
+            return;
+        }
+        
+        try {
+            await api.post(`/api/translations/${selectedTranslationForShare.id}/share`, {
+                userIds: selectedUsers
+            });
+            
+            toast.success('Documento compartilhado com sucesso');
+            setShowShareModal(false);
+            setSelectedUsers([]);
+        } catch (error) {
+            toast.error('Erro ao compartilhar documento');
+        }
+    };
+
     // Adicionar modal de compartilhamento
-    const ShareModal = () => (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
-                <h3 className="text-lg font-medium mb-4">Compartilhar Documento</h3>
-                <div className="space-y-4">
-                    {availableUsers.map(user => (
-                        <div key={user.id} className="flex items-center">
-                            <input
-                                type="checkbox"
-                                id={user.id}
-                                checked={selectedUsers.includes(user.id)}
-                                onChange={(e) => {
-                                    if (e.target.checked) {
-                                        setSelectedUsers([...selectedUsers, user.id]);
-                                    } else {
-                                        setSelectedUsers(selectedUsers.filter(id => id !== user.id));
-                                    }
-                                }}
-                                className="mr-2"
-                            />
-                            <label htmlFor={user.id}>
-                                {user.name} ({user.role})
-                            </label>
-                        </div>
-                    ))}
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                    <button
-                        onClick={() => setShowShareModal(false)}
-                        className="px-4 py-2 text-gray-600 hover:text-gray-800"
-                    >
-                        Cancelar
-                    </button>
-                    <button
-                        onClick={handleSaveShare}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    >
-                        Compartilhar
-                    </button>
+    const ShareModal = () => {
+        const groupedUsers = availableUsers.reduce((groups, user) => {
+            const group = groups[user.role] || [];
+            group.push(user);
+            groups[user.role] = group;
+            return groups;
+        }, {} as Record<string, typeof availableUsers>);
+
+        const roleOrder = ['SUPERUSER', 'EDITOR', 'TRANSLATOR'];
+        const roleLabels = {
+            SUPERUSER: 'Administradores',
+            EDITOR: 'Editores',
+            TRANSLATOR: 'Tradutores'
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+                    <h3 className="text-lg font-medium mb-4">Compartilhar Documento</h3>
+                    <div className="space-y-6">
+                        {roleOrder.map(role => (
+                            groupedUsers[role]?.length > 0 && (
+                                <div key={role} className="space-y-2">
+                                    <h4 className="font-medium text-gray-700">
+                                        {roleLabels[role as keyof typeof roleLabels]}
+                                    </h4>
+                                    <div className="space-y-2">
+                                        {groupedUsers[role].map(user => (
+                                            <div key={user.id} className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    id={user.id}
+                                                    checked={selectedUsers.includes(user.id)}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedUsers([...selectedUsers, user.id]);
+                                                        } else {
+                                                            setSelectedUsers(selectedUsers.filter(id => id !== user.id));
+                                                        }
+                                                    }}
+                                                    className="mr-2 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                />
+                                                <label htmlFor={user.id} className="text-sm text-gray-700">
+                                                    {user.name} ({user.email})
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )
+                        ))}
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                        <button
+                            onClick={() => {
+                                setShowShareModal(false);
+                                setSelectedUsers([]);
+                            }}
+                            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={handleSaveShare}
+                            disabled={selectedUsers.length === 0}
+                            className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Compartilhar
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
+
+    // Função para atualizar o status de visualização
+    const handleViewStatusChange = async (translationId: string, newStatus: ViewStatus) => {
+        try {
+            await api.put(`/api/translations/${translationId}/view-status`, {
+                viewStatus: newStatus
+            });
+            toast.success('Status de visualização atualizado');
+            loadTranslations();
+        } catch (error) {
+            toast.error('Erro ao atualizar status de visualização');
+        }
+    };
+
+    // Função para contar documentos por status
+    const getStatusCounts = useCallback(() => {
+        return translations.reduce((acc, translation) => {
+            acc[translation.viewStatus] = (acc[translation.viewStatus] || 0) + 1;
+            return acc;
+        }, {} as Record<ViewStatus, number>);
+    }, [translations]);
 
     return (
         <div className="space-y-6">
@@ -613,6 +680,19 @@ export function TranslatedDocuments() {
                     <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                         {userRole === 'EDITOR' ? 'Documentos Compartilhados' : 'Traduções'}
                     </h1>
+                    {userRole === 'EDITOR' && (
+                        <div className="mt-2 flex gap-4 text-sm text-gray-600">
+                            <span title="Documentos ativos que estão sendo trabalhados" className="flex items-center gap-1">
+                                👁️ Visíveis: {getStatusCounts()[ViewStatus.VISIBLE] || 0}
+                            </span>
+                            <span title="Documentos temporariamente ocultos (em revisão/pausa)" className="flex items-center gap-1">
+                                🔒 Ocultos: {getStatusCounts()[ViewStatus.HIDDEN] || 0}
+                            </span>
+                            <span title="Documentos finalizados/histórico" className="flex items-center gap-1">
+                                📦 Arquivados: {getStatusCounts()[ViewStatus.ARCHIVED] || 0}
+                            </span>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -647,75 +727,114 @@ export function TranslatedDocuments() {
             )}
 
             <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4">
-                    <h2 className="text-xl font-medium text-gray-900 dark:text-white">
-                        Documentos Traduzidos
-                    </h2>
+                <div className="flex flex-col gap-4">
+                    {/* Cabeçalho e Controles */}
+                    <div className="flex flex-col sm:flex-row justify-between items-center">
+                        <h2 className="text-xl font-medium text-gray-900 dark:text-white mb-4 sm:mb-0">
+                            Documentos Traduzidos
+                        </h2>
 
-                    <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                        <div className="flex-1">
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    placeholder="Pesquisar por nome..."
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="flex gap-4">
-                            <select
-                                value={dateFilter}
-                                onChange={(e) => setDateFilter(e.target.value)}
-                                className="border rounded-lg px-4 py-2"
-                            >
-                                <option value="all">Todas as datas</option>
-                                <option value="today">Hoje</option>
-                                <option value="week">Última semana</option>
-                                <option value="month">Último mês</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-2">
-                        {isSelectionMode && (
-                            <>
-                                <button
-                                    onClick={() => handleBulkAction('download')}
-                                    disabled={selectedItems.length === 0}
-                                    className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                    Baixar ({selectedItems.length})
-                                </button>
-                                <button
-                                    onClick={() => handleBulkAction('delete')}
-                                    disabled={selectedItems.length === 0}
-                                    className="px-3 py-1 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                                >
-                                    Deletar ({selectedItems.length})
-                                </button>
-                            </>
-                        )}
                         <button
                             onClick={() => {
                                 setIsSelectionMode(!isSelectionMode);
                                 setSelectedItems([]);
                                 setLastSelectedId(null);
                             }}
-                            className="px-3 py-1 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700"
+                            className="px-4 py-2 text-sm bg-gray-600 text-white rounded-md hover:bg-gray-700"
                         >
-                            {isSelectionMode ? 'Cancelar' : 'Selecionar'}
+                            {isSelectionMode ? 'Cancelar Seleção' : 'Selecionar Documentos'}
                         </button>
+                    </div>
+
+                    {/* Barra de Ações em Massa */}
+                    {isSelectionMode && (
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => handleBulkAction('download')}
+                                disabled={selectedItems.length === 0}
+                                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                Baixar ({selectedItems.length})
+                            </button>
+                            <button
+                                onClick={() => handleBulkAction('delete')}
+                                disabled={selectedItems.length === 0}
+                                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                            >
+                                Deletar ({selectedItems.length})
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Barra de Filtros */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Pesquisa */}
+                        <div className="relative col-span-1 sm:col-span-2">
+                            <input
+                                type="text"
+                                placeholder="Pesquisar por nome..."
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Filtro de Status (apenas para editores) */}
+                        {userRole === 'EDITOR' && (
+                            <select
+                                value={viewFilter}
+                                onChange={(e) => setViewFilter(e.target.value as ViewStatus)}
+                                className="border rounded-lg px-4 py-2 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                title="Filtrar documentos por status"
+                            >
+                                <option value={ViewStatus.VISIBLE}>👁️ Mostrar Visíveis</option>
+                                <option value={ViewStatus.HIDDEN}>🔒 Mostrar Ocultos</option>
+                                <option value={ViewStatus.ARCHIVED}>📦 Mostrar Arquivados</option>
+                            </select>
+                        )}
+
+                        {/* Ordenação */}
+                        <select
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setTranslations(prev => {
+                                    const sorted = [...prev];
+                                    switch (value) {
+                                        case 'date-desc':
+                                            sorted.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                                            break;
+                                        case 'date-asc':
+                                            sorted.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                                            break;
+                                        case 'name-asc':
+                                            sorted.sort((a, b) => a.fileName.localeCompare(b.fileName));
+                                            break;
+                                        case 'name-desc':
+                                            sorted.sort((a, b) => b.fileName.localeCompare(a.fileName));
+                                            break;
+                                    }
+                                    return sorted;
+                                });
+                            }}
+                            className="border rounded-lg px-4 py-2 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            title="Ordenar documentos"
+                            defaultValue="date-desc"
+                        >
+                            <option value="date-desc">Mais Recentes Primeiro</option>
+                            <option value="date-asc">Mais Antigos Primeiro</option>
+                            <option value="name-asc">Nome (A-Z)</option>
+                            <option value="name-desc">Nome (Z-A)</option>
+                        </select>
                     </div>
                 </div>
 
-                <div className="space-y-4">
+                {/* Lista de Documentos */}
+                <div className="mt-6 space-y-4">
                     {getFilteredTranslations().map((translation) => (
                         <div
                             key={translation.id}
@@ -805,6 +924,34 @@ export function TranslatedDocuments() {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Status de visualização para editores */}
+                            {userRole === 'EDITOR' && (
+                                <div className="mt-2 flex items-center gap-2">
+                                    <span className={`px-2 py-1 text-sm rounded-full ${
+                                        translation.viewStatus === ViewStatus.VISIBLE
+                                            ? 'bg-green-100 text-green-800'
+                                            : translation.viewStatus === ViewStatus.HIDDEN
+                                            ? 'bg-gray-100 text-gray-800'
+                                            : 'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                        {translation.viewStatus === ViewStatus.VISIBLE
+                                            ? '👁️ Visível'
+                                            : translation.viewStatus === ViewStatus.HIDDEN
+                                            ? '🔒 Oculto'
+                                            : '📦 Arquivado'}
+                                    </span>
+                                    <select
+                                        value={translation.viewStatus}
+                                        onChange={(e) => handleViewStatusChange(translation.id, e.target.value as ViewStatus)}
+                                        className="border rounded-lg px-3 py-1 text-sm bg-white hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                        <option value={ViewStatus.VISIBLE}>👁️ Marcar como Visível</option>
+                                        <option value={ViewStatus.HIDDEN}>🔒 Ocultar</option>
+                                        <option value={ViewStatus.ARCHIVED}>📦 Arquivar</option>
+                                    </select>
+                                </div>
+                            )}
                         </div>
                     ))}
 

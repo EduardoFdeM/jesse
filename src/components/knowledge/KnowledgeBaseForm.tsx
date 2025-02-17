@@ -116,41 +116,50 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                 return;
             }
 
-            if (!id && files.length === 0 && selectedExistingFiles.length === 0) {
-                setError('Selecione pelo menos um arquivo');
+            // Validação de arquivos
+            if (files.length === 0 && selectedExistingFiles.length === 0) {
+                setError('É necessário enviar pelo menos um arquivo ou selecionar arquivos existentes');
                 return;
             }
 
-            const data = new FormData();
-            data.append('name', formData.name);
-            data.append('description', formData.description);
+            // Enviar como JSON puro
+            const jsonData = {
+                name: formData.name,
+                description: formData.description || '',
+                existingFileIds: selectedExistingFiles
+            };
 
-            // Adicionar novos arquivos
-            files.forEach(fileWithLanguages => {
-                data.append('files', fileWithLanguages.file);
-            });
+            // Se houver arquivos, usar FormData
+            if (files.length > 0) {
+                const formDataToSend = new FormData();
+                
+                // Adicionar dados do JSON
+                formDataToSend.append('name', jsonData.name);
+                formDataToSend.append('description', jsonData.description);
+                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
 
-            // Adicionar IDs dos arquivos existentes
-            if (selectedExistingFiles.length > 0) {
-                data.append('existingFileIds', JSON.stringify(selectedExistingFiles));
-            }
+                // Adicionar arquivos
+                files.forEach(fileWithLanguages => {
+                    formDataToSend.append('files', fileWithLanguages.file);
+                });
 
-            if (id) {
-                await api.put(`/api/knowledge-bases/${id}`, data);
-                toast.success('Base de conhecimento atualizada com sucesso');
+                const response = await api.post('/api/knowledge-bases', formDataToSend, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+                console.log('Resposta (FormData):', response.data);
             } else {
-                await api.post('/api/knowledge-bases', data);
-                toast.success('Base de conhecimento criada com sucesso');
+                // Sem arquivos, enviar JSON direto
+                const response = await api.post('/api/knowledge-bases', jsonData);
+                console.log('Resposta (JSON):', response.data);
             }
 
+            toast.success('Base de conhecimento criada com sucesso');
             navigate('/knowledge-bases');
-        } catch (err: unknown) {
-            console.error('Erro ao salvar base de conhecimento:', err);
-            if (err instanceof Error) {
-                setError(err.message);
-            } else {
-                setError('Erro ao salvar base de conhecimento');
-            }
+        } catch (err: any) {
+            console.error('Detalhes do erro:', err.response?.data);
+            setError(err.response?.data?.message || 'Erro ao salvar base de conhecimento');
         } finally {
             setIsSubmitting(false);
         }

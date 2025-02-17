@@ -43,6 +43,28 @@ declare global {
         threadId?: string;
         runId?: string;
         assistantId?: string;
+        shares?: TranslationShare[];
+        user?: User;
+    }
+
+    interface TranslationShare {
+        id: string;
+        translationId: string;
+        sharedById: string;
+        sharedWithId: string;
+        createdAt: Date;
+        translation: Translation;
+        sharedBy: User;
+        sharedWith: User;
+    }
+
+    interface User {
+        id: string;
+        name: string;
+        email: string;
+        role: UserRole;
+        createdAt: Date;
+        updatedAt: Date;
     }
 
     // Knowledge Base Types

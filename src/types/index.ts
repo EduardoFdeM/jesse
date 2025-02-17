@@ -12,6 +12,12 @@ export enum TranslationStatus {
     ERROR = 'error'
 }
 
+export enum ViewStatus {
+    VISIBLE = 'visible',
+    HIDDEN = 'hidden',
+    ARCHIVED = 'archived'
+}
+
 // Tipos de usuário
 export interface User {
     id: string;
@@ -55,6 +61,7 @@ export interface Translation {
     sourceLanguage: string;
     targetLanguage: string;
     status: TranslationStatus;
+    viewStatus: ViewStatus;
     errorMessage?: string | null;
     translatedUrl?: string | null;
     costData?: string | null;

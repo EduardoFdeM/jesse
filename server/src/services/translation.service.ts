@@ -288,3 +288,41 @@ export const getTranslations = async (userId: string) => {
     });
 };
 
+// Buscar traduções compartilhadas com o usuário
+export const getSharedTranslations = async (userId: string) => {
+    return prisma.translation.findMany({
+        where: {
+            shares: {
+                some: {
+                    sharedWithId: userId
+                }
+            }
+        },
+        include: {
+            knowledgeBase: true,
+            prompt: true,
+            user: {
+                select: {
+                    name: true,
+                    email: true
+                }
+            }
+        },
+        orderBy: {
+            createdAt: 'desc'
+        }
+    });
+};
+
+// Verificar se uma tradução está compartilhada com um usuário
+export const isTranslationSharedWithUser = async (translationId: string, userId: string) => {
+    const share = await prisma.translationShare.findFirst({
+        where: {
+            translationId,
+            sharedWithId: userId
+        }
+    });
+
+    return !!share;
+};
+

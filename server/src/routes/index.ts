@@ -19,11 +19,11 @@ router.use('/health', healthRoutes);
 router.use(authenticate);
 
 // Rotas protegidas
-router.use('/translations', authorize(['SUPERUSER', 'TRANSLATOR']), translationRoutes);
+router.use('/translations', authenticate, translationRoutes);
 router.use('/knowledge-bases', authorize(['SUPERUSER', 'TRANSLATOR']), knowledgeRoutes);
 router.use('/assistants', authorize(['SUPERUSER', 'TRANSLATOR']), assistantRoutes);
-router.use('/files', authorize(['SUPERUSER']), filesRoutes);
 router.use('/admin', authorize(['SUPERUSER']), adminRoutes);
+router.use('/files', authorize(['SUPERUSER', 'TRANSLATOR']), filesRoutes);
 
 // Redirecionar /assistant para /assistants (compatibilidade)
 router.use('/assistant', (req, res) => {

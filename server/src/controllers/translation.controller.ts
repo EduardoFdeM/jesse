@@ -458,3 +458,132 @@ export const deleteTranslation = authenticatedHandler(async (req: AuthenticatedR
         throw error;
     }
 });
+
+// Compartilhar tradução
+export const shareTranslation = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const { userIds } = req.body;
+
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+        throw new ValidationError('Lista de usuários inválida');
+    }
+
+    try {
+        // Verificar se a tradução existe e pertence ao usuário
+        const translation = await prisma.translation.findFirst({
+            where: {
+                id,
+                userId: req.user!.id
+            }
+        });
+
+        if (!translation) {
+            throw new NotFoundError('Tradução não encontrada ou sem permissão');
+        }
+
+        // Criar os compartilhamentos
+        const shares = await prisma.$transaction(
+            userIds.map(userId => 
+                prisma.translationShare.create({
+                    data: {
+                        translationId: id,
+                        sharedWithId: userId,
+                        sharedById: req.user!.id
+                    }
+                })
+            )
+        );
+
+        res.status(200).json({
+            message: 'Tradução compartilhada com sucesso',
+            data: shares
+        });
+    } catch (error) {
+        if (error instanceof Error) {
+            throw new Error(`Erro ao compartilhar tradução: ${error.message}`);
+        }
+        throw new Error('Erro desconhecido ao compartilhar tradução');
+    }
+});
+
+// Obter traduções compartilhadas com o usuário
+export const getSharedTranslations = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
+    if (!req.user) {
+        throw new UnauthorizedError('Usuário não autenticado');
+    }
+
+    try {
+        const translations = await prisma.translation.findMany({
+            where: {
+                shares: {
+                    some: {
+                        sharedWithId: req.user.id
+                    }
+                }
+            },
+            include: {
+                knowledgeBase: true,
+                prompt: true,
+                user: {
+                    select: {
+                        name: true,
+                        email: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        res.json({ 
+            message: 'Traduções compartilhadas encontradas', 
+            data: translations 
+        });
+    } catch (error) {
+        console.error('Erro ao buscar traduções compartilhadas:', error);
+        throw error;
+    }
+});
+
+// Atualizar status de visualização
+export const updateViewStatus = authenticatedHandler(async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const { viewStatus } = req.body;
+
+    if (!['visible', 'hidden', 'archived'].includes(viewStatus)) {
+        throw new ValidationError('Status de visualização inválido');
+    }
+
+    try {
+        // Verificar se a tradução existe e se o usuário tem acesso a ela
+        const translation = await prisma.translation.findFirst({
+            where: {
+                id,
+                shares: {
+                    some: {
+                        sharedWithId: req.user!.id
+                    }
+                }
+            }
+        });
+
+        if (!translation) {
+            throw new NotFoundError('Tradução não encontrada ou sem permissão');
+        }
+
+        // Atualizar o status de visualização
+        const updatedTranslation = await prisma.translation.update({
+            where: { id },
+            data: { viewStatus }
+        });
+
+        res.json({
+            message: 'Status de visualização atualizado com sucesso',
+            data: updatedTranslation
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar status de visualização:', error);
+        throw error;
+    }
+});

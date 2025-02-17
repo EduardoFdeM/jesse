@@ -35,6 +35,7 @@ model Translation {
   sourceLanguage  String
   targetLanguage  String
   status          String         @default("pending")
+  viewStatus      String         @default("visible") // "visible", "hidden", "archived"
   errorMessage    String?
   translatedUrl   String?
   costData        String?        @default("{}")

@@ -6,7 +6,8 @@ import {
     getAssistantConfig,
     updateAssistantConfig,
     getUserStats,
-    createUser
+    createUser,
+    getAvailableUsers
 } from '../controllers/admin.controller.js';
 import { authorize } from '../middlewares/authorization.middleware.js';
 
@@ -14,6 +15,7 @@ const router = Router();
 
 // Rotas de gerenciamento de usuários
 router.get('/users', authorize(['SUPERUSER']), getUsers);
+router.get('/users/available', authorize(['SUPERUSER', 'TRANSLATOR']), getAvailableUsers);
 router.post('/users', authorize(['SUPERUSER']), createUser);
 router.get('/users/:id', authorize(['SUPERUSER']), getUserDetails);
 router.get('/users/:id/stats', authorize(['SUPERUSER']), getUserStats);
