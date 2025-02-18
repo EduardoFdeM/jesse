@@ -157,6 +157,29 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
         const outputFormat = params.outputFormat.split('/').pop() || 'txt'; // Pega apenas a extensão
         const fileContent = await extractTextFromBuffer(params.fileBuffer, params.outputFormat);
 
+        // Preparar payload para criação da thread
+        const threadPayload: any = {
+            messages: [{
+                role: "user",
+                content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
+            }]
+        };
+
+        // Se tiver base de conhecimento selecionada, adicionar ao payload
+        if (params.knowledgeBaseId) {
+            const knowledgeBase = await prisma.knowledgeBase.findUnique({
+                where: { id: params.knowledgeBaseId }
+            });
+
+            if (knowledgeBase?.vectorStoreId) {
+                threadPayload.tool_resources = {
+                    file_search: {
+                        vector_store_ids: [knowledgeBase.vectorStoreId]
+                    }
+                };
+            }
+        }
+
         // Criar thread com a mensagem inicial
         const response = await fetch('https://api.openai.com/v1/threads', {
             method: 'POST',
@@ -165,12 +188,7 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
                 'Content-Type': 'application/json',
                 'OpenAI-Beta': 'assistants=v2'
             },
-            body: JSON.stringify({
-                messages: [{
-                    role: "user",
-                    content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
-                }]
-            })
+            body: JSON.stringify(threadPayload)
         });
 
         if (!response.ok) {

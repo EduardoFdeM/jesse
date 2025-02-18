@@ -49,12 +49,17 @@ model Translation {
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
   promptId        String?
   prompt          Prompt?        @relation(fields: [promptId], references: [id])
-  translationMetadata String?    @default("{}")
+  translationMetadata String?    @default("{\"usedKnowledgeBase\": false, \"usedAssistant\": false}")
   plainTextContent String?
   threadId        String?        // ID do thread do Assistant
   runId           String?        // ID do run do Assistant
   assistantId     String?        @default("")
+  vectorStoreId   String?        // ID da Vector Store usada na tradução
   shares          TranslationShare[]
+
+  @@index([knowledgeBaseId])
+  @@index([promptId])
+  @@index([vectorStoreId])
 }
 
 model KnowledgeBase {

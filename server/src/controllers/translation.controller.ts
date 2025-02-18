@@ -161,7 +161,14 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 usedPrompt: useCustomPrompt,
                 usedKnowledgeBase: useKnowledgeBase,
                 knowledgeBaseId,
-                assistantId
+                assistantId,
+                translationMetadata: JSON.stringify({
+                    usedKnowledgeBase: useKnowledgeBase,
+                    usedAssistant: useCustomPrompt,
+                    knowledgeBaseName: useKnowledgeBase ? await getKnowledgeBaseName(knowledgeBaseId) : null,
+                    assistantName: useCustomPrompt ? await getAssistantName(assistantId) : null
+                }),
+                vectorStoreId: useKnowledgeBase ? await getVectorStoreId(knowledgeBaseId) : null
             },
             include: {
                 knowledgeBase: true
@@ -587,3 +594,22 @@ export const updateViewStatus = authenticatedHandler(async (req: AuthenticatedRe
         throw error;
     }
 });
+
+// Adicionar funções auxiliares
+async function getKnowledgeBaseName(id: string | null): Promise<string | null> {
+    if (!id) return null;
+    const kb = await prisma.knowledgeBase.findUnique({ where: { id } });
+    return kb?.name || null;
+}
+
+async function getAssistantName(id: string | null): Promise<string | null> {
+    if (!id) return null;
+    const prompt = await prisma.prompt.findUnique({ where: { id } });
+    return prompt?.name || null;
+}
+
+async function getVectorStoreId(knowledgeBaseId: string | null): Promise<string | null> {
+    if (!knowledgeBaseId) return null;
+    const kb = await prisma.knowledgeBase.findUnique({ where: { id: knowledgeBaseId } });
+    return kb?.vectorStoreId || null;
+}
