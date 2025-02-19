@@ -122,35 +122,35 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                 return;
             }
 
+            const endpoint = id ? `/api/knowledge-bases/${id}` : '/api/knowledge-bases';
+            const method = id ? 'put' : 'post';
+
             if (files.length > 0) {
                 // Se tiver novos arquivos, usar FormData
                 const formDataToSend = new FormData();
                 formDataToSend.append('name', formData.name);
                 formDataToSend.append('description', formData.description);
+                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
                 
-                // Garantir que existingFileIds seja sempre um array, mesmo vazio
-                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles || []));
-
-                // Adicionar arquivos
                 files.forEach(fileWithLanguages => {
                     formDataToSend.append('files', fileWithLanguages.file);
                 });
 
-                await api.post('/api/knowledge-bases', formDataToSend, {
+                await api[method](endpoint, formDataToSend, {
                     headers: {
                         'Content-Type': 'multipart/form-data'
                     }
                 });
             } else {
                 // Se só tiver arquivos existentes, enviar como JSON
-                await api.post('/api/knowledge-bases', {
+                await api[method](endpoint, {
                     name: formData.name,
                     description: formData.description,
-                    existingFileIds: JSON.stringify(selectedExistingFiles || []) // Convertendo para string JSON
+                    existingFileIds: selectedExistingFiles
                 });
             }
 
-            toast.success('Base de conhecimento criada com sucesso');
+            toast.success(id ? 'Base de conhecimento atualizada com sucesso' : 'Base de conhecimento criada com sucesso');
             navigate('/knowledge-bases');
         } catch (err: unknown) {
             const error = err as { response?: { data?: { message?: string } } };

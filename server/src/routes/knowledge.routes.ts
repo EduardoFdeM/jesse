@@ -45,7 +45,21 @@ router.get('/',
 
 router.get('/:id', controller.getKnowledgeBase);
 router.get('/:id/files', controller.getKnowledgeBaseFiles);
-router.put('/:id', controller.updateKnowledgeBase);
+router.put(
+    '/:id',
+    upload.array('files', 10),
+    validateRequest({
+        params: {
+            id: { type: 'string', required: true }
+        },
+        body: {
+            name: { type: 'string', required: true },
+            description: { type: 'string', required: true },
+            existingFileIds: { type: 'array', items: { type: 'string' }, required: false }
+        }
+    }),
+    controller.updateKnowledgeBase
+);
 router.delete('/:id', controller.deleteKnowledgeBaseHandler);
 
 // Vector Stores

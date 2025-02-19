@@ -115,47 +115,39 @@ export class KnowledgeController {
   updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
     const { name, description } = req.body;
+    const files = req.files as Express.Multer.File[];
+    let existingFileIds: string[] = [];
+    
+    try {
+        // Tratar tanto JSON direto quanto string JSON do FormData
+        if (req.body.existingFileIds) {
+            const parsed = typeof req.body.existingFileIds === 'string' 
+                ? JSON.parse(req.body.existingFileIds)
+                : req.body.existingFileIds;
 
-    // Verificar se existe e pertence ao usuário
-    const existingBase = await prisma.knowledgeBase.findFirst({
-        where: {
-            id,
-            userId: req.user!.id
-        }
-    });
-
-    if (!existingBase) {
-        throw new NotFoundError('Base de conhecimento não encontrada');
-    }
-
-    // Verificar nome duplicado
-    if (name !== existingBase.name) {
-        const nameExists = await prisma.knowledgeBase.findFirst({
-            where: {
-                name,
-                userId: req.user!.id,
-                id: { not: id }
+            if (!Array.isArray(parsed)) {
+                throw new BadRequestError("O campo 'existingFileIds' deve ser um array");
             }
-        });
-
-        if (nameExists) {
-            throw new Error('Já existe uma base de conhecimento com este nome');
+            existingFileIds = parsed;
         }
-    }
 
-    const updatedKnowledgeBase = await prisma.knowledgeBase.update({
-        where: { id },
-        data: {
+        const updatedBase = await this.service.updateKnowledgeBase({
+            id,
             name,
             description,
-            updatedAt: new Date()
-        }
-    });
+            userId: req.user!.id,
+            files,
+            existingFileIds
+        });
 
-    res.json({
-        status: 'success',
-        data: updatedKnowledgeBase
-    });
+        res.json({
+            status: 'success',
+            data: updatedBase
+        });
+    } catch (error) {
+        console.error('❌ Erro ao atualizar base de conhecimento:', error);
+        throw new Error(`Erro ao atualizar base de conhecimento: ${(error as Error).message}`);
+    }
   });
 
   // Excluir base de conhecimento

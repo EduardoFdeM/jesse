@@ -184,14 +184,9 @@ const vectorStoreApi = {
     },
     files: {
         add: async (vectorStoreId: string, fileId: string): Promise<VectorStoreFile> => {
-            console.log('📤 Enviando requisição para adicionar arquivo:', {
-                url: `https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`,
-                headers: {
-                    'Authorization': 'Bearer $OPENAI_API_KEY',
-                    'Content-Type': 'application/json',
-                    'OpenAI-Beta': 'assistants=v2'
-                },
-                body: { file_id: fileId }
+            console.log('📤 Adicionando arquivo à Vector Store:', {
+                vectorStoreId,
+                fileId
             });
 
             const response = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
@@ -211,18 +206,32 @@ const vectorStoreApi = {
             }
             
             const data = await response.json();
-            console.log('✅ Response da adição do arquivo:', data);
-            return data as VectorStoreFile;
+            console.log('✅ Arquivo adicionado com sucesso:', data);
+            return data;
         },
-        list: async (vectorStoreId: string): Promise<VectorStoreFileList> => {
-            console.log('📤 Enviando requisição para listar arquivos:', {
-                url: `https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`,
+        remove: async (vectorStoreId: string, fileId: string): Promise<void> => {
+            console.log('📤 Removendo arquivo da Vector Store:', {
+                vectorStoreId,
+                fileId
+            });
+
+            const response = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files/${fileId}`, {
+                method: 'DELETE',
                 headers: {
-                    'Authorization': 'Bearer $OPENAI_API_KEY',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
                     'Content-Type': 'application/json',
                     'OpenAI-Beta': 'assistants=v2'
                 }
             });
+            
+            if (!response.ok) {
+                const error = await response.text();
+                console.error('❌ Erro ao remover arquivo da Vector Store:', error);
+                throw new Error(`Erro ao remover arquivo da Vector Store: ${error}`);
+            }
+        },
+        list: async (vectorStoreId: string): Promise<VectorStoreFileList> => {
+            console.log('📤 Listando arquivos da Vector Store:', vectorStoreId);
 
             const response = await fetch(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
                 headers: {
@@ -239,8 +248,8 @@ const vectorStoreApi = {
             }
             
             const data = await response.json();
-            console.log('✅ Response da listagem de arquivos:', data);
-            return data as VectorStoreFileList;
+            console.log('✅ Arquivos listados com sucesso:', data);
+            return data;
         }
     }
 };
