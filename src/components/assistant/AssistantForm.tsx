@@ -6,19 +6,6 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'react-hot-toast';
 
-interface AssistantFormProps {
-    initialData?: {
-        id?: string;
-        name: string;
-        description: string;
-        instructions: string;
-        tags: string[];
-        model: string;
-        temperature: number;
-        isPublic: boolean;
-    };
-}
-
 interface AssistantFormData {
     name: string;
     description: string;
@@ -29,18 +16,18 @@ interface AssistantFormData {
     isPublic: boolean;
 }
 
-export function AssistantForm({ initialData }: AssistantFormProps) {
+export function AssistantForm() {
     const navigate = useNavigate();
     const { id } = useParams<{ id: string }>();
     const [isLoading, setIsLoading] = useState(true);
     const [formData, setFormData] = useState<AssistantFormData>({
-        name: initialData?.name || '',
-        description: initialData?.description || '',
-        instructions: initialData?.instructions || '',
-        tags: initialData?.tags || [],
-        model: initialData?.model || 'gpt-4-turbo-preview',
-        temperature: initialData?.temperature || 0.3,
-        isPublic: initialData?.isPublic || false
+        name: '',
+        description: '',
+        instructions: '',
+        tags: [],
+        model: 'gpt-4o-mini',
+        temperature: 0.3,
+        isPublic: false
     });
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -236,8 +223,8 @@ export function AssistantForm({ initialData }: AssistantFormProps) {
                             onChange={(e) => setFormData({ ...formData, model: e.target.value })}
                             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         >
-                            <option value="gpt-4-turbo-preview">GPT-4 Turbo</option>
-                            <option value="gpt-4">GPT-4</option>
+                            <option value="gpt-4o-mini">GPT-4 Mini</option>
+                            <option value="gpt-4o">GPT-4</option>
                             <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
                         </select>
                     </div>

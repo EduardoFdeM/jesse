@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+// import OpenAI from 'openai';
 
 // Configuração do cliente OpenAI
 // const openai = new OpenAI({
@@ -342,15 +342,16 @@ const assistantApi = {
         instructions: string;
         model: string;
         temperature?: number;
-    }): Promise<AssistantResponse> => {
+    }): Promise<OpenAIAssistant> => {
         const response = await fetch('https://api.openai.com/v1/assistants', {
             method: 'POST',
             headers: getHeaders(true),
             body: JSON.stringify({
                 name: params.name,
                 instructions: params.instructions,
-                model: params.model,
-                tools: [{ type: "file_search" }]
+                model: params.model || 'gpt-4o-mini',
+                tools: [{ type: "file_search" }],
+                temperature: params.temperature || 0.3
             })
         });
 
@@ -366,7 +367,8 @@ const assistantApi = {
         name?: string;
         instructions?: string;
         model?: string;
-    }): Promise<AssistantResponse> => {
+        temperature?: number;
+    }): Promise<OpenAIAssistant> => {
         const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
             method: 'POST',
             headers: getHeaders(true),
@@ -374,7 +376,8 @@ const assistantApi = {
         });
 
         if (!response.ok) {
-            throw new Error('Erro ao modificar Assistant');
+            const error = await response.text();
+            throw new Error(`Erro ao modificar Assistant: ${error}`);
         }
 
         return await response.json();

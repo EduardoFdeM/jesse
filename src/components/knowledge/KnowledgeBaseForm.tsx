@@ -130,7 +130,11 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                 const formDataToSend = new FormData();
                 formDataToSend.append('name', formData.name);
                 formDataToSend.append('description', formData.description);
-                formDataToSend.append('existingFileIds', JSON.stringify(selectedExistingFiles));
+                
+                // Adicionar cada ID de arquivo existente separadamente
+                selectedExistingFiles.forEach(fileId => {
+                    formDataToSend.append('existingFileIds[]', fileId);
+                });
                 
                 files.forEach(fileWithLanguages => {
                     formDataToSend.append('files', fileWithLanguages.file);

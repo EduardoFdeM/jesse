@@ -158,7 +158,6 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 userId: req.user.id,
                 fileSize: file.size,
                 fileType: file.mimetype,
-                usedPrompt: useCustomPrompt,
                 usedKnowledgeBase: useKnowledgeBase,
                 knowledgeBaseId,
                 assistantId,
@@ -530,7 +529,7 @@ export const getSharedTranslations = authenticatedHandler(async (req: Authentica
             },
             include: {
                 knowledgeBase: true,
-                prompt: true,
+                assistant: true,
                 user: {
                     select: {
                         name: true,
@@ -604,8 +603,8 @@ async function getKnowledgeBaseName(id: string | null): Promise<string | null> {
 
 async function getAssistantName(id: string | null): Promise<string | null> {
     if (!id) return null;
-    const prompt = await prisma.prompt.findUnique({ where: { id } });
-    return prompt?.name || null;
+    const assistant = await prisma.assistant.findUnique({ where: { id } });
+    return assistant?.name || null;
 }
 
 async function getVectorStoreId(knowledgeBaseId: string | null): Promise<string | null> {

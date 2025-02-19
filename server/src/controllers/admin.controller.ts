@@ -23,7 +23,7 @@ export const getUsers = asyncHandler(async (_req: Request, res: Response) => {
                 select: {
                     translations: true,
                     knowledgeBases: true,
-                    prompts: true
+                    assistants: true
                 }
             }
         }
@@ -44,7 +44,7 @@ export const getUserDetails = asyncHandler(async (req: Request, res: Response) =
                 take: 10 // Últimas 10 traduções
             },
             knowledgeBases: true,
-            prompts: true
+            assistants: true
         }
     });
 
@@ -72,7 +72,7 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
                 select: {
                     translations: true,
                     knowledgeBases: true,
-                    prompts: true
+                    assistants: true
                 }
             },
             translations: {
@@ -88,7 +88,7 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
                 orderBy: { createdAt: 'desc' },
                 take: 10
             },
-            prompts: {
+            assistants: {
                 select: {
                     id: true,
                     name: true,
@@ -171,7 +171,7 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
                 cost: t.costData ? JSON.parse(t.costData).totalCost : null
             }
         })) || []),
-        ...(user.prompts?.map(p => ({
+        ...(user.assistants?.map(p => ({
             id: p.id,
             type: 'prompt' as const,
             action: 'Prompt criado',
@@ -186,14 +186,14 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
     res.json({
         totalTranslations: user._count?.translations || 0,
         totalKnowledgeBases: user._count?.knowledgeBases || 0,
-        totalPrompts: user._count?.prompts || 0,
+        totalPrompts: user._count?.assistants || 0,
         totalCost,
         translationStats,
         successRate,
         averageTranslationTime: avgTime,
         costByMonth,
         recentTranslations: user.translations || [],
-        recentPrompts: user.prompts || [],
+        recentPrompts: user.assistants || [],
         recentActivity
     });
 });

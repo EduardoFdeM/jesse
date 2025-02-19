@@ -18,20 +18,34 @@ export class KnowledgeController {
     let existingFileIds: string[] = [];
     
     try {
-        // Tratar tanto JSON direto quanto string JSON do FormData
+        // Tratar tanto JSON direto quanto array do FormData
         if (req.body.existingFileIds) {
-            const parsed = typeof req.body.existingFileIds === 'string' 
-                ? JSON.parse(req.body.existingFileIds)
-                : req.body.existingFileIds;
-
-            if (!Array.isArray(parsed)) {
+            // Se for um array do FormData
+            if (Array.isArray(req.body.existingFileIds)) {
+                existingFileIds = req.body.existingFileIds;
+            }
+            // Se for uma string JSON
+            else if (typeof req.body.existingFileIds === 'string') {
+                try {
+                    const parsed = JSON.parse(req.body.existingFileIds);
+                    if (Array.isArray(parsed)) {
+                        existingFileIds = parsed;
+                    } else {
+                        throw new BadRequestError("O campo 'existingFileIds' deve ser um array de strings");
+                    }
+                } catch {
+                    // Se não for um JSON válido, pode ser um único ID
+                    existingFileIds = [req.body.existingFileIds];
+                }
+            }
+            // Se não for nenhum dos casos acima
+            else {
                 throw new BadRequestError("O campo 'existingFileIds' deve ser um array de strings");
             }
-            existingFileIds = parsed;
         }
     } catch (error) {
         if (error instanceof BadRequestError) throw error;
-        throw new BadRequestError("O campo 'existingFileIds' deve ser enviado como uma string JSON contendo um array de IDs");
+        throw new BadRequestError("O campo 'existingFileIds' deve ser um array de strings");
     }
 
     const userId = req.user?.id;

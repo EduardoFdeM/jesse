@@ -5,8 +5,21 @@ import { Prompt } from '../../types';
 import api from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
 
+interface Assistant {
+    id: string;
+    name: string;
+    description: string;
+    instructions: string;
+    tags: string[];
+    model: string;
+    temperature: number;
+    isPublic: boolean;
+    assistantId: string;
+    status: string;
+}
+
 export function AssistantList() {
-    const [assistants, setAssistants] = useState<Prompt[]>([]);
+    const [assistants, setAssistants] = useState<Assistant[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [allTags, setAllTags] = useState<string[]>([]);
@@ -145,6 +158,12 @@ export function AssistantList() {
                     </div>
                 )}
             </div>
+
+            {error && (
+                <div className="col-span-full p-4 text-red-600 bg-red-50 rounded-md">
+                    {error}
+                </div>
+            )}
         </div>
     );
 }

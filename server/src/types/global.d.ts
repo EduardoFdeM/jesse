@@ -152,6 +152,46 @@ declare global {
             };
         };
     }
+
+    interface OpenAIAssistant {
+        id: string;
+        object: 'assistant';
+        created_at: number;
+        name: string | null;
+        description: string | null;
+        model: string;
+        instructions: string | null;
+        tools: Array<{
+            type: string;
+            file_search?: {
+                ranking_options: {
+                    ranker: string;
+                    score_threshold: number;
+                }
+            }
+        }>;
+        top_p: number;
+        temperature: number;
+        reasoning_effort: string | null;
+        tool_resources: {
+            file_search?: {
+                vector_store_ids: string[];
+            };
+            code_interpreter?: {
+                file_ids: string[];
+            };
+        };
+        metadata: Record<string, unknown>;
+        response_format: 'auto' | { type: string };
+    }
+
+    interface OpenAIAssistantList {
+        object: 'list';
+        data: OpenAIAssistant[];
+        first_id: string;
+        last_id: string;
+        has_more: boolean;
+    }
 }
 
 declare module 'tesseract.js' {

@@ -290,7 +290,7 @@ export const getTranslation = async (id: string) => {
         where: { id },
         include: {
             knowledgeBase: true,
-            prompt: true
+            assistant: true
         }
     });
 };
@@ -301,7 +301,7 @@ export const getTranslations = async (userId: string) => {
         orderBy: { createdAt: 'desc' },
         include: {
             knowledgeBase: true,
-            prompt: true
+            assistant: true
         }
     });
 };
@@ -318,7 +318,7 @@ export const getSharedTranslations = async (userId: string) => {
         },
         include: {
             knowledgeBase: true,
-            prompt: true,
+            assistant: true,
             user: {
                 select: {
                     name: true,

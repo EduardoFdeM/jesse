@@ -65,13 +65,23 @@ export default function App() {
                             } />
                         </Route>
                         
-                        <Route path="assistants" element={<TranslatorRoute>
-                            <Routes>
-                                <Route index element={<AssistantList />} />
-                                <Route path="new" element={<AssistantForm />} />
-                                <Route path=":id/edit" element={<AssistantForm />} />
-                            </Routes>
-                        </TranslatorRoute>} />
+                        <Route path="assistants">
+                            <Route index element={
+                                <TranslatorRoute>
+                                    <AssistantList />
+                                </TranslatorRoute>
+                            } />
+                            <Route path="new" element={
+                                <TranslatorRoute>
+                                    <AssistantForm />
+                                </TranslatorRoute>
+                            } />
+                            <Route path=":id/edit" element={
+                                <TranslatorRoute>
+                                    <AssistantForm />
+                                </TranslatorRoute>
+                            } />
+                        </Route>
                         
                         <Route path="admin" element={<AdminRoute><Admin /></AdminRoute>} />
                     </Route>

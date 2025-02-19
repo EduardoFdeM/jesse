@@ -20,7 +20,7 @@ model User {
   updatedAt      DateTime        @updatedAt
   translations   Translation[]
   knowledgeBases KnowledgeBase[]
-  prompts        Prompt[]
+  assistants     Assistant[]
   sharedWithMe   TranslationShare[] @relation("shared_with")
   sharedByMe     TranslationShare[] @relation("shared_by")
 }
@@ -39,7 +39,7 @@ model Translation {
   errorMessage    String?
   translatedUrl   String?
   costData        String?        @default("{}")
-  usedPrompt      Boolean       @default(false)
+  usedAssistant      Boolean       @default(false)
   usedKnowledgeBase Boolean     @default(false)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -47,18 +47,17 @@ model Translation {
   user            User           @relation(fields: [userId], references: [id])
   knowledgeBaseId String?
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
-  promptId        String?
-  prompt          Prompt?        @relation(fields: [promptId], references: [id])
+  assistantId     String?        @default("")
+  assistant       Assistant?     @relation(fields: [assistantId], references: [id])
   translationMetadata String?    @default("{\"usedKnowledgeBase\": false, \"usedAssistant\": false}")
   plainTextContent String?
   threadId        String?        // ID do thread do Assistant
   runId           String?        // ID do run do Assistant
-  assistantId     String?        @default("")
   vectorStoreId   String?        // ID da Vector Store usada na tradução
   shares          TranslationShare[]
 
   @@index([knowledgeBaseId])
-  @@index([promptId])
+  @@index([assistantId])
   @@index([vectorStoreId])
 }
 
@@ -83,11 +82,10 @@ model KnowledgeBase {
   @@index([userId])
 }
 
-model Prompt {
+model Assistant {
   id           String        @id @default(uuid())
   name         String
   description  String
-  content      String        @db.Text
   instructions String        @db.Text
   tags         String[]      @default([])
   userId       String

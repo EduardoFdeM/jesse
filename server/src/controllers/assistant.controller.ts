@@ -3,7 +3,6 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import prisma from '../config/database.js';
 import openai, { OpenAIAssistant } from '../config/openai.js';
-import { Prompt } from '@prisma/client';
 
 // Verificação de autenticação comum
 const verifyUser = (userId: string | undefined): void => {
@@ -19,7 +18,7 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
     const openaiAssistants = await openai.assistant.list();
     
     // Buscar assistants do banco
-    const dbAssistants = await prisma.prompt.findMany({ 
+    const dbAssistants = await prisma.assistant.findMany({ 
         where: { 
             OR: [
                 { userId: req.user!.id },
@@ -29,10 +28,13 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
         orderBy: { createdAt: 'desc' }
     });
 
-    // Filtrar apenas os assistants que existem na OpenAI
-    const assistants = dbAssistants.filter((assistant: Prompt) => 
+    // Filtrar apenas os assistants que existem na OpenAI e remover o assistant padrão
+    const assistants = dbAssistants.filter(assistant => 
         assistant.assistantId && 
-        openaiAssistants.data.some((oa: OpenAIAssistant) => oa.id === assistant.assistantId)
+        openaiAssistants.data.some(oa => 
+            oa.id === assistant.assistantId && 
+            oa.id !== process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID
+        )
     );
     
     res.json({ 
@@ -51,20 +53,19 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
     const openaiAssistant = await openai.assistant.create({
         name,
         instructions,
-        model,
+        model: model || 'gpt-4o-mini',
         temperature
     });
 
     // Criar no banco
-    const assistant = await prisma.prompt.create({
+    const assistant = await prisma.assistant.create({
         data: {
             name,
             description,
-            content: instructions,
             instructions,
             tags,
-            model,
-            temperature,
+            model: model || 'gpt-4o-mini',
+            temperature: temperature || 0.3,
             isPublic,
             userId: req.user!.id,
             assistantId: openaiAssistant.id,
@@ -78,7 +79,7 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
 export const getAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const assistant = await prisma.prompt.findFirst({
+    const assistant = await prisma.assistant.findFirst({
         where: { 
             id: req.params.id, 
             userId: req.user!.id 
@@ -97,7 +98,7 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
     
     const { name, description, instructions, tags, model, temperature, isPublic } = req.body;
     
-    const assistant = await prisma.prompt.findFirst({ 
+    const assistant = await prisma.assistant.findFirst({ 
         where: { 
             id: req.params.id, 
             userId: req.user!.id 
@@ -117,7 +118,7 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
         });
     }
 
-    const updatedAssistant = await prisma.prompt.update({
+    const updatedAssistant = await prisma.assistant.update({
         where: { id: req.params.id },
         data: { 
             name, 
@@ -136,7 +137,7 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
 export const deleteAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const assistant = await prisma.prompt.findFirst({ 
+    const assistant = await prisma.assistant.findFirst({ 
         where: { 
             id: req.params.id, 
             userId: req.user!.id 
@@ -152,6 +153,6 @@ export const deleteAssistant = asyncHandler(async (req: Request, res: Response) 
         await openai.assistant.delete(assistant.assistantId);
     }
 
-    await prisma.prompt.delete({ where: { id: req.params.id } });
+    await prisma.assistant.delete({ where: { id: req.params.id } });
     res.json({ status: 'success', data: null });
 }); 

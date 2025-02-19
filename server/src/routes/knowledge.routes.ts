@@ -29,7 +29,7 @@ router.post(
         body: {
             name: { type: 'string', required: true },
             description: { type: 'string', required: true },
-            existingFileIds: { type: 'string', required: false }
+            existingFileIds: { type: 'array', items: { type: 'string' }, required: false }
         }
     }),
     controller.createKnowledgeBase
