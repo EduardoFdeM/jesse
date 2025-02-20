@@ -219,4 +219,31 @@ declare module 'tesseract.js' {
     export function createWorker(options?: WorkerOptions): Promise<Worker>;
 }
 
+interface TranslationRequest {
+    sourceLanguage: string;
+    targetLanguage: string;
+    useKnowledgeBase: boolean;
+    useCustomAssistant: boolean;
+    knowledgeBaseId?: string;
+    assistantId?: string;
+    file: Express.Multer.File;
+}
+
+// Assistant Types
+interface Assistant {
+    id: string;
+    name: string;
+    description: string;
+    instructions: string;
+    tags: string[];
+    userId: string;
+    createdAt: Date;
+    updatedAt: Date;
+    isPublic: boolean;
+    model: string;
+    temperature: number;
+    assistantId: string | null;
+    status: string;
+}
+
 export {}; 

@@ -48,7 +48,7 @@ model Translation {
   knowledgeBaseId String?
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
   assistantId     String?        @default("")
-  assistant       Assistant?     @relation(fields: [assistantId], references: [id])
+  assistant       Assistant?     @relation(fields: [assistantId], references: [id], onDelete: SetNull)
   translationMetadata String?    @default("{\"usedKnowledgeBase\": false, \"usedAssistant\": false}")
   plainTextContent String?
   threadId        String?        // ID do thread do Assistant

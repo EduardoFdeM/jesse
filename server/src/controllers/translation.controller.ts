@@ -94,16 +94,16 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
     try {
         const file = req.file;
         const useKnowledgeBase = req.body.useKnowledgeBase === 'true';
-        const useCustomPrompt = req.body.useCustomPrompt === 'true';
+        const useCustomAssistant = req.body.useCustomAssistant === 'true';
         const knowledgeBaseId = useKnowledgeBase ? req.body.knowledgeBaseId : null;
-        const assistantId = useCustomPrompt ? req.body.assistantId : null;
+        const assistantId = useCustomAssistant ? req.body.assistantId : null;
 
         console.log('📝 Iniciando processo de tradução:', {
             fileName: file?.originalname,
             fileSize: file?.size,
             fileType: file?.mimetype,
             useKnowledgeBase,
-            useCustomPrompt,
+            useCustomAssistant,
             knowledgeBaseId,
             assistantId,
             userId: req.user?.id
@@ -163,9 +163,9 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 assistantId,
                 translationMetadata: JSON.stringify({
                     usedKnowledgeBase: useKnowledgeBase,
-                    usedAssistant: useCustomPrompt,
+                    usedAssistant: useCustomAssistant,
                     knowledgeBaseName: useKnowledgeBase ? await getKnowledgeBaseName(knowledgeBaseId) : null,
-                    assistantName: useCustomPrompt ? await getAssistantName(assistantId) : null
+                    assistantName: useCustomAssistant ? await getAssistantName(assistantId) : null
                 }),
                 vectorStoreId: useKnowledgeBase ? await getVectorStoreId(knowledgeBaseId) : null
             },
@@ -190,7 +190,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             outputFormat: file.mimetype.split('/')[1],
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
-            assistantId: useCustomPrompt ? assistantId : undefined,
+            assistantId: useCustomAssistant ? assistantId : undefined,
             fileBuffer: file.buffer // Passar o buffer do arquivo
         });
 

@@ -85,7 +85,7 @@ export function TranslatedDocuments() {
                     usedKnowledgeBase: metadata.usedKnowledgeBase || false,
                     usedAssistant: metadata.usedAssistant || false,
                     knowledgeBaseName: metadata.knowledgeBaseName || translation.knowledgeBase?.name,
-                    assistantName: metadata.assistantName || translation.prompt?.name
+                    assistantName: metadata.assistantName || translation.assistant?.name
                 };
             });
             
@@ -154,7 +154,7 @@ export function TranslatedDocuments() {
                                 usedKnowledgeBase: translationMetadata.usedKnowledgeBase || false,
                                 usedAssistant: translationMetadata.usedAssistant || false,
                                 knowledgeBase: translation.knowledgeBase,
-                                prompt: translation.prompt
+                                assistant: translation.assistant
                             }
                             : t
                     )
@@ -482,20 +482,26 @@ export function TranslatedDocuments() {
     };
 
     // Atualizar a exibição dos metadados
-    const renderMetadata = (translation: Translation & { knowledgeBaseName?: string; assistantName?: string }) => {
+    const renderMetadata = (translation: Translation) => {
+        const metadata = translation.translationMetadata ? JSON.parse(translation.translationMetadata) : {};
         return (
-            <>
+            <div className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
                 {translation.usedKnowledgeBase && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Base de Conhecimento: {translation.knowledgeBaseName || translation.knowledgeBase?.name || 'Não especificada'}
+                    <div className="flex items-center gap-1">
+                        📚 Base de conhecimento: {translation.knowledgeBase?.name || 'Não especificada'}
                     </div>
                 )}
                 {translation.usedAssistant && (
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Assistant: {translation.assistantName || translation.prompt?.name || 'Não especificado'}
+                    <div className="flex items-center gap-1">
+                        🤖 Assistant: {translation.assistant?.name || 'Padrão'}
+                        {translation.assistant?.model && (
+                            <span className="text-xs text-gray-400 ml-1">
+                                ({translation.assistant.model})
+                            </span>
+                        )}
                     </div>
                 )}
-            </>
+            </div>
         );
     };
 
@@ -938,8 +944,8 @@ export function TranslatedDocuments() {
                                 </div>
                                 <div className="flex items-center">
                                     <span className="mr-2">Assistant Personalizado:</span>
-                                    {translation.usedAssistant && translation.prompt ? (
-                                        <span className="text-green-600" title={translation.prompt.name}>✓</span>
+                                    {translation.usedAssistant && translation.assistant ? (
+                                        <span className="text-green-600" title={translation.assistant.name}>✓</span>
                                     ) : (
                                         <span className="text-red-600">✗</span>
                                     )}

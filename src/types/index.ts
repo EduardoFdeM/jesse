@@ -79,7 +79,7 @@ export interface Translation {
     errorMessage?: string;
     translatedUrl?: string;
     costData?: string;
-    usedPrompt: boolean;
+    usedAssistant: boolean;
     usedKnowledgeBase: boolean;
     createdAt: string;
     updatedAt: string;
@@ -87,28 +87,34 @@ export interface Translation {
     user: User;
     knowledgeBaseId?: string;
     knowledgeBase?: KnowledgeBase;
-    promptId?: string;
-    prompt?: Prompt;
+    assistantId?: string;
+    assistant?: {
+        id: string;
+        name: string;
+        model: string;
+    };
     translationMetadata?: string;
     plainTextContent?: string;
     threadId?: string;
     runId?: string;
-    assistantId?: string;
     shares: TranslationShare[];
 }
 
-// Tipos de prompt/assistente
-export interface Prompt {
+// Tipos de assistant
+export interface Assistant {
     id: string;
     name: string;
     description: string;
-    content: string;
-    version: string;
+    instructions: string;
     tags: string[];
     userId: string;
-    isPublic?: boolean;
-    model?: string;
-    temperature?: number;
+    createdAt: Date;
+    updatedAt: Date;
+    isPublic: boolean;
+    model: string;
+    temperature: number;
+    assistantId: string | null;
+    status: string;
 }
 
 // Tipos de autenticação
@@ -135,31 +141,36 @@ export interface AssistantConfig {
 export interface UserStats {
     totalTranslations: number;
     totalKnowledgeBases: number;
-    totalPrompts: number;
+    totalAssistants: number;
     totalCost: number;
     translationStats: Record<TranslationStatus, number>;
     monthlyActivity: Record<string, number>;
     recentTranslations: Translation[];
-    recentPrompts: Prompt[];
-    recentActivity: UserActivity[];
+    recentKnowledgeBases: KnowledgeBase[];
+    recentAssistants: Assistant[];
     averageTranslationTime: number;
     successRate: number;
     costByMonth: Record<string, number>;
 }
 
-export interface UserActivity {
+export interface ActivityLog {
     id: string;
-    type: 'translation' | 'prompt' | 'knowledge_base' | 'edit';
+    userId: string;
+    type: 'translation' | 'assistant' | 'knowledge_base' | 'edit';
     action: string;
-    timestamp: string;
     details: {
         fileName?: string;
-        fileType?: string;
-        status?: TranslationStatus;
-        cost?: number;
-        promptName?: string;
+        assistantName?: string;
         knowledgeBaseName?: string;
     };
+    createdAt: Date;
+}
+
+export interface AdminDashboardData {
+    users: User[];
+    translations: Translation[];
+    knowledgeBases: KnowledgeBase[];
+    assistants: Assistant[];
 }
 
 // Tipos de componentes
