@@ -32,7 +32,7 @@ export interface User {
     _count?: {
         translations: number;
         knowledgeBases: number;
-        prompts: number;
+        assistants: number;
     };
 }
 
@@ -92,7 +92,7 @@ export interface Translation {
         id: string;
         name: string;
         model: string;
-    };
+    } | null;
     translationMetadata?: string;
     plainTextContent?: string;
     threadId?: string;
@@ -113,7 +113,7 @@ export interface Assistant {
     isPublic: boolean;
     model: string;
     temperature: number;
-    assistantId: string | null;
+    assistantId: string;
     status: string;
 }
 
@@ -179,8 +179,12 @@ export interface FileUploadProps {
     targetLanguage: string;
     onFileSelect: (files: File[]) => Promise<void>;
     knowledgeBases: KnowledgeBase[];
-    prompts: Prompt[];
+    assistants: Assistant[];
     onReset?: () => void;
+    selectedKnowledgeBase?: string | undefined;
+    selectedAssistant?: string | undefined;
+    onKnowledgeBaseSelect?: (id: string) => void;
+    onAssistantSelect?: (id: string | undefined) => void;
 }
 
 // Tipos de eventos do Socket

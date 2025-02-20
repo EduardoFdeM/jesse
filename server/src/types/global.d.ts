@@ -31,18 +31,17 @@ declare global {
         errorMessage?: string;
         translatedUrl?: string;
         costData?: string;
-        usedPrompt: boolean;
+        usedAssistant: boolean;
         usedKnowledgeBase: boolean;
         createdAt: Date;
         updatedAt: Date;
         userId: string;
         knowledgeBaseId?: string;
-        promptId?: string;
+        assistantId?: string;
         translationMetadata?: string;
         plainTextContent?: string;
         threadId?: string;
         runId?: string;
-        assistantId?: string;
         shares?: TranslationShare[];
         user?: User;
     }
@@ -82,22 +81,6 @@ declare global {
         createdAt: Date;
         updatedAt: Date;
         userId: string;
-    }
-
-    // Prompt/Assistant Types
-    interface Prompt {
-        id: string;
-        name: string;
-        description: string;
-        content: string;
-        tags: string[];
-        version: string;
-        userId: string;
-        createdAt: Date;
-        updatedAt: Date;
-        isPublic: boolean;
-        model: string;
-        temperature: number;
     }
 
     // Socket Events
@@ -192,6 +175,23 @@ declare global {
         last_id: string;
         has_more: boolean;
     }
+
+    // Assistant Types
+    interface Assistant {
+        id: string;
+        name: string;
+        description: string;
+        instructions: string;
+        tags: string[];
+        userId: string;
+        createdAt: Date;
+        updatedAt: Date;
+        isPublic: boolean;
+        model: string;
+        temperature: number;
+        assistantId: string;
+        status: 'pending' | 'active' | 'error';
+    }
 }
 
 declare module 'tesseract.js' {
@@ -229,21 +229,18 @@ interface TranslationRequest {
     file: Express.Multer.File;
 }
 
-// Assistant Types
-interface Assistant {
+interface AssistantResponse {
     id: string;
     name: string;
     description: string;
     instructions: string;
-    tags: string[];
-    userId: string;
-    createdAt: Date;
-    updatedAt: Date;
-    isPublic: boolean;
     model: string;
     temperature: number;
-    assistantId: string | null;
-    status: string;
+    assistantId: string;
+    status: 'pending' | 'active' | 'error';
+    isPublic: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export {}; 

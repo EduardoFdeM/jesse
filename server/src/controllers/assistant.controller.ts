@@ -28,14 +28,15 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
         orderBy: { createdAt: 'desc' }
     });
 
-    // Filtrar apenas os assistants que existem na OpenAI e remover o assistant padrão
+    // Filtrar apenas os assistants que existem na OpenAI e estão ativos
     const assistants = dbAssistants.filter(assistant => 
         assistant.assistantId && 
-        openaiAssistants.data.some(oa => 
-            oa.id === assistant.assistantId && 
-            oa.id !== process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID
-        )
-    );
+        assistant.status === 'active' &&
+        openaiAssistants.data.some(oa => oa.id === assistant.assistantId)
+    ).map(assistant => ({
+        ...assistant,
+        assistantId: assistant.assistantId // Garantir que o ID da OpenAI está disponível
+    }));
     
     res.json({ 
         status: 'success', 

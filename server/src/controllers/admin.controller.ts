@@ -173,11 +173,11 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
         })) || []),
         ...(user.assistants?.map(p => ({
             id: p.id,
-            type: 'prompt' as const,
-            action: 'Prompt criado',
+            type: 'assistant' as const,
+            action: 'Assistant criado',
             timestamp: new Date(),
             details: {
-                promptName: p.name
+                assistantName: p.name
             }
         })) || [])
     ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -186,14 +186,14 @@ export const getUserStats = asyncHandler(async (req: Request, res: Response) => 
     res.json({
         totalTranslations: user._count?.translations || 0,
         totalKnowledgeBases: user._count?.knowledgeBases || 0,
-        totalPrompts: user._count?.assistants || 0,
+        totalAssistants: user._count?.assistants || 0,
         totalCost,
         translationStats,
         successRate,
         averageTranslationTime: avgTime,
         costByMonth,
         recentTranslations: user.translations || [],
-        recentPrompts: user.assistants || [],
+        recentAssistants: user.assistants || [],
         recentActivity
     });
 });

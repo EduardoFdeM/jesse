@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2 } from 'lucide-react';
-import { Translation, KnowledgeBase, Prompt, User, ViewStatus } from '../../types/index';
+import { Translation, KnowledgeBase, Assistant, User, ViewStatus } from '../../types/index';
 import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
 import { toast } from 'react-toastify';
@@ -44,9 +44,9 @@ export function TranslatedDocuments() {
     const [lastSelectedId, setLastSelectedId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
-    const [prompts, setPrompts] = useState<Prompt[]>([]);
-    const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string | null>(null);
-    const [selectedPrompt, setSelectedPrompt] = useState<string | null>(null);
+    const [assistants, setAssistants] = useState<Assistant[]>([]);
+    const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string | undefined>(undefined);
+    const [selectedAssistant, setSelectedAssistant] = useState<string | undefined>(undefined);
     const [showShareModal, setShowShareModal] = useState(false);
     const [selectedTranslationForShare, setSelectedTranslationForShare] = useState<Translation | null>(null);
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
@@ -112,7 +112,7 @@ export function TranslatedDocuments() {
                     ]);
 
                     setKnowledgeBases(kbResponse.data.data);
-                    setPrompts(assistantsResponse.data.data);
+                    setAssistants(assistantsResponse.data.data);
                 } catch (error) {
                     console.error('Erro ao carregar dados:', error);
                 }
@@ -213,13 +213,13 @@ export function TranslatedDocuments() {
             formData.append('sourceLanguage', sourceLanguage || 'pt');
             formData.append('targetLanguage', targetLanguage || 'en');
             formData.append('useKnowledgeBase', selectedKnowledgeBase ? 'true' : 'false');
-            formData.append('useCustomPrompt', selectedPrompt ? 'true' : 'false');
+            formData.append('useCustomAssistant', selectedAssistant ? 'true' : 'false');
 
             if (selectedKnowledgeBase) {
                 formData.append('knowledgeBaseId', selectedKnowledgeBase);
             }
-            if (selectedPrompt) {
-                formData.append('promptId', selectedPrompt);
+            if (selectedAssistant) {
+                formData.append('assistantId', selectedAssistant);
             }
 
             const response = await api.post('/api/translations', formData, {
@@ -376,8 +376,8 @@ export function TranslatedDocuments() {
             const parsedCost = JSON.parse(cost);
             
             // Se tiver os tokens separados (prompt/completion), usa as taxas específicas
-            if (parsedCost.promptTokens && parsedCost.completionTokens) {
-                const inputCost = parsedCost.promptTokens * INPUT_TOKEN_RATE;
+            if (parsedCost.assistantTokens && parsedCost.completionTokens) {
+                const inputCost = parsedCost.assistantTokens * INPUT_TOKEN_RATE;
                 const outputCost = parsedCost.completionTokens * OUTPUT_TOKEN_RATE;
                 const totalCost = inputCost + outputCost;
                 return `US$ ${totalCost.toFixed(4)}`;
@@ -469,8 +469,8 @@ export function TranslatedDocuments() {
     const handleReset = () => {
         setSourceLanguage('');
         setTargetLanguage('');
-        setSelectedKnowledgeBase(null);
-        setSelectedPrompt(null);
+        setSelectedKnowledgeBase(undefined);
+        setSelectedAssistant(undefined);
     };
 
     const handleUploadError = (error: unknown) => {
@@ -740,12 +740,12 @@ export function TranslatedDocuments() {
                         targetLanguage={targetLanguage}
                         onFileSelect={handleFileSelect}
                         knowledgeBases={knowledgeBases}
-                        prompts={prompts}
+                        assistants={assistants}
                         onReset={handleReset}
                         selectedKnowledgeBase={selectedKnowledgeBase}
-                        selectedPrompt={selectedPrompt}
+                        selectedAssistant={selectedAssistant}
                         onKnowledgeBaseSelect={setSelectedKnowledgeBase}
-                        onPromptSelect={setSelectedPrompt}
+                        onAssistantSelect={setSelectedAssistant}
                     />
                 </div>
             )}

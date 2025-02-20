@@ -18,20 +18,20 @@ interface TranslationData {
     sourceLanguage: string;
     targetLanguage: string;
     status: string;
-    errorMessage?: string | null;
-    translatedUrl?: string | null;
-    costData?: string | null;
+    errorMessage?: string;
+    translatedUrl?: string;
+    costData?: string;
     userId: string;
-    knowledgeBaseId?: string | null;
-    threadId?: string | null;
-    runId?: string | null;
-    assistantId?: string | null;
+    knowledgeBaseId?: string;
+    threadId?: string;
+    runId?: string;
+    assistantId?: string;
     usedAssistant: boolean;
     assistant?: {
         id: string;
         name: string;
         model: string;
-    } | null;
+    } | undefined;
 }
 
 interface TranslateFileParams {
@@ -164,81 +164,74 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
         const fileContent = await extractTextFromBuffer(params.fileBuffer, params.outputFormat);
 
         // Verificar se o assistant existe e está ativo
-        let openaiAssistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-        let selectedAssistant = null;
+        let assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
+        let selectedAssistant = undefined;
+        
         if (params.assistantId) {
-            selectedAssistant = await prisma.assistant.findUnique({
-                where: { id: params.assistantId },
+            selectedAssistant = await prisma.assistant.findFirst({
+                where: { 
+                    id: params.assistantId,
+                    status: 'active'
+                },
                 select: {
                     id: true,
                     assistantId: true,
                     name: true,
                     model: true,
-                    instructions: true,
-                    status: true
+                    instructions: true
                 }
             });
 
-            // Verificar se o assistente existe e tem um ID da OpenAI
-            if (selectedAssistant?.assistantId) {
-                try {
-                    // Verificar se o assistente existe na OpenAI
-                    const response = await fetch(`https://api.openai.com/v1/assistants/${selectedAssistant.assistantId}`, {
-                        headers: {
-                            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                            'Content-Type': 'application/json',
-                            'OpenAI-Beta': 'assistants=v2'
-                        }
-                    });
-
-                    if (response.ok) {
-                        const openaiAssistant = await response.json();
-                        if (openaiAssistant) {
-                            openaiAssistantId = selectedAssistant.assistantId;
-                            console.log('🤖 Usando assistant personalizado:', {
-                                id: selectedAssistant.id,
-                                assistantId: selectedAssistant.assistantId,
-                                name: selectedAssistant.name,
-                                model: openaiAssistant.model
-                            });
-                        }
-                    } else {
-                        console.error('❌ Erro ao verificar assistant na OpenAI');
-                        // Se houver erro, usar o assistant padrão
-                        openaiAssistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-                    }
-                } catch (error) {
-                    console.error('❌ Erro ao verificar assistant na OpenAI:', error);
-                    // Se houver erro, usar o assistant padrão
-                    openaiAssistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-                }
+            if (selectedAssistant) {
+                assistantId = selectedAssistant.assistantId;
+                console.log('🤖 Usando assistant personalizado:', {
+                    dbId: selectedAssistant.id,
+                    assistantId: selectedAssistant.assistantId,
+                    name: selectedAssistant.name,
+                    model: selectedAssistant.model
+                });
+            } else {
+                console.warn('⚠️ Assistant não encontrado ou inativo, usando assistant padrão');
+                assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
+                selectedAssistant = undefined;
             }
         }
 
-        // Preparar payload para criação da thread
-        const threadPayload: any = {
-            messages: [{
-                role: "user",
-                content: `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
-            }]
-        };
-
-        // Se tiver base de conhecimento selecionada, adicionar ao payload
-        if (params.knowledgeBaseId) {
-            const knowledgeBase = await prisma.knowledgeBase.findUnique({
-                where: { id: params.knowledgeBaseId }
+        // Verificar se o assistant existe na OpenAI
+        try {
+            const assistantCheck = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'OpenAI-Beta': 'assistants=v2'
+                }
             });
 
-            if (knowledgeBase?.vectorStoreId) {
-                threadPayload.tool_resources = {
-                    file_search: {
-                        vector_store_ids: [knowledgeBase.vectorStoreId]
-                    }
-                };
+            if (!assistantCheck.ok) {
+                console.error('❌ Assistant não encontrado na OpenAI, usando assistant padrão');
+                assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
+                selectedAssistant = undefined;
+            } else {
+                const assistantData = await assistantCheck.json();
+                console.log('✅ Assistant verificado na OpenAI:', {
+                    id: assistantData.id,
+                    name: assistantData.name,
+                    model: assistantData.model
+                });
             }
+        } catch (error) {
+            console.error('❌ Erro ao verificar assistant na OpenAI:', error);
+            throw new Error('Assistant não encontrado na OpenAI');
         }
 
         // Criar thread com a mensagem inicial
+        const threadPayload = {
+            messages: [{
+                role: 'user',
+                content: `Por favor, traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
+            }]
+        };
+
         const response = await fetch('https://api.openai.com/v1/threads', {
             method: 'POST',
             headers: {
@@ -262,13 +255,37 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
                 threadId: thread.id,
                 status: 'processing',
                 usedAssistant: !!params.assistantId,
-                assistantId: params.assistantId || null
+                assistantId: selectedAssistant ? selectedAssistant.id : undefined
             }
         });
 
         // Criar run com o assistant apropriado
-        const run = await openaiClient.beta.threads.runs.create(thread.id, {
-            assistant_id: openaiAssistantId
+        console.log('🚀 Criando run com assistant:', assistantId);
+        const runResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                'Content-Type': 'application/json',
+                'OpenAI-Beta': 'assistants=v2'
+            },
+            body: JSON.stringify({
+                assistant_id: assistantId,
+                instructions: selectedAssistant?.instructions
+            })
+        });
+
+        if (!runResponse.ok) {
+            throw new Error('Erro ao criar run');
+        }
+
+        const run = await runResponse.json();
+
+        // Atualizar com o runId
+        await prisma.translation.update({
+            where: { id: params.translationId },
+            data: { 
+                runId: run.id
+            }
         });
 
         // Aguardar conclusão
@@ -300,7 +317,7 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
         );
 
         // Buscar informações do assistant se usado
-        let assistantInfo = null;
+        let assistantInfo = undefined;
         if (params.assistantId) {
             const assistant = await prisma.assistant.findUnique({
                 where: { id: params.assistantId },
@@ -330,12 +347,13 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
                 fileName: savedFile.fileName,
                 plainTextContent: translatedContent,
                 usedAssistant: !!params.assistantId,
+                assistantId: selectedAssistant ? selectedAssistant.id : undefined,
                 translationMetadata: JSON.stringify({
                     usedKnowledgeBase: !!params.knowledgeBaseId,
                     usedAssistant: !!params.assistantId,
-                    knowledgeBaseName: params.knowledgeBaseId ? await getKnowledgeBaseName(params.knowledgeBaseId) : null,
-                    assistantName: assistantInfo?.name || null,
-                    assistantModel: assistantInfo?.model || null
+                    knowledgeBaseName: params.knowledgeBaseId ? await getKnowledgeBaseName(params.knowledgeBaseId) : undefined,
+                    assistantName: assistantInfo?.name || undefined,
+                    assistantModel: assistantInfo?.model || undefined
                 })
             },
             include: {
@@ -360,8 +378,9 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
         emitTranslationCompleted(updatedTranslation);
         return {
             ...updatedTranslation,
-            assistant: assistantInfo
-        };
+            assistant: assistantInfo,
+            assistantId: selectedAssistant?.id || undefined
+        } as TranslationData;
 
     } catch (error) {
         await handleTranslationError(error, params.translationId);
@@ -484,11 +503,11 @@ export const isTranslationSharedWithUser = async (translationId: string, userId:
 };
 
 // Função auxiliar para buscar o nome da base de conhecimento
-async function getKnowledgeBaseName(id: string): Promise<string | null> {
+async function getKnowledgeBaseName(id: string): Promise<string | undefined> {
     const kb = await prisma.knowledgeBase.findUnique({
         where: { id },
         select: { name: true }
     });
-    return kb?.name || null;
+    return kb?.name || undefined;
 }
 

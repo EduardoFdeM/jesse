@@ -140,6 +140,26 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             console.log('✅ Base de conhecimento validada');
         }
 
+        // Validar assistant se selecionado
+        if (useCustomAssistant && assistantId) {
+            console.log('🔍 Verificando assistant:', assistantId);
+            const assistant = await prisma.assistant.findFirst({
+                where: { 
+                    id: assistantId,
+                    status: 'active'
+                }
+            });
+            if (!assistant || !assistant.assistantId) {
+                console.error('❌ Erro: Assistant não encontrado ou inválido');
+                throw new ValidationError('Assistant não encontrado ou inválido');
+            }
+            console.log('✅ Assistant validado:', {
+                id: assistant.id,
+                assistantId: assistant.assistantId,
+                name: assistant.name
+            });
+        }
+
         console.log('📤 Fazendo upload do arquivo para S3...');
         // Fazer upload do arquivo para S3 usando o buffer
         const s3FilePath = await uploadToS3(file.buffer, file.originalname);
@@ -179,6 +199,13 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         console.log('📡 Emitindo evento de início...');
         emitTranslationStarted(translation);
         
+        console.log('🚀 Iniciando tradução com:', {
+            assistantId,
+            useCustomAssistant,
+            knowledgeBaseId,
+            useKnowledgeBase
+        });
+
         console.log('🚀 Iniciando processo de tradução...');
         // Iniciar tradução com o buffer do arquivo
         translateFile({
@@ -191,7 +218,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             assistantId: useCustomAssistant ? assistantId : undefined,
-            fileBuffer: file.buffer // Passar o buffer do arquivo
+            fileBuffer: file.buffer
         });
 
         console.log('✅ Processo iniciado com sucesso');

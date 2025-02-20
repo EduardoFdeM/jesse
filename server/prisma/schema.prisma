@@ -47,7 +47,7 @@ model Translation {
   user            User           @relation(fields: [userId], references: [id])
   knowledgeBaseId String?
   knowledgeBase   KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
-  assistantId     String?        @default("")
+  assistantId     String?        // Removido o @default("") para ser apenas opcional
   assistant       Assistant?     @relation(fields: [assistantId], references: [id], onDelete: SetNull)
   translationMetadata String?    @default("{\"usedKnowledgeBase\": false, \"usedAssistant\": false}")
   plainTextContent String?
@@ -96,7 +96,7 @@ model Assistant {
   isPublic     Boolean       @default(false)
   model        String        @default("gpt-4-turbo-preview")
   temperature  Float         @default(0.3)
-  assistantId  String?       // ID do assistant na OpenAI
+  assistantId  String        // ID do assistant na OpenAI (obrigatório)
   status       String        @default("pending") // pending, active, error
 
   @@index([userId])

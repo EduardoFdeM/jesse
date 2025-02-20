@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { Prompt } from '../../types';
+import { Assistant } from '../../types';
 import api from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
 

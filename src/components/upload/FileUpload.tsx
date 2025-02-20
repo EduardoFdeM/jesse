@@ -2,7 +2,7 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import api, { clearControllers } from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
-import { KnowledgeBase, Prompt } from '../../types';
+import { KnowledgeBase, Assistant } from '../../types';
 import { LanguageSelector } from '../translation/LanguageSelector';
 
 interface FileUploadProps {
@@ -10,12 +10,12 @@ interface FileUploadProps {
   targetLanguage: string;
   onFileSelect: (files: File[]) => Promise<void>;
   knowledgeBases: KnowledgeBase[];
-  prompts: Prompt[];
+  assistants: Assistant[];
   onReset: () => void;
-  selectedKnowledgeBase?: string | null;
-  selectedPrompt?: string | null;
+  selectedKnowledgeBase?: string | undefined;
+  selectedAssistant?: string | undefined;
   onKnowledgeBaseSelect?: (id: string) => void;
-  onPromptSelect?: (id: string | null) => void;
+  onAssistantSelect?: (id: string | undefined) => void;
 }
 
 interface UploadQueueItem {
@@ -33,12 +33,12 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   targetLanguage,
   onFileSelect,
   knowledgeBases,
-  prompts,
+  assistants,
   onReset,
   selectedKnowledgeBase,
-  selectedPrompt,
+  selectedAssistant,
   onKnowledgeBaseSelect,
-  onPromptSelect
+  onAssistantSelect
 }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [useAssistant, setUseAssistant] = useState(false);
@@ -87,8 +87,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       if (useKnowledgeBase && selectedKnowledgeBase) {
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
       }
-      if (useAssistant && selectedPrompt) {
-        formData.append('assistantId', selectedPrompt);
+      if (useAssistant && selectedAssistant) {
+        formData.append('assistantId', selectedAssistant);
       }
 
       const controller = new AbortController();
@@ -150,9 +150,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   // Efeito para limpar o assistant selecionado quando desmarcar o checkbox
   useEffect(() => {
     if (!useAssistant) {
-      onPromptSelect?.(null);
+      onAssistantSelect?.(undefined);
     }
-  }, [useAssistant, onPromptSelect]);
+  }, [useAssistant, onAssistantSelect]);
 
   // Efeito para limpar a base de conhecimento quando desmarcar o checkbox
   useEffect(() => {
@@ -211,14 +211,14 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 
         {useAssistant && (
           <select
-            value={selectedPrompt || ''}
-            onChange={(e) => onPromptSelect?.(e.target.value || null)}
+            value={selectedAssistant || ''}
+            onChange={(e) => onAssistantSelect?.(e.target.value || undefined)}
             className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="">Selecione um assistant</option>
-            {prompts.map((prompt) => (
-              <option key={prompt.id} value={prompt.id}>
-                {prompt.name}
+            {assistants.map((assistant) => (
+              <option key={assistant.id} value={assistant.id}>
+                {assistant.name}
               </option>
             ))}
           </select>
