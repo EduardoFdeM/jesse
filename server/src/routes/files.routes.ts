@@ -14,7 +14,10 @@ router.use(authorize(['SUPERUSER']));
 router.get('/', listOpenAIFiles);
 
 // Upload de arquivo OpenAI
-router.post('/upload', upload.array('files'), uploadOpenAIFile);
+router.post('/upload', 
+    upload.array('file', 10), // Mudança aqui: 'file' ao invés de 'files'
+    uploadOpenAIFile
+);
 
 // Deletar arquivo OpenAI
 router.delete('/:fileId', deleteOpenAIFile);

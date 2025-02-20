@@ -52,12 +52,16 @@ export function OpenAIFiles() {
         setUploadingFile(true);
         const formData = new FormData();
         
-        for (let i = 0; i < files.length; i++) {
-            formData.append('files', files[i]);
-        }
+        Array.from(files).forEach(file => {
+            formData.append('file', file);
+        });
 
         try {
-            await api.post('/api/files/upload', formData);
+            const response = await api.post('/api/files/upload', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            });
             toast.success('Arquivo(s) enviado(s) com sucesso');
             loadFiles();
         } catch (error) {
@@ -65,6 +69,9 @@ export function OpenAIFiles() {
             toast.error('Erro ao enviar arquivo');
         } finally {
             setUploadingFile(false);
+            if (event.target) {
+                event.target.value = '';
+            }
         }
     };
 

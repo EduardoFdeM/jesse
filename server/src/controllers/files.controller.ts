@@ -19,16 +19,33 @@ export const listOpenAIFiles = asyncHandler(async (req: Request, res: Response) 
 
 // Upload de arquivo OpenAI
 export const uploadOpenAIFile = asyncHandler(async (req: Request, res: Response) => {
-    const file = req.file;
-    if (!file) {
+    const files = req.files as Express.Multer.File[];
+    
+    if (!files || files.length === 0) {
         throw new BadRequestError('Nenhum arquivo enviado');
     }
 
-    const result = await openai.files.upload(file.buffer, file.originalname);
-    res.json({
-        status: 'success',
-        data: result
-    });
+    try {
+        // Upload de cada arquivo e coleta dos resultados
+        const results = await Promise.all(
+            files.map(async file => {
+                try {
+                    return await openai.files.upload(file.buffer, file.originalname);
+                } catch (error) {
+                    console.error(`Erro ao fazer upload do arquivo ${file.originalname}:`, error);
+                    throw new BadRequestError(`Erro ao fazer upload do arquivo ${file.originalname}`);
+                }
+            })
+        );
+
+        res.status(201).json({
+            status: 'success',
+            data: results
+        });
+    } catch (error) {
+        console.error('Erro no upload de arquivos:', error);
+        throw error;
+    }
 });
 
 // Deletar arquivo OpenAI
