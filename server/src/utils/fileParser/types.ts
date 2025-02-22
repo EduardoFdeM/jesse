@@ -6,6 +6,8 @@ export interface ParseResult {
         imageText?: string[];
         mimeType: string;
         fileSize: number;
+        totalCharacters?: number;
+        charactersPerPage?: number[];
     }
 }
 

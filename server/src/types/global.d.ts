@@ -192,6 +192,13 @@ declare global {
         assistantId: string;
         status: 'pending' | 'active' | 'error';
     }
+
+    interface ThreadResponse {
+        id: string;
+        object: string;
+        created_at: number;
+        metadata: Record<string, unknown>;
+    }
 }
 
 declare module 'tesseract.js' {
@@ -241,6 +248,52 @@ interface AssistantResponse {
     isPublic: boolean;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface DocumentStructure {
+    type: 'document';
+    metadata: {
+        title?: string;
+        author?: string;
+        creationDate?: string;
+        pages: number;
+    };
+    pages: PageStructure[];
+}
+
+export interface PageStructure {
+    type: 'page';
+    pageIndex: number;
+    elements: PageElement[];
+    layout: {
+        columns: number;
+        margins: {
+            top: number;
+            right: number;
+            bottom: number;
+            left: number;
+        };
+    };
+}
+
+export interface PageElement {
+    type: 'title' | 'paragraph' | 'table' | 'image' | 'list';
+    content: string;
+    elementIndex: number;
+    style: {
+        fontSize?: number;
+        fontFamily?: string;
+        fontWeight?: string;
+        alignment?: 'left' | 'center' | 'right' | 'justify';
+        color?: string;
+        columnSpan?: number;
+    };
+    position: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
 }
 
 export {}; 

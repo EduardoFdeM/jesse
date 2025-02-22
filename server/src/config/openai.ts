@@ -130,9 +130,36 @@ interface RunResponse {
     created_at: number;
     thread_id: string;
     assistant_id: string;
-    status: string;
+    status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'requires_action';
+    required_action?: {
+        type: string;
+        submit_tool_outputs?: {
+            tool_calls: Array<{
+                id: string;
+                type: string;
+                function: {
+                    name: string;
+                    arguments: string;
+                };
+            }>;
+        };
+    };
+    last_error?: {
+        code: string;
+        message: string;
+    };
+    expires_at: number;
     started_at: number | null;
+    cancelled_at: number | null;
+    failed_at: number | null;
     completed_at: number | null;
+    model: string;
+    instructions: string | null;
+    tools: Array<{
+        type: string;
+    }>;
+    file_ids: string[];
+    metadata: Record<string, unknown>;
 }
 
 // Funções para Vector Store
@@ -422,12 +449,26 @@ const threadsApi = {
             }
 
             return await response.json();
+        },
+        create: async (threadId: string, message: { role: string; content: string }): Promise<MessageResponse> => {
+            const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages`, {
+                method: 'POST',
+                headers: getHeaders(true),
+                body: JSON.stringify(message)
+            });
+
+            if (!response.ok) {
+                throw new Error('Erro ao criar mensagem');
+            }
+
+            return await response.json();
         }
     },
 
     runs: {
         create: async (threadId: string, params: {
             assistant_id: string;
+            instructions?: string;
         }): Promise<RunResponse> => {
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
                 method: 'POST',

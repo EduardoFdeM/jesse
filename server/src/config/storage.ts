@@ -67,7 +67,10 @@ const determineContentType = (fileName: string): string => {
 export const generateSignedUrl = async (key: string): Promise<string> => {
     const command = new GetObjectCommand({
         Bucket: process.env.AWS_S3_BUCKET || '',
-        Key: key
+        Key: key,
+        ResponseContentDisposition: key.toLowerCase().endsWith('.pdf') 
+            ? 'inline' 
+            : `attachment; filename="${key.split('/').pop()}"`,
     });
 
     // URL válida por 15 minutos

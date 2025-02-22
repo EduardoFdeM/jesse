@@ -8,6 +8,7 @@ import { emitTranslationCompleted, emitTranslationError, emitTranslationProgress
 import * as pdfjsLib from 'pdfjs-dist';
 import { BaseError } from '../utils/errors.js';
 import { parseFile } from '../utils/fileParser/index.js';
+import { DocumentStructure, PageStructure, PageElement } from '../types/global.js';
 
 interface TranslationData {
     id: string;
@@ -46,6 +47,32 @@ interface TranslateFileParams {
     assistantId?: string;
 }
 
+interface ChunkInfo {
+    text: string;
+    startIndex: number;
+    endIndex: number;
+    overlap: {
+        before?: string;
+        after?: string;
+    };
+}
+
+// Constantes para gerenciamento de chunks
+const CHUNK_SIZE = 16000; // aumentado para 16k caracteres por chunk
+const OVERLAP_SIZE = 800; // reduzido para 800 caracteres de sobreposição
+const MAX_RETRIES = 5; // aumentado para 5 tentativas
+const RETRY_DELAY = 5000; // aumentado para 5 segundos
+const MAX_RUN_TIME = 15 * 60 * 1000; // aumentado para 15 minutos
+
+interface TranslationChunk {
+    content: string;
+    metadata: {
+        pageIndex: number;
+        elementIndices: number[];
+        style: Record<string, any>;
+    };
+}
+
 // Função para extrair texto de diferentes tipos de arquivo
 const extractTextFromBuffer = async (buffer: Buffer, mimeType: string): Promise<string> => {
     try {
@@ -77,6 +104,12 @@ const saveFileContent = async (
     outputFormat: string
 ): Promise<{ filePath: string; fileSize: number; fileName: string }> => {
     try {
+        console.log('📝 Iniciando salvamento do arquivo...', {
+            fileName,
+            outputFormat,
+            tamanhoTexto: text.length
+        });
+
         let fileBuffer: Buffer;
         const finalFileName = fileName.replace(/\.[^/.]+$/, `.${outputFormat}`);
 
@@ -145,197 +178,264 @@ const saveFileContent = async (
             }
         }
 
+        console.log('📤 Fazendo upload para S3...');
         const fileUrl = await uploadToS3(fileBuffer, finalFileName);
+        console.log('✅ Upload concluído:', fileUrl);
+
         return {
             filePath: fileUrl,
             fileSize: fileBuffer.length,
             fileName: finalFileName
         };
     } catch (err) {
-        console.error('Erro ao salvar arquivo:', err);
+        console.error('❌ Erro ao salvar arquivo:', err);
         throw err;
     }
 };
 
+// Melhorar o progresso para incluir todas as etapas
+const PROGRESS_STEPS = {
+    EXTRACTION: 10,
+    TRANSLATION: 60,
+    FILE_PROCESSING: 20,
+    UPLOAD: 10
+};
+
+// Função para dividir o texto em chunks com sobreposição
+function splitIntoChunks(content: string): ChunkInfo[] {
+    console.log('📊 Iniciando divisão em chunks:', {
+        tamanhoTotal: content.length,
+        chunkSize: CHUNK_SIZE,
+        overlapSize: OVERLAP_SIZE
+    });
+
+    const chunks: ChunkInfo[] = [];
+    const pages = content.split('---PAGE_BREAK---').filter(Boolean);
+    let currentChunk = '';
+    let startIndex = 0;
+
+    console.log(`📄 Total de páginas detectadas: ${pages.length}`);
+
+    for (const page of pages) {
+        if (currentChunk.length + page.length <= CHUNK_SIZE) {
+            currentChunk += page + '\n';
+        } else {
+            // Adicionar chunk atual com sobreposição
+            if (currentChunk) {
+                const overlap = {
+                    before: chunks.length > 0 ? chunks[chunks.length - 1].text.slice(-OVERLAP_SIZE) : undefined,
+                    after: page.slice(0, OVERLAP_SIZE)
+                };
+
+                chunks.push({
+                    text: currentChunk,
+                    startIndex,
+                    endIndex: startIndex + currentChunk.length,
+                    overlap
+                });
+
+                console.log(`📦 Chunk ${chunks.length} criado:`, {
+                    tamanho: currentChunk.length,
+                    possuiOverlapAntes: !!overlap.before,
+                    possuiOverlapDepois: !!overlap.after
+                });
+            }
+
+            startIndex += currentChunk.length;
+            currentChunk = page + '\n';
+        }
+    }
+
+    // Adicionar último chunk
+    if (currentChunk) {
+        chunks.push({
+            text: currentChunk,
+            startIndex,
+            endIndex: startIndex + currentChunk.length,
+            overlap: {
+                before: chunks.length > 0 ? chunks[chunks.length - 1].text.slice(-OVERLAP_SIZE) : undefined
+            }
+        });
+
+        console.log(`📦 Último chunk ${chunks.length} criado:`, {
+            tamanho: currentChunk.length,
+            possuiOverlapAntes: chunks.length > 0
+        });
+    }
+
+    console.log(`✅ Divisão em chunks concluída. Total: ${chunks.length} chunks`);
+    return chunks;
+}
+
+async function waitForRunCompletion(threadId: string, runId: string, translationId: string): Promise<string> {
+    let retries = 0;
+    const startTime = Date.now();
+
+    while (true) {
+        try {
+            const runStatus = await openaiClient.beta.threads.runs.retrieve(threadId, runId);
+            
+            console.log(`🔄 Status da run ${runId}:`, {
+                status: runStatus.status,
+                tempoDecorrido: `${Math.round((Date.now() - startTime) / 1000)}s`
+            });
+            
+            // Verificar timeout
+            if (Date.now() - startTime > MAX_RUN_TIME) {
+                throw new Error('Tempo máximo de execução excedido');
+            }
+
+            switch (runStatus.status) {
+                case 'completed':
+                    const messages = await openaiClient.beta.threads.messages.list(threadId);
+                    const assistantMessage = messages.data.find(m => m.role === 'assistant');
+                    if (assistantMessage?.content[0]?.type === 'text') {
+                        const resposta = assistantMessage.content[0].text.value;
+                        console.log(`✅ Tradução concluída:`, {
+                            tamanhoResposta: resposta.length,
+                            tempoTotal: `${Math.round((Date.now() - startTime) / 1000)}s`
+                        });
+                        return resposta;
+                    }
+                    throw new Error('Resposta do assistant em formato inválido');
+
+                case 'failed':
+                    console.error('❌ Run falhou:', runStatus.last_error);
+                    throw new Error(`Run falhou: ${runStatus.last_error?.message || 'Erro desconhecido'}`);
+
+                case 'expired':
+                    throw new Error('Run expirou');
+
+                case 'cancelled':
+                    throw new Error('Run foi cancelado');
+
+                case 'in_progress':
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+
+                default:
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    continue;
+            }
+        } catch (error) {
+            console.error('❌ Erro ao verificar status do run:', error);
+            
+            if (retries < MAX_RETRIES) {
+                retries++;
+                console.log(`🔄 Tentativa ${retries} de ${MAX_RETRIES}...`);
+                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retries));
+                continue;
+            }
+            
+            throw new Error(`Falha após ${MAX_RETRIES} tentativas: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        }
+    }
+}
+
 export const translateFile = async (params: TranslateFileParams & { fileBuffer: Buffer }): Promise<TranslationData> => {
+    let thread: { id: string } | null = null;
+    let currentChunkIndex = 0;
+
     try {
+        console.log('🚀 Iniciando tradução:', {
+            id: params.translationId,
+            arquivo: params.originalName,
+            tamanho: `${Math.round(params.fileBuffer.length / 1024)}KB`,
+            idiomas: `${params.sourceLanguage} → ${params.targetLanguage}`
+        });
+
         // Extrair texto do buffer do arquivo
         const outputFormat = params.outputFormat.split('/').pop() || 'txt';
         const fileContent = await extractTextFromBuffer(params.fileBuffer, params.outputFormat);
 
-        // Verificar se o assistant existe e está ativo
-        let assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-        let selectedAssistant = undefined;
-        
-        if (params.assistantId) {
-            selectedAssistant = await prisma.assistant.findFirst({
-                where: { 
-                    id: params.assistantId,
-                    status: 'active'
-                },
-                select: {
-                    id: true,
-                    assistantId: true,
-                    name: true,
-                    model: true,
-                    instructions: true
-                }
-            });
-
-            if (selectedAssistant) {
-                assistantId = selectedAssistant.assistantId;
-                console.log('🤖 Usando assistant personalizado:', {
-                    dbId: selectedAssistant.id,
-                    assistantId: selectedAssistant.assistantId,
-                    name: selectedAssistant.name,
-                    model: selectedAssistant.model
-                });
-            } else {
-                console.warn('⚠️ Assistant não encontrado ou inativo, usando assistant padrão');
-                assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-                selectedAssistant = undefined;
-            }
-        }
-
-        // Verificar se o assistant existe na OpenAI
-        try {
-            const assistantCheck = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
-                method: 'GET',
-                headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                    'OpenAI-Beta': 'assistants=v2'
-                }
-            });
-
-            if (!assistantCheck.ok) {
-                console.error('❌ Assistant não encontrado na OpenAI, usando assistant padrão');
-                assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!;
-                selectedAssistant = undefined;
-            } else {
-                const assistantData = await assistantCheck.json();
-                console.log('✅ Assistant verificado na OpenAI:', {
-                    id: assistantData.id,
-                    name: assistantData.name,
-                    model: assistantData.model
-                });
-            }
-        } catch (error) {
-            console.error('❌ Erro ao verificar assistant na OpenAI:', error);
-            throw new Error('Assistant não encontrado na OpenAI');
-        }
-
-        // Criar thread com a mensagem inicial
-        const threadPayload = {
-            messages: [{
-                role: 'user',
-                content: `Por favor, traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}:\n\n${fileContent}`
-            }]
-        };
-
-        const response = await fetch('https://api.openai.com/v1/threads', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
-            body: JSON.stringify(threadPayload)
-        });
-
-        if (!response.ok) {
-            throw new Error('Erro ao criar thread');
-        }
-
-        const thread = await response.json();
-
-        // Atualizar com o threadId e marcar uso de assistant
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: { 
-                threadId: thread.id,
-                status: 'processing',
-                usedAssistant: !!params.assistantId,
-                assistantId: selectedAssistant ? selectedAssistant.id : undefined
-            }
-        });
-
-        // Criar run com o assistant apropriado
-        console.log('🚀 Criando run com assistant:', assistantId);
-        const runResponse = await fetch(`https://api.openai.com/v1/threads/${thread.id}/runs`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-                'Content-Type': 'application/json',
-                'OpenAI-Beta': 'assistants=v2'
-            },
-            body: JSON.stringify({
-                assistant_id: assistantId,
-                instructions: selectedAssistant?.instructions
-            })
-        });
-
-        if (!runResponse.ok) {
-            throw new Error('Erro ao criar run');
-        }
-
-        const run = await runResponse.json();
-
-        // Atualizar com o runId
-        await prisma.translation.update({
-            where: { id: params.translationId },
-            data: { 
-                runId: run.id
-            }
-        });
-
-        // Aguardar conclusão
+        // Dividir o conteúdo em chunks
+        const chunks = splitIntoChunks(fileContent);
         let translatedContent = '';
-        while (true) {
-            const runStatus = await openaiClient.beta.threads.runs.retrieve(thread.id, run.id);
 
-            if (runStatus.status === 'completed') {
-                const messages = await openaiClient.beta.threads.messages.list(thread.id);
-                const assistantMessage = messages.data.find(m => m.role === 'assistant');
-                if (assistantMessage?.content[0]?.type === 'text') {
-                    translatedContent = assistantMessage.content[0].text.value;
+        // Criar thread principal
+        thread = await openaiClient.beta.threads.create({
+            messages: []
+        });
+
+        // Traduzir cada chunk sequencialmente
+        for (currentChunkIndex = 0; currentChunkIndex < chunks.length; currentChunkIndex++) {
+            const chunk = chunks[currentChunkIndex];
+            let retries = 0;
+            let success = false;
+
+            while (!success && retries < MAX_RETRIES) {
+                try {
+                    console.log(`🔄 Traduzindo chunk ${currentChunkIndex + 1}/${chunks.length}:`, {
+                        tamanho: chunk.text.length,
+                        posicao: `${chunk.startIndex}-${chunk.endIndex}`,
+                        tentativa: retries + 1
+                    });
+
+                    // Criar mensagem com o chunk atual
+                    const prompt = `Traduza o seguinte texto de ${params.sourceLanguage} para ${params.targetLanguage}, mantendo a formatação original e preservando todos os números, referências e citações exatamente como estão. 
+${chunk.overlap.before ? 'Contexto anterior:\n' + chunk.overlap.before + '\n---\n' : ''}
+Texto para traduzir:\n${chunk.text}
+${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : ''}`;
+
+                    await openaiClient.beta.threads.messages.create(thread.id, {
+                        role: 'user',
+                        content: prompt
+                    });
+
+                    // Criar run para este chunk
+                    const run = await openaiClient.beta.threads.runs.create(thread.id, {
+                        assistant_id: params.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
+                        instructions: "Mantenha todos os números, referências e citações exatamente como estão no texto original."
+                    });
+
+                    // Aguardar tradução do chunk
+                    const chunkTranslation = await waitForRunCompletion(thread.id, run.id, params.translationId);
+
+                    // Processar e adicionar a tradução do chunk
+                    const processedTranslation = mergeTranslatedChunk(
+                        chunkTranslation,
+                        currentChunkIndex === 0,
+                        currentChunkIndex === chunks.length - 1
+                    );
+
+                    translatedContent += processedTranslation;
+                    success = true;
+
+                    // Emitir progresso
+                    const progress = Math.round(((currentChunkIndex + 1) / chunks.length) * 100);
+                    emitTranslationProgress(params.translationId, progress);
+
+                    // Aguardar um pouco entre chunks para evitar rate limits
+                    if (currentChunkIndex < chunks.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+
+                } catch (error) {
+                    console.error(`❌ Erro ao traduzir chunk ${currentChunkIndex + 1}:`, error);
+                    retries++;
+                    
+                    if (retries >= MAX_RETRIES) {
+                        throw new Error(`Falha após ${MAX_RETRIES} tentativas no chunk ${currentChunkIndex + 1}`);
+                    }
+
+                    // Esperar antes de tentar novamente
+                    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * retries));
                 }
-                break;
-            } else if (runStatus.status === 'failed') {
-                throw new Error('Falha na tradução');
             }
-
-            // Emitir progresso
-            emitTranslationProgress(params.translationId, 50);
-            await new Promise(resolve => setTimeout(resolve, 1000));
         }
+
+        console.log('✅ Tradução completa:', {
+            chunksProcessados: chunks.length,
+            tamanhoOriginal: fileContent.length,
+            tamanhoTraduzido: translatedContent.length
+        });
 
         // Salvar arquivo traduzido
         const savedFile = await saveFileContent(
             translatedContent,
             params.originalName,
-            outputFormat // Usando a extensão extraída
+            outputFormat
         );
-
-        // Buscar informações do assistant se usado
-        let assistantInfo = undefined;
-        if (params.assistantId) {
-            const assistant = await prisma.assistant.findUnique({
-                where: { id: params.assistantId },
-                select: {
-                    id: true,
-                    name: true,
-                    model: true,
-                    assistantId: true
-                }
-            });
-            if (assistant) {
-                assistantInfo = {
-                    id: assistant.id,
-                    name: assistant.name,
-                    model: assistant.model
-                };
-            }
-        }
 
         // Atualizar registro da tradução
         const updatedTranslation = await prisma.translation.update({
@@ -346,40 +446,14 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
                 fileSize: savedFile.fileSize,
                 fileName: savedFile.fileName,
                 plainTextContent: translatedContent,
-                usedAssistant: !!params.assistantId,
-                assistantId: selectedAssistant ? selectedAssistant.id : undefined,
-                translationMetadata: JSON.stringify({
-                    usedKnowledgeBase: !!params.knowledgeBaseId,
-                    usedAssistant: !!params.assistantId,
-                    knowledgeBaseName: params.knowledgeBaseId ? await getKnowledgeBaseName(params.knowledgeBaseId) : undefined,
-                    assistantName: assistantInfo?.name || undefined,
-                    assistantModel: assistantInfo?.model || undefined
-                })
-            },
-            include: {
-                knowledgeBase: {
-                    select: {
-                        id: true,
-                        name: true,
-                        description: true
-                    }
-                },
-                assistant: {
-                    select: {
-                        id: true,
-                        name: true,
-                        model: true,
-                        description: true
-                    }
-                }
+                errorMessage: null
             }
         });
 
         emitTranslationCompleted(updatedTranslation);
         return {
             ...updatedTranslation,
-            assistant: assistantInfo,
-            assistantId: selectedAssistant?.id || undefined
+            errorMessage: updatedTranslation.errorMessage || undefined
         } as TranslationData;
 
     } catch (error) {
@@ -510,4 +584,200 @@ async function getKnowledgeBaseName(id: string): Promise<string | undefined> {
     });
     return kb?.name || undefined;
 }
+
+async function translateChunk(
+    chunk: ChunkInfo,
+    sourceLanguage: string,
+    targetLanguage: string,
+    selectedAssistant?: Assistant
+): Promise<string> {
+    const prompt = `Traduza o seguinte texto de ${sourceLanguage} para ${targetLanguage}. 
+${chunk.overlap.before ? 'Contexto anterior:\n' + chunk.overlap.before + '\n---\n' : ''}
+Texto para traduzir:\n${chunk.text}
+${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : ''}`;
+
+    // Criar thread com a mensagem inicial
+    const thread = await openaiClient.beta.threads.create({
+        messages: [{
+            role: 'user',
+            content: prompt
+        }]
+    });
+
+    // Criar run com o assistant
+    const run = await openaiClient.beta.threads.runs.create(thread.id, {
+        assistant_id: selectedAssistant?.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!
+    });
+
+    // Aguardar conclusão
+    while (true) {
+        const status = await openaiClient.beta.threads.runs.retrieve(thread.id, run.id);
+        if (status.status === 'completed') {
+            const messages = await openaiClient.beta.threads.messages.list(thread.id);
+            const translatedContent = messages.data[0].content[0].text.value;
+            return translatedContent;
+        } else if (status.status === 'failed') {
+            throw new Error('Falha na tradução do chunk');
+        }
+        await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+}
+
+function mergeTranslatedChunk(translatedText: string, isFirst: boolean, isLast: boolean): string {
+    // Remover contextos de sobreposição se presentes
+    const lines = translatedText.split('\n');
+    let cleanedText = translatedText;
+
+    if (!isFirst && lines[0].includes('Contexto anterior:')) {
+        const startIndex = translatedText.indexOf('Texto para traduzir:');
+        if (startIndex !== -1) {
+            cleanedText = translatedText.slice(startIndex + 'Texto para traduzir:'.length);
+        }
+
+    }
+
+    if (!isLast && cleanedText.includes('Contexto posterior:')) {
+        const endIndex = cleanedText.indexOf('Contexto posterior:');
+        if (endIndex !== -1) {
+            cleanedText = cleanedText.slice(0, endIndex);
+        }
+    }
+
+    return cleanedText.trim() + '\n';
+}
+
+async function translateStructuredDocument(
+    documentStructure: DocumentStructure,
+    sourceLanguage: string,
+    targetLanguage: string,
+    translationId: string,
+    assistantId: string
+): Promise<DocumentStructure> {
+    const chunks: TranslationChunk[] = [];
+    let currentChunk: TranslationChunk = {
+        content: '',
+        metadata: {
+            pageIndex: 0,
+            elementIndices: [],
+            style: {}
+        }
+    };
+
+    // Dividir o documento em chunks mantendo a estrutura
+    documentStructure.pages.forEach((page: PageStructure, pageIndex: number) => {
+        page.elements.forEach((element: PageElement, elementIndex: number) => {
+            const elementContent = `<element type="${element.type}" style=${JSON.stringify(element.style)}>
+                ${element.content}
+            </element>`;
+
+            if (currentChunk.content.length + elementContent.length > CHUNK_SIZE) {
+                chunks.push(currentChunk);
+                currentChunk = {
+                    content: '',
+                    metadata: {
+                        pageIndex,
+                        elementIndices: [],
+                        style: {}
+                    }
+                };
+            }
+
+            currentChunk.content += elementContent;
+            currentChunk.metadata.elementIndices.push(elementIndex);
+        });
+    });
+
+    if (currentChunk.content.length > 0) {
+        chunks.push(currentChunk);
+    }
+
+    // Criar thread com parâmetros corretos
+    const thread = await openaiClient.beta.threads.create({
+        messages: []
+    });
+
+    // Corrigir a criação do run para cada chunk
+    for (const [index, chunk] of chunks.entries()) {
+        // Primeiro adicionar a mensagem
+        const message = await openaiClient.beta.threads.messages.create(thread.id, {
+            role: 'user',
+            content: `Traduza este chunk mantendo a estrutura XML:\n${chunk.content}\n\nContexto: Chunk ${index + 1} de ${chunks.length}`
+        });
+
+        // Depois criar o run
+        const run = await openaiClient.beta.threads.runs.create(thread.id, {
+            assistant_id: assistantId
+        });
+
+        // Aguardar conclusão
+        while (true) {
+            const status = await openaiClient.beta.threads.runs.retrieve(thread.id, run.id);
+            if (status.status === 'completed') {
+                const messages = await openaiClient.beta.threads.messages.list(thread.id);
+                const translatedContent = messages.data[0].content[0].text.value;
+                const translatedChunk: TranslationChunk = {
+                    content: translatedContent,
+                    metadata: {
+                        pageIndex: chunk.metadata.pageIndex,
+                        elementIndices: chunk.metadata.elementIndices,
+                        style: chunk.metadata.style
+                    }
+                };
+                chunks[index] = translatedChunk;
+                break;
+            } else if (status.status === 'failed') {
+                throw new Error(`Falha na tradução do chunk ${index + 1}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // Emitir progresso
+        const progress = Math.round(((index + 1) / chunks.length) * 100);
+        emitTranslationProgress(translationId, progress);
+    }
+
+    // Reconstruir o documento
+    const translatedDocument: DocumentStructure = {
+        ...documentStructure,
+        pages: documentStructure.pages.map((page: PageStructure) => ({
+            ...page,
+            elements: page.elements.map((element: PageElement) => {
+                const chunk = chunks.find(c => 
+                    c.metadata.pageIndex === page.pageIndex &&
+                    c.metadata.elementIndices.includes(element.elementIndex)
+                );
+                
+                if (!chunk) return element;
+
+                const translatedElement = parseTranslatedElement(chunk.content);
+                return {
+                    ...element,
+                    content: translatedElement.content
+                };
+            })
+        }))
+    };
+
+    return translatedDocument;
+}
+
+function parseTranslatedElement(xmlContent: string): PageElement {
+    const match = xmlContent.match(/<element type="([^"]+)" style=({[^}]+})>([\s\S]+?)<\/element>/);
+    if (!match) throw new Error('Formato inválido retornado pelo assistant');
+
+    const [, type, styleStr, content] = match;
+    return {
+        type: type as PageElement['type'],
+        content: content.trim(),
+        style: JSON.parse(styleStr),
+        elementIndex: 0, // Será atualizado ao reconstruir o documento
+        position: {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0
+        }
+    };
+}
+
 
