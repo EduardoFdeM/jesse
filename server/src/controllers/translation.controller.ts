@@ -214,7 +214,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             targetLanguage: req.body.targetLanguage,
             userId: req.user.id,
             translationId: translation.id,
-            outputFormat: file.mimetype.split('/')[1],
+            outputFormat: file.mimetype === 'text/plain' ? 'txt' : file.mimetype.split('/')[1],
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             assistantId: useCustomAssistant ? assistantId : undefined,

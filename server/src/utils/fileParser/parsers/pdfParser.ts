@@ -1,59 +1,13 @@
-import { FileParser, ParseResult, ParserOptions } from '../types.js';
+import { FileParser, ParseResult, ParserOptions, MARKERS, DocumentElement, ElementType, ElementStyle, DocumentStructure, PageStructure, PageElement, TextItem, TextMarkedContent } from '../types.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import { OCRService } from '../services/ocrService.js';
 
-interface TextItem {
-    str: string;
-}
+// Usar os tipos do pdfjs-dist
+type PDFTextContent = import('pdfjs-dist/types/src/display/api').TextContent;
+type PDFTextItem = import('pdfjs-dist/types/src/display/api').TextItem;
 
-interface TextMarkedContent {
-    type: string;
-    items: TextItem[];
-}
-
-interface DocumentStructure {
-    type: 'document';
-    metadata: {
-        title?: string;
-        author?: string;
-        creationDate?: string;
-        pages: number;
-    };
-    pages: PageStructure[];
-}
-
-interface PageStructure {
-    type: 'page';
-    elements: PageElement[];
-    layout: {
-        columns: number;
-        margins: {
-            top: number;
-            right: number;
-            bottom: number;
-            left: number;
-        };
-    };
-}
-
-interface PageElement {
-    type: 'title' | 'paragraph' | 'table' | 'image' | 'list';
-    content: string;
-    style: {
-        fontSize?: number;
-        fontFamily?: string;
-        fontWeight?: string;
-        alignment?: 'left' | 'center' | 'right' | 'justify';
-        color?: string;
-        columnSpan?: number;
-    };
-    position: {
-        x: number;
-        y: number;
-        width: number;
-        height: number;
-    };
-    elementIndex?: number;
+interface ExtendedTextItem extends TextItem {
+    level?: number;
 }
 
 export class PDFParser implements FileParser {
@@ -64,8 +18,11 @@ export class PDFParser implements FileParser {
         this.ocrService = OCRService.getInstance();
         this.documentStructure = {
             type: 'document',
-            metadata: { pages: 0 },
-            pages: []
+            elements: [],
+            pages: [],
+            metadata: {
+                pageCount: 0
+            }
         };
     }
 
@@ -80,12 +37,16 @@ export class PDFParser implements FileParser {
             const imageText: string[] = [];
             let totalCharacters = 0;
             
-            const metadata = {
-                pageCount: pdf.numPages,
-                hasImages: false,
-                mimeType: 'application/pdf',
-                fileSize: buffer.length,
-                charactersPerPage: [] as number[]
+            // Inicializar estrutura do documento
+            this.documentStructure = {
+                type: 'document',
+                elements: [],
+                pages: [],
+                metadata: {
+                    pageCount: pdf.numPages,
+                    title: await this.extractTitle(pdf),
+                    author: await this.extractAuthor(pdf)
+                }
             };
 
             console.log(`📄 Processando PDF com ${pdf.numPages} páginas...`);
@@ -93,12 +54,31 @@ export class PDFParser implements FileParser {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const pageText = this.processPageText(textContent);
                 
-                // Log detalhado da página
+                // Processar página e adicionar à estrutura do documento
+                const pageElements = await this.processPageContent(textContent, page);
+                
+                // Adicionar página à estrutura do documento
+                const pageStructure: PageStructure = {
+                    pageIndex: i - 1,
+                    elements: pageElements.map((element, index) => ({
+                        ...element,
+                        elementIndex: index
+                    })) as PageElement[],
+                    metadata: {
+                        pageNumber: i,
+                        hasColumns: this.detectMultipleColumns(textContent),
+                        columnCount: this.detectColumns(textContent).length
+                    }
+                };
+                
+                this.documentStructure.pages.push(pageStructure);
+                this.documentStructure.elements.push(...pageElements);
+
+                // Manter o processamento existente para compatibilidade
+                const pageText = this.processPageText(textContent);
                 const pageCharCount = pageText.length;
                 totalCharacters += pageCharCount;
-                metadata.charactersPerPage.push(pageCharCount);
                 
                 console.log(`📝 Página ${i}:`, {
                     caracteres: pageCharCount,
@@ -106,9 +86,9 @@ export class PDFParser implements FileParser {
                     multiplasColunas: this.detectMultipleColumns(textContent)
                 });
                 
-                content += pageText + '\n---PAGE_BREAK---\n';
+                content += pageText + `\n${MARKERS.PAGE_BREAK}\n`;
 
-                // Verificar imagens e executar OCR se necessário
+                // Manter processamento de imagens existente
                 if (options?.extractImages || options?.useOCR) {
                     const operatorList = await page.getOperatorList();
                     const hasPageImages = operatorList.fnArray.includes(pdfjsLib.OPS.paintImageXObject);
@@ -162,14 +142,16 @@ export class PDFParser implements FileParser {
                 tamanhoArquivo: `${Math.round(buffer.length / 1024)}KB`
             });
 
-            metadata.hasImages = hasImages;
-            
             return {
                 content: content.trim(),
                 metadata: {
-                    ...metadata,
+                    pageCount: pdf.numPages,
+                    hasImages,
+                    imageText: imageText.length > 0 ? imageText : undefined,
+                    mimeType: 'application/pdf',
+                    fileSize: buffer.length,
                     totalCharacters,
-                    imageText: imageText.length > 0 ? imageText : undefined
+                    structure: this.documentStructure
                 }
             };
         } catch (error: unknown) {
@@ -180,21 +162,179 @@ export class PDFParser implements FileParser {
         }
     }
 
-    private processPageText(textContent: any): string {
-        let lastY: number | null = null;
-        let text = '';
-        
-        for (const item of textContent.items) {
-            if ('str' in item) {
-                // Adicionar quebra de linha se houver mudança significativa na posição Y
-                if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
-                    text += '\n';
+    private async processPageContent(textContent: PDFTextContent, page: pdfjsLib.PDFPageProxy): Promise<DocumentElement[]> {
+        const elements: DocumentElement[] = [];
+        const viewport = page.getViewport({ scale: 1.0 });
+
+        // Melhorar detecção de colunas
+        const columns = this.detectColumns(textContent);
+        const hasMultipleColumns = columns.length > 1;
+
+        // Classificar elementos
+        const { titles, paragraphs, tables } = this.classifyElements(textContent, viewport);
+
+        // Processar títulos primeiro
+        for (const title of titles) {
+            elements.push({
+                type: this.getTitleLevel(title.fontSize || 0),
+                content: title.str,
+                style: {
+                    fontSize: title.fontSize,
+                    alignment: this.detectAlignment(title.x || 0, viewport.width)
+                },
+                position: {
+                    x: title.x || 0,
+                    y: title.y || 0,
+                    width: title.width || 0,
+                    height: title.height || 0
                 }
-                text += item.str + ' ';
-                lastY = item.transform[5];
-            }
+            });
         }
+
+        // Processar colunas ou parágrafos
+        if (hasMultipleColumns) {
+            columns.forEach((column, columnIndex) => {
+                const columnElements = paragraphs
+                    .filter(p => (p.x || 0) >= column.start && (p.x || 0) <= column.end)
+                    .sort((a, b) => (b.y || 0) - (a.y || 0))
+                    .map(p => ({
+                        type: 'paragraph' as ElementType,
+                        content: p.str,
+                        style: {
+                            fontSize: p.fontSize,
+                            alignment: this.detectAlignment(p.x || 0, viewport.width)
+                        },
+                        position: {
+                            x: p.x || 0,
+                            y: p.y || 0,
+                            width: column.end - column.start,
+                            height: p.height || 0,
+                            columnIndex
+                        }
+                    } as DocumentElement));
+
+                if (columnElements.length > 0) {
+                    elements.push({
+                        type: 'column',
+                        content: '',
+                        children: columnElements,
+                        position: {
+                            x: column.start,
+                            y: 0,
+                            width: column.end - column.start,
+                            height: viewport.height,
+                            columnIndex
+                        }
+                    });
+                }
+            });
+        } else {
+            elements.push(...paragraphs.map(p => ({
+                type: 'paragraph' as ElementType,
+                content: p.str,
+                style: {
+                    fontSize: p.fontSize,
+                    alignment: this.detectAlignment(p.x || 0, viewport.width)
+                },
+                position: {
+                    x: p.x || 0,
+                    y: p.y || 0,
+                    width: p.width || 0,
+                    height: p.height || 0
+                }
+            })));
+        }
+
+        // Adicionar tabelas
+        elements.push(...tables);
+
+        return elements;
+    }
+
+    private getTitleLevel(fontSize: number): ElementType {
+        if (fontSize >= 20) return 'heading1';
+        if (fontSize >= 16) return 'heading2';
+        if (fontSize >= 14) return 'heading3';
+        return 'paragraph';
+    }
+
+    private detectAlignment(x: number, pageWidth: number): ElementStyle['alignment'] {
+        const threshold = pageWidth * 0.1;
+        if (x <= threshold) return 'left';
+        if (x >= pageWidth - threshold) return 'right';
+        return 'center';
+    }
+
+    private processPageText(textContent: PDFTextContent): string {
+        // Configurações de layout
+        const MIN_COLUMN_WIDTH = 200;
+        const TITLE_FONT_SIZE = 14;
+        const Y_THRESHOLD = 5;
+
+        // Filtrar itens válidos
+        const validItems = textContent.items
+            .filter((item): item is PDFTextItem => 
+                'str' in item && 'transform' in item && Array.isArray(item.transform)
+            )
+            .map(item => ({
+                str: item.str,
+                x: item.transform[4],
+                y: item.transform[5],
+                fontSize: Math.abs(item.transform[0])
+            }));
+
+        // Detectar títulos principais (maior fonte na página)
+        const maxFontSize = Math.max(...validItems.map(item => item.fontSize));
+        const mainTitles = validItems.filter(item => 
+            item.fontSize >= Math.max(TITLE_FONT_SIZE, maxFontSize * 0.8)
+        );
+
+        // Identificar colunas
+        const xPositions = validItems.map(item => item.x);
+        const uniqueXPositions = Array.from(new Set(xPositions)).sort((a, b) => a - b);
         
+        // Detectar colunas usando clustering
+        const columns = this.clusterXPositions(uniqueXPositions)
+            .filter(cluster => cluster[cluster.length - 1] - cluster[0] >= MIN_COLUMN_WIDTH)
+            .map(cluster => ({
+                start: Math.min(...cluster),
+                end: Math.max(...cluster)
+            }));
+
+        // Processar títulos primeiro
+        let text = '';
+        mainTitles.sort((a, b) => b.y - a.y).forEach(title => {
+            text += title.str + '\n\n';
+        });
+
+        // Processar cada coluna
+        columns.sort((a, b) => a.start - b.start).forEach((column, colIndex) => {
+            // Filtrar itens desta coluna, excluindo títulos principais
+            const columnItems = validItems.filter(item => 
+                item.x >= column.start && 
+                item.x <= column.end &&
+                !mainTitles.some(title => title.str === item.str)
+            );
+
+            // Ordenar itens de cima para baixo
+            let lastY: number | null = null;
+            columnItems
+                .sort((a, b) => b.y - a.y)
+                .forEach(item => {
+                    // Adicionar quebra de linha se houver grande diferença vertical
+                    if (lastY !== null && Math.abs(item.y - lastY) > Y_THRESHOLD) {
+                        text += '\n';
+                    }
+                    text += item.str + ' ';
+                    lastY = item.y;
+                });
+
+            // Adicionar marcador entre colunas
+            if (colIndex < columns.length - 1) {
+                text += `\n${MARKERS.COLUMN_BREAK}\n`;
+            }
+        });
+
         return text.trim();
     }
 
@@ -203,53 +343,32 @@ export class PDFParser implements FileParser {
     }
 
     // Função auxiliar para detectar múltiplas colunas
-    private detectMultipleColumns(textContent: any): boolean {
-        const positions = textContent.items.map((item: any) => item.transform[4]);
+    private detectMultipleColumns(textContent: PDFTextContent): boolean {
+        const positions = textContent.items
+            .filter((item): item is PDFTextItem => 'str' in item && 'transform' in item)
+            .map(item => item.transform[4]);
         return new Set(positions).size > 1;
     }
 
-    private async extractPageStructure(page: any): Promise<PageStructure> {
-        const textContent = await page.getTextContent();
-        const elements: PageElement[] = [];
+    private detectColumns(textContent: PDFTextContent): Array<{start: number; end: number}> {
+        // Filtrar apenas itens de texto válidos
+        const validItems = textContent.items
+            .filter((item): item is PDFTextItem => 
+                'str' in item && 'transform' in item
+            );
         
-        // Detectar layout de colunas
-        const columns = this.detectColumns(textContent);
-        
-        // Processar elementos
-        for (const item of textContent.items) {
-            const element = await this.processTextItem(item);
-            if (element) {
-                elements.push(element);
-            }
-        }
-
-        // Organizar elementos em colunas se necessário
-        if (columns > 1) {
-            this.organizeColumns(elements, columns);
-        }
-
-        return {
-            type: 'page',
-            elements,
-            layout: {
-                columns,
-                margins: this.detectMargins(textContent)
-            }
-        };
-    }
-
-    private detectColumns(textContent: { items: Array<{ transform: number[] }> }): number {
-        // Análise mais sofisticada de colunas
-        const positions = textContent.items.map(item => item.transform[4]);
+        const positions = validItems.map(item => item.transform[4]);
         const uniquePositions = new Set(positions);
         
-        // Se houver clusters claros de posições X, provavelmente são colunas
         if (uniquePositions.size > 1) {
             const clusters = this.clusterXPositions(Array.from(uniquePositions));
-            return clusters.length > 1 ? clusters.length : 1;
+            return clusters.map(cluster => ({
+                start: Math.min(...cluster),
+                end: Math.max(...cluster)
+            }));
         }
         
-        return 1;
+        return [{ start: 0, end: 595.28 }]; // Assuming A4 width
     }
 
     private clusterXPositions(positions: number[]): number[][] {
@@ -273,71 +392,191 @@ export class PDFParser implements FileParser {
         return clusters;
     }
 
-    private async processTextItem(item: { 
-        str: string; 
-        transform: number[]; 
-        width?: number; 
-        height?: number; 
-    }): Promise<PageElement | null> {
-        const fontSize = Math.abs(item.transform[0]);
-        const isTitle = fontSize > 14; // Ajuste conforme necessário
-        
-        return {
-            type: isTitle ? 'title' : 'paragraph',
-            content: item.str,
-            elementIndex: 0, // Será atualizado ao processar a página
-            style: {
-                fontSize,
-                alignment: this.detectAlignment(item),
-                fontWeight: isTitle ? 'bold' : 'normal'
-            },
-            position: {
+    private async extractTitle(pdf: pdfjsLib.PDFDocumentProxy): Promise<string | undefined> {
+        try {
+            const metadata = await pdf.getMetadata();
+            return (metadata?.info as Record<string, string>)?.[`Title`] || undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private async extractAuthor(pdf: pdfjsLib.PDFDocumentProxy): Promise<string | undefined> {
+        try {
+            const metadata = await pdf.getMetadata();
+            return (metadata?.info as Record<string, string>)?.[`Author`] || undefined;
+        } catch {
+            return undefined;
+        }
+    }
+
+    private classifyElements(textContent: PDFTextContent, viewport: pdfjsLib.PageViewport) {
+        const titles: ExtendedTextItem[] = [];
+        const paragraphs: TextItem[] = [];
+        const tables: DocumentElement[] = [];
+
+        // Filtrar itens válidos e mapear para incluir x, y e fontSize
+        const validItems = textContent.items
+            .filter((item): item is PDFTextItem => 
+                'str' in item && 'transform' in item && Array.isArray(item.transform)
+            )
+            .map(item => ({
+                str: item.str,
+                transform: item.transform,
+                width: item.width || 0,
+                height: item.height || 0,
                 x: item.transform[4],
                 y: item.transform[5],
+                fontSize: Math.abs(item.transform[0])
+            } as ExtendedTextItem));
+
+        // Detectar hierarquia de títulos
+        const fontSizes = validItems.map(item => item.fontSize || 0);
+        const uniqueFontSizes = Array.from(new Set(fontSizes)).sort((a, b) => b - a);
+        const titleThresholds = {
+            h1: uniqueFontSizes[0] || 20,
+            h2: uniqueFontSizes[1] || 16,
+            h3: uniqueFontSizes[2] || 14
+        };
+
+        // Classificar elementos
+        validItems.forEach(item => {
+            const extendedItem = item as ExtendedTextItem;
+            if (item.fontSize && item.fontSize >= titleThresholds.h1) {
+                extendedItem.level = 1;
+                titles.push(extendedItem);
+            } else if (item.fontSize && item.fontSize >= titleThresholds.h2) {
+                extendedItem.level = 2;
+                titles.push(extendedItem);
+            } else if (item.fontSize && item.fontSize >= titleThresholds.h3) {
+                extendedItem.level = 3;
+                titles.push(extendedItem);
+            } else {
+                // Detectar possíveis células de tabela
+                const isTableCell = this.detectTableCell(item, validItems);
+                if (isTableCell) {
+                    this.processTableCell(item, tables);
+                } else {
+                    paragraphs.push(item);
+                }
+            }
+        });
+
+        return { titles, paragraphs, tables };
+    }
+
+    private detectTableCell(item: TextItem, allItems: TextItem[]): boolean {
+        const itemY = item.y || 0;
+        
+        const GRID_ALIGNMENT_THRESHOLD = 2;
+        const neighbors = allItems.filter(other => 
+            other !== item &&
+            (other.y !== undefined) &&
+            Math.abs((other.y || 0) - itemY) < GRID_ALIGNMENT_THRESHOLD
+        );
+
+        // Verificar alinhamento em grade
+        if (neighbors.length >= 2) {
+            const xPositions = neighbors
+                .filter(n => n.x !== undefined)
+                .map(n => n.x!)
+                .sort((a, b) => a - b);
+            
+            const gaps = [];
+            for (let i = 1; i < xPositions.length; i++) {
+                gaps.push(xPositions[i] - xPositions[i-1]);
+            }
+            
+            // Se os gaps são consistentes, provavelmente é uma tabela
+            const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+            const isConsistent = gaps.every(gap => Math.abs(gap - avgGap) < 10);
+            
+            return isConsistent;
+        }
+
+        return false;
+    }
+
+    private processTableCell(item: TextItem, tables: DocumentElement[]) {
+        if (!item.x || !item.y || !item.fontSize) return;
+
+        // Encontrar ou criar tabela
+        let table = tables.find(t => this.isPartOfTable(item, t));
+        if (!table) {
+            table = {
+                type: 'table',
+                content: '',
+                children: [],
+                style: {
+                    isHeader: false
+                }
+            } as DocumentElement;
+            tables.push(table);
+        }
+
+        // Criar célula usando a estrutura PDFTableCell
+        const cell: DocumentElement = {
+            type: 'table-cell',
+            content: item.str,
+            style: {
+                fontSize: item.fontSize,
+                alignment: this.detectAlignment(item.x, item.width || 0),
+                isHeader: this.isHeaderCell(item)
+            },
+            position: {
+                x: item.x,
+                y: item.y,
                 width: item.width || 0,
                 height: item.height || 0
             }
         };
+
+        this.addCellToTable(cell, table);
     }
 
-    private detectAlignment(item: { transform: number[]; width?: number }): 'left' | 'center' | 'right' | 'justify' {
-        // Implementar lógica de detecção de alinhamento baseada na posição
-        const x = item.transform[4];
-        const width = item.width || 0;
+    private isHeaderCell(item: TextItem): boolean {
+        // Detectar se é uma célula de cabeçalho baseado em características
+        return item.fontSize ? item.fontSize > 12 : false;
+    }
+
+    private isPartOfTable(item: TextItem, table: DocumentElement): boolean {
+        if (!table.children || !item.y) return false;
         
-        // Lógica simplificada de detecção de alinhamento
-        if (x < 100) return 'left';
-        if (x > 400) return 'right';
-        return 'center';
+        // Verificar se o item está próximo a células existentes
+        const existingCells = table.children.flatMap(row => 
+            row.children || []
+        );
+
+        return existingCells.some(cell => 
+            cell.position &&
+            Math.abs(cell.position.y - (item.y || 0)) < 5
+        );
     }
 
-    private detectMargins(textContent: { items: Array<{ transform: number[] }> }): { 
-        top: number; 
-        right: number; 
-        bottom: number; 
-        left: number; 
-    } {
-        const positions = textContent.items.map(item => ({
-            x: item.transform[4],
-            y: item.transform[5]
-        }));
+    private addCellToTable(cell: DocumentElement, table: DocumentElement) {
+        if (!table.children) table.children = [];
 
-        return {
-            top: Math.min(...positions.map(p => p.y)) || 25,
-            right: Math.max(...positions.map(p => p.x)) || 25,
-            bottom: Math.max(...positions.map(p => p.y)) || 25,
-            left: Math.min(...positions.map(p => p.x)) || 25
-        };
-    }
+        // Encontrar ou criar linha
+        let row = table.children.find(r => 
+            r.type === 'table-row' && 
+            r.children?.[0]?.position?.y === cell.position?.y
+        );
 
-    private organizeColumns(elements: PageElement[], columnCount: number): void {
-        // Organizar elementos em colunas
-        const pageWidth = 595.28; // A4 width in points
-        const columnWidth = pageWidth / columnCount;
-        
-        elements.forEach(element => {
-            const columnIndex = Math.floor(element.position.x / columnWidth);
-            element.style.columnSpan = 1;
-        });
+        if (!row) {
+            row = {
+                type: 'table-row',
+                content: '',
+                children: []
+            };
+            table.children.push(row);
+        }
+
+        if (!row.children) row.children = [];
+        row.children.push(cell);
+
+        // Ordenar células da esquerda para direita
+        row.children.sort((a, b) => 
+            (a.position?.x || 0) - (b.position?.x || 0)
+        );
     }
 } 

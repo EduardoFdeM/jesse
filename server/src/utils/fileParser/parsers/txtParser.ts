@@ -23,7 +23,7 @@ export class TxtParser implements FileParser {
 
     supports(mimeType: string): boolean {
         return mimeType === 'text/plain' || 
-               mimeType === 'txt' ||
-               mimeType === 'text';
+               mimeType === '.txt' ||
+               mimeType === 'txt';
     }
 } 

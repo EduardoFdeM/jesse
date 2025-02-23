@@ -8,7 +8,8 @@ import { emitTranslationCompleted, emitTranslationError, emitTranslationProgress
 import * as pdfjsLib from 'pdfjs-dist';
 import { BaseError } from '../utils/errors.js';
 import { parseFile } from '../utils/fileParser/index.js';
-import { DocumentStructure, PageStructure, PageElement } from '../types/global.js';
+import { DocumentStructure, PageStructure, PageElement, DocumentElement, PDFTable, PDFTableRow, PDFTableCell, TableOptions } from '../utils/fileParser/types.js';
+import { MARKERS } from '../utils/fileParser/types.js';
 
 interface TranslationData {
     id: string;
@@ -73,6 +74,33 @@ interface TranslationChunk {
     };
 }
 
+// Função auxiliar para desenhar tabela
+function drawPDFTable(doc: PDFKit.PDFDocument, table: PDFTable, options: TableOptions = {}) {
+    const cellWidth = (options.width || 500) / table.rows[0].cells.length;
+    const startX = doc.page.margins.left;
+    const padding = options.padding || 5;
+
+    table.rows.forEach((row, rowIndex) => {
+        let currentX = startX;
+        const maxHeight = Math.max(...row.cells.map(cell => 
+            doc.heightOfString(cell.content, { width: cellWidth - padding * 2 })
+        ));
+
+        row.cells.forEach((cell) => {
+            doc.text(cell.content, currentX, doc.y, {
+                width: cellWidth - padding * 2,
+                align: cell.style?.alignment || 'left'
+            });
+            currentX += cellWidth;
+        });
+
+        doc.moveDown();
+        if (rowIndex === 0 && row.isHeader) {
+            doc.moveDown(0.5);
+        }
+    });
+}
+
 // Função para extrair texto de diferentes tipos de arquivo
 const extractTextFromBuffer = async (buffer: Buffer, mimeType: string): Promise<string> => {
     try {
@@ -115,7 +143,8 @@ const saveFileContent = async (
 
         switch (outputFormat.toLowerCase()) {
             case 'txt':
-            case 'text': {
+            case 'text':
+            case 'plain': {
                 fileBuffer = Buffer.from(text, 'utf-8');
                 break;
             }
@@ -138,7 +167,8 @@ const saveFileContent = async (
             case 'pdf': {
                 const pdfDoc = new PDFDocument({
                     margin: 50,
-                    size: 'A4'
+                    size: 'A4',
+                    autoFirstPage: false // Importante para controlar melhor as páginas
                 });
                 const chunks: Buffer[] = [];
 
@@ -158,17 +188,114 @@ const saveFileContent = async (
                         }
                     });
 
-                    if (text.includes('---PAGE---')) {
-                        const pages = text.split('---PAGE---');
-                        pages.forEach((pageContent, pageIndex) => {
-                            if (pageIndex > 0) pdfDoc.addPage();
-                            pdfDoc.text(pageContent.trim(), {
-                                align: 'left',
-                                continued: false
-                            });
+                    // Verificar se temos uma estrutura de documento
+                    const structure = text.includes('<structure>') ? 
+                        JSON.parse(text.split('<structure>')[1].split('</structure>')[0]) : null;
+
+                    if (structure) {
+                        // Usar a estrutura para reconstruir o PDF
+                        structure.elements.forEach((element: DocumentElement, index: number) => {
+                            if (index === 0 || element.type === 'column') {
+                                pdfDoc.addPage();
+                            }
+
+                            switch (element.type) {
+                                case 'heading1':
+                                    pdfDoc.fontSize(24).font('Helvetica-Bold')
+                                        .text(element.content, {
+                                            align: element.style?.alignment || 'left'
+                                        });
+                                    break;
+
+                                case 'heading2':
+                                    pdfDoc.fontSize(20).font('Helvetica-Bold')
+                                        .text(element.content, {
+                                            align: element.style?.alignment || 'left'
+                                        });
+                                    break;
+
+                                case 'heading3':
+                                    pdfDoc.fontSize(16).font('Helvetica-Bold')
+                                        .text(element.content, {
+                                            align: element.style?.alignment || 'left'
+                                        });
+                                    break;
+
+                                case 'paragraph':
+                                    pdfDoc.fontSize(12).font('Helvetica')
+                                        .text(element.content, {
+                                            align: element.style?.alignment || 'left',
+                                            columns: element.style?.columnSpan,
+                                            columnGap: 20
+                                        });
+                                    break;
+
+                                case 'table':
+                                    if (element.children) {
+                                        const tableRows: PDFTableRow[] = element.children.map((row: DocumentElement) => ({
+                                            cells: row.children?.map((cell: DocumentElement) => ({
+                                                content: cell.content,
+                                                style: cell.style
+                                            })) || [],
+                                            isHeader: row.style?.isHeader
+                                        }));
+
+                                        const table: PDFTable = {
+                                            rows: tableRows,
+                                            style: element.style
+                                        };
+
+                                        drawPDFTable(pdfDoc, table, {
+                                            width: 500,
+                                            padding: 5
+                                        });
+                                    }
+                                    break;
+
+                                case 'column':
+                                    if (element.children) {
+                                        const columnWidth = element.position?.width || pdfDoc.page.width / 2;
+                                        const x = element.position?.x || 50;
+                                        element.children.forEach((child: DocumentElement) => {
+                                            pdfDoc.text(child.content, x, element.position?.y || 50, {
+                                                width: columnWidth,
+                                                align: child.style?.alignment || 'left'
+                                            });
+                                        });
+                                    }
+                                    break;
+                            }
                         });
                     } else {
-                        pdfDoc.text(text, { align: 'left' });
+                        // Manter o comportamento anterior para compatibilidade
+                        if (text.includes(MARKERS.PAGE_BREAK)) {
+                            const pages = text.split(MARKERS.PAGE_BREAK);
+                            pages.forEach((pageContent, pageIndex) => {
+                                pdfDoc.addPage();
+                                if (pageContent.includes(MARKERS.COLUMN_BREAK)) {
+                                    const columns = pageContent.split(MARKERS.COLUMN_BREAK);
+                                    const columnWidth = (pdfDoc.page.width - 100) / columns.length;
+                                    
+                                    columns.forEach((columnContent, columnIndex) => {
+                                        pdfDoc.text(columnContent.trim(), {
+                                            columns: columns.length,
+                                            columnGap: 20,
+                                            width: columnWidth,
+                                            align: 'left',
+                                            continued: false
+                                        });
+                                    });
+                                } else {
+                                    pdfDoc.text(pageContent.trim(), {
+                                        align: 'left',
+                                        continued: false
+                                    });
+                                }
+                            });
+                        } else {
+                            pdfDoc.addPage();
+                            pdfDoc.text(text, { align: 'left' });
+                        }
                     }
                     pdfDoc.end();
                 });
@@ -210,7 +337,7 @@ function splitIntoChunks(content: string): ChunkInfo[] {
     });
 
     const chunks: ChunkInfo[] = [];
-    const pages = content.split('---PAGE_BREAK---').filter(Boolean);
+    const pages = content.split(MARKERS.PAGE_BREAK).filter(Boolean);
     let currentChunk = '';
     let startIndex = 0;
 
