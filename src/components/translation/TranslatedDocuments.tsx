@@ -372,10 +372,14 @@ export function TranslatedDocuments() {
     const formatCost = (cost: string | null): string => {
         if (!cost) return 'N/A';
         try {
-            // Tenta interpretar o valor como JSON
             const parsedCost = JSON.parse(cost);
             
-            // Se tiver os tokens separados (prompt/completion), usa as taxas específicas
+            // Se tiver totalCost direto, usa ele
+            if (parsedCost.totalCost !== undefined) {
+                return `US$ ${parsedCost.totalCost.toFixed(4)}`;
+            }
+            
+            // Se tiver os tokens separados (prompt/completion), calcula
             if (parsedCost.assistantTokens && parsedCost.completionTokens) {
                 const inputCost = parsedCost.assistantTokens * INPUT_TOKEN_RATE;
                 const outputCost = parsedCost.completionTokens * OUTPUT_TOKEN_RATE;
@@ -383,7 +387,7 @@ export function TranslatedDocuments() {
                 return `US$ ${totalCost.toFixed(4)}`;
             }
             
-            // Se só tiver totalTokens, usa uma média das taxas (fallback)
+            // Se só tiver totalTokens, usa uma média das taxas
             if (parsedCost.totalTokens) {
                 const averageRate = (INPUT_TOKEN_RATE + OUTPUT_TOKEN_RATE) / 2;
                 const computedCost = parsedCost.totalTokens * averageRate;
@@ -392,10 +396,8 @@ export function TranslatedDocuments() {
             
             return 'N/A';
         } catch (error) {
-            // Se não for JSON, tenta converter diretamente
-            const numericCost = parseFloat(cost);
-            if (isNaN(numericCost)) return 'N/A';
-            return `US$ ${numericCost.toFixed(4)}`;
+            console.error('Erro ao formatar custo:', error);
+            return 'N/A';
         }
     };
 

@@ -139,6 +139,12 @@ export interface AssistantConfig {
 
 // Tipos de estatísticas
 export interface UserStats {
+    translations: Array<{
+        id: string;
+        fileName: string;
+        costData: string | null;
+        createdAt: string;
+    }>;
     totalTranslations: number;
     totalKnowledgeBases: number;
     totalAssistants: number;
@@ -210,4 +216,17 @@ export interface OpenAIFile {
     bytes: number;
     created_at: number;
     purpose: string;
+}
+
+export interface ModelCosts {
+    inputCost: number;
+    outputCost: number;
+    cachedInputCost?: number;
+}
+
+export interface ModelConfig {
+    id: string;
+    name: string;
+    costs: ModelCosts;
+    isActive: boolean;
 }

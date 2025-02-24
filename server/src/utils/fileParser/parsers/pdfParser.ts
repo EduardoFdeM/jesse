@@ -54,6 +54,7 @@ export class PDFParser implements FileParser {
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
+                const viewport = page.getViewport({ scale: 1.0 });
                 
                 // Processar página e adicionar à estrutura do documento
                 const pageElements = await this.processPageContent(textContent, page);
@@ -75,20 +76,17 @@ export class PDFParser implements FileParser {
                 this.documentStructure.pages.push(pageStructure);
                 this.documentStructure.elements.push(...pageElements);
 
-                // Manter o processamento existente para compatibilidade
+                // Processar texto da página
                 const pageText = this.processPageText(textContent);
-                const pageCharCount = pageText.length;
-                totalCharacters += pageCharCount;
                 
-                console.log(`📝 Página ${i}:`, {
-                    caracteres: pageCharCount,
-                    amostra: pageText.substring(0, 100) + '...',
-                    multiplasColunas: this.detectMultipleColumns(textContent)
-                });
-                
-                content += pageText + `\n${MARKERS.PAGE_BREAK}\n`;
+                // Adicionar texto à estrutura geral
+                if (pageText.trim()) {
+                    if (content) content += `\n${MARKERS.PAGE_BREAK}\n`;
+                    content += pageText;
+                    totalCharacters += pageText.length;
+                }
 
-                // Manter processamento de imagens existente
+                // Processar imagens se necessário
                 if (options?.extractImages || options?.useOCR) {
                     const operatorList = await page.getOperatorList();
                     const hasPageImages = operatorList.fnArray.includes(pdfjsLib.OPS.paintImageXObject);
@@ -97,13 +95,10 @@ export class PDFParser implements FileParser {
                         hasImages = true;
                         if (options.useOCR) {
                             try {
-                                // Extrair imagem da página
-                                const viewport = page.getViewport({ scale: 1.0 });
                                 const canvas = document.createElement('canvas');
                                 const context = canvas.getContext('2d');
-                                if (!context) {
-                                    throw new Error('Não foi possível criar contexto 2D');
-                                }
+                                if (!context) throw new Error('Não foi possível criar contexto 2D');
+                                
                                 canvas.height = viewport.height;
                                 canvas.width = viewport.width;
                                 
@@ -112,13 +107,11 @@ export class PDFParser implements FileParser {
                                     viewport: viewport
                                 }).promise;
 
-                                // Converter canvas para buffer
                                 const imageBuffer = Buffer.from(
                                     canvas.toDataURL('image/png').split(',')[1],
                                     'base64'
                                 );
 
-                                // Executar OCR
                                 const extractedText = await this.ocrService.extractTextFromImage(
                                     imageBuffer,
                                     options.language
@@ -154,7 +147,7 @@ export class PDFParser implements FileParser {
                     structure: this.documentStructure
                 }
             };
-        } catch (error: unknown) {
+        } catch (error) {
             if (error instanceof Error) {
                 throw new Error(`Erro ao processar PDF: ${error.message}`);
             }
@@ -171,7 +164,7 @@ export class PDFParser implements FileParser {
         const hasMultipleColumns = columns.length > 1;
 
         // Classificar elementos
-        const { titles, paragraphs, tables } = this.classifyElements(textContent, viewport);
+        const { titles, paragraphs, tables } = this.classifyElements(textContent);
 
         // Processar títulos primeiro
         for (const title of titles) {
@@ -267,69 +260,125 @@ export class PDFParser implements FileParser {
 
     private processPageText(textContent: PDFTextContent): string {
         // Configurações de layout
-        const MIN_COLUMN_WIDTH = 200;
+        const MIN_COLUMN_WIDTH = 150;
         const TITLE_FONT_SIZE = 14;
         const Y_THRESHOLD = 5;
+        const X_THRESHOLD = 50;
 
         // Filtrar itens válidos
         const validItems = textContent.items
             .filter((item): item is PDFTextItem => 
-                'str' in item && 'transform' in item && Array.isArray(item.transform)
+                'str' in item && 
+                'transform' in item && 
+                Array.isArray(item.transform) &&
+                typeof item.str === 'string' && 
+                item.str.trim().length > 0 // Ignorar strings vazias
             )
             .map(item => ({
-                str: item.str,
-                x: item.transform[4],
-                y: item.transform[5],
-                fontSize: Math.abs(item.transform[0])
+                str: item.str.trim(),
+                x: Math.round(item.transform[4]),
+                y: Math.round(-item.transform[5]), // Invertido e arredondado
+                fontSize: Math.round(Math.abs(item.transform[0])),
+                width: item.width || 0
             }));
 
-        // Detectar títulos principais (maior fonte na página)
-        const maxFontSize = Math.max(...validItems.map(item => item.fontSize));
-        const mainTitles = validItems.filter(item => 
-            item.fontSize >= Math.max(TITLE_FONT_SIZE, maxFontSize * 0.8)
-        );
+        // Detectar página vazia
+        if (validItems.length === 0) {
+            return '';
+        }
 
-        // Identificar colunas
-        const xPositions = validItems.map(item => item.x);
+        // Identificar número da página (geralmente no topo e centralizado)
+        const pageNumberItem = validItems.find(item => {
+            const isNumber = /^\d+$/.test(item.str);
+            const isNearTop = item.y > -50; // Próximo ao topo
+            const isCentered = item.x > 250 && item.x < 350; // Aproximadamente centralizado
+            return isNumber && isNearTop && isCentered;
+        });
+
+        // Remover número da página dos itens válidos se encontrado
+        const contentItems = pageNumberItem 
+            ? validItems.filter(item => item !== pageNumberItem)
+            : validItems;
+
+        // Detectar colunas
+        const xPositions = contentItems.map(item => item.x);
         const uniqueXPositions = Array.from(new Set(xPositions)).sort((a, b) => a - b);
         
-        // Detectar colunas usando clustering
         const columns = this.clusterXPositions(uniqueXPositions)
             .filter(cluster => cluster[cluster.length - 1] - cluster[0] >= MIN_COLUMN_WIDTH)
             .map(cluster => ({
                 start: Math.min(...cluster),
-                end: Math.max(...cluster)
+                end: Math.max(...cluster),
+                items: [] as typeof contentItems
             }));
 
-        // Processar títulos primeiro
+        // Distribuir itens nas colunas
+        contentItems.forEach(item => {
+            const column = columns.find(col => 
+                item.x >= col.start - X_THRESHOLD && 
+                item.x <= col.end + X_THRESHOLD
+            );
+            if (column) {
+                column.items.push(item);
+            }
+        });
+
         let text = '';
-        mainTitles.sort((a, b) => b.y - a.y).forEach(title => {
+
+        // Adicionar número da página se existir
+        if (pageNumberItem) {
+            text += pageNumberItem.str + '\n\n';
+        }
+
+        // Processar títulos principais
+        const maxFontSize = Math.max(...contentItems.map(item => item.fontSize));
+        const mainTitles = contentItems.filter(item => 
+            item.fontSize >= Math.max(TITLE_FONT_SIZE, maxFontSize * 0.8) &&
+            item.y > -100 // Próximo ao topo
+        );
+
+        mainTitles.forEach(title => {
             text += title.str + '\n\n';
         });
 
-        // Processar cada coluna
+        // Processar colunas
         columns.sort((a, b) => a.start - b.start).forEach((column, colIndex) => {
-            // Filtrar itens desta coluna, excluindo títulos principais
-            const columnItems = validItems.filter(item => 
-                item.x >= column.start && 
-                item.x <= column.end &&
-                !mainTitles.some(title => title.str === item.str)
-            );
-
-            // Ordenar itens de cima para baixo
             let lastY: number | null = null;
-            columnItems
-                .sort((a, b) => b.y - a.y)
+            let lastFontSize: number | null = null;
+
+            column.items
+                .sort((a, b) => a.y - b.y)
                 .forEach(item => {
-                    // Adicionar quebra de linha se houver grande diferença vertical
-                    if (lastY !== null && Math.abs(item.y - lastY) > Y_THRESHOLD) {
-                        text += '\n';
+                    // Pular se for um título principal
+                    if (mainTitles.some(title => title.str === item.str)) {
+                        return;
                     }
-                    text += item.str + ' ';
+
+                    // Adicionar quebras de linha apropriadas
+                    if (lastY !== null) {
+                        const yDiff = Math.abs(item.y - lastY);
+                        if (yDiff > Y_THRESHOLD) {
+                            text += '\n';
+                            // Adicionar linha extra se a diferença for maior
+                            if (yDiff > Y_THRESHOLD * 3) {
+                                text += '\n';
+                            }
+                        }
+                    }
+
+                    // Adicionar espaço se necessário
+                    if (text.length > 0 && !text.endsWith('\n')) {
+                        text += ' ';
+                    }
+
+                    // Adicionar o texto
+                    text += item.str;
+
                     lastY = item.y;
+                    lastFontSize = item.fontSize;
                 });
 
-            // Adicionar marcador entre colunas
+            // Adicionar separador entre colunas
             if (colIndex < columns.length - 1) {
                 text += `\n${MARKERS.COLUMN_BREAK}\n`;
             }
@@ -372,24 +421,38 @@ export class PDFParser implements FileParser {
     }
 
     private clusterXPositions(positions: number[]): number[][] {
-        const threshold = 50; // Ajuste conforme necessário
+        const threshold = 30; // Reduzido para melhor precisão
         const clusters: number[][] = [];
         
         positions.sort((a, b) => a - b);
         
         let currentCluster: number[] = [positions[0]];
+        let lastPosition = positions[0];
         
         for (let i = 1; i < positions.length; i++) {
-            if (positions[i] - positions[i-1] < threshold) {
-                currentCluster.push(positions[i]);
+            const currentPosition = positions[i];
+            if (currentPosition - lastPosition < threshold) {
+                currentCluster.push(currentPosition);
             } else {
-                clusters.push(currentCluster);
-                currentCluster = [positions[i]];
+                if (currentCluster.length > 0) {
+                    clusters.push(currentCluster);
+                }
+                currentCluster = [currentPosition];
             }
+            lastPosition = currentPosition;
         }
         
-        clusters.push(currentCluster);
-        return clusters;
+        if (currentCluster.length > 0) {
+            clusters.push(currentCluster);
+        }
+
+        // Filtrar clusters muito próximos
+        return clusters.filter((cluster, index) => {
+            if (index === 0) return true;
+            const prevClusterEnd = Math.max(...clusters[index - 1]);
+            const currentClusterStart = Math.min(...cluster);
+            return currentClusterStart - prevClusterEnd >= threshold;
+        });
     }
 
     private async extractTitle(pdf: pdfjsLib.PDFDocumentProxy): Promise<string | undefined> {
@@ -410,7 +473,7 @@ export class PDFParser implements FileParser {
         }
     }
 
-    private classifyElements(textContent: PDFTextContent, viewport: pdfjsLib.PageViewport) {
+    private classifyElements(textContent: PDFTextContent) {
         const titles: ExtendedTextItem[] = [];
         const paragraphs: TextItem[] = [];
         const tables: DocumentElement[] = [];

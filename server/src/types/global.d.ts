@@ -199,6 +199,49 @@ declare global {
         created_at: number;
         metadata: Record<string, unknown>;
     }
+
+    interface RunResponse {
+        id: string;
+        object: string;
+        created_at: number;
+        thread_id: string;
+        assistant_id: string;
+        status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'requires_action';
+        required_action?: {
+            type: string;
+            submit_tool_outputs?: {
+                tool_calls: Array<{
+                    id: string;
+                    type: string;
+                    function: {
+                        name: string;
+                        arguments: string;
+                    };
+                }>;
+            };
+        };
+        last_error?: {
+            code: string;
+            message: string;
+        };
+        expires_at: number;
+        started_at: number | null;
+        cancelled_at: number | null;
+        failed_at: number | null;
+        completed_at: number | null;
+        model: string;
+        instructions: string | null;
+        tools: Array<{
+            type: string;
+        }>;
+        file_ids: string[];
+        metadata: Record<string, unknown>;
+        usage?: {
+            prompt_tokens: number;
+            completion_tokens: number;
+            total_tokens: number;
+        };
+    }
 }
 
 declare module 'tesseract.js' {

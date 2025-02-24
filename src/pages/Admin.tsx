@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { Users, Settings } from 'lucide-react';
 import api from '../axiosConfig';
 import { toast } from 'react-hot-toast';
-import type { User, AssistantConfig, UserStats } from '../types/index';
+import type { User, AssistantConfig, UserStats, ModelConfig } from '../types/index';
 
 const defaultConfig: AssistantConfig = {
     id: '',
     name: '',
-    model: 'gpt-4-turbo-preview',
+    model: 'gpt-3.5-turbo',
     instructions: '',
     temperature: 0.3
 };
@@ -17,11 +17,33 @@ interface UserDetails extends User {
 }
 
 export function Admin() {
-    const [activeTab, setActiveTab] = useState<'users' | 'assistant'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'assistant' | 'models'>('users');
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<UserDetails | null>(null);
     const [assistantConfig, setAssistantConfig] = useState<AssistantConfig>(defaultConfig);
     const [loading, setLoading] = useState(true);
+
+    const models: ModelConfig[] = [
+        {
+            id: 'gpt-3.5-turbo',
+            name: 'GPT-3.5 Turbo',
+            costs: {
+                inputCost: 0.50,
+                outputCost: 1.50
+            },
+            isActive: true
+        },
+        {
+            id: 'gpt-4o-mini',
+            name: 'GPT-4o Mini',
+            costs: {
+                inputCost: 0.150,
+                outputCost: 0.600,
+                cachedInputCost: 0.075
+            },
+            isActive: true
+        }
+    ];
 
     useEffect(() => {
         loadData();
@@ -128,6 +150,17 @@ export function Admin() {
                 >
                     <Settings className="w-5 h-5 mr-2" />
                     Configuração do Assistente
+                </button>
+                <button
+                    onClick={() => setActiveTab('models')}
+                    className={`flex items-center px-4 py-2 rounded-lg ${
+                        activeTab === 'models'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                    <Settings className="w-5 h-5 mr-2" />
+                    Modelos e Custos
                 </button>
             </div>
 
@@ -350,7 +383,7 @@ export function Admin() {
                         </table>
                     </div>
                 )
-            ) : (
+            ) : activeTab === 'assistant' ? (
                 <div className="bg-white rounded-lg shadow p-6">
                     <h2 className="text-xl font-semibold mb-4">Configuração do Assistente Padrão</h2>
                     <div className="mb-6">
@@ -443,6 +476,47 @@ export function Admin() {
                             </button>
                         </div>
                     </form>
+                </div>
+            ) : (
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h2 className="text-xl font-semibold mb-4">Configuração de Modelos e Custos</h2>
+                    <div className="grid gap-6">
+                        {models.map(model => (
+                            <div key={model.id} className="border rounded-lg p-4">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-lg font-medium">{model.name}</h3>
+                                    <div className="flex items-center">
+                                        <span className={`px-2 py-1 rounded text-sm ${
+                                            model.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                        }`}>
+                                            {model.isActive ? 'Ativo' : 'Inativo'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-sm text-gray-500">Custo de Input</p>
+                                        <p className="text-lg">${model.costs.inputCost}/1M tokens</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm text-gray-500">Custo de Output</p>
+                                        <p className="text-lg">${model.costs.outputCost}/1M tokens</p>
+                                    </div>
+                                    {model.costs.cachedInputCost && (
+                                        <div>
+                                            <p className="text-sm text-gray-500">Custo de Input em Cache</p>
+                                            <p className="text-lg">${model.costs.cachedInputCost}/1M tokens</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                            <h3 className="text-lg font-medium mb-2">File Search</h3>
+                            <p className="text-sm text-gray-500">Custo de Armazenamento</p>
+                            <p className="text-lg">$0.10/GB/dia (1GB grátis)</p>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

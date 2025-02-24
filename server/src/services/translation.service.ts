@@ -74,6 +74,49 @@ interface TranslationChunk {
     };
 }
 
+interface RunResponse {
+    id: string;
+    object: string;
+    created_at: number;
+    thread_id: string;
+    assistant_id: string;
+    status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'expired' | 'requires_action';
+    required_action?: {
+        type: string;
+        submit_tool_outputs?: {
+            tool_calls: Array<{
+                id: string;
+                type: string;
+                function: {
+                    name: string;
+                    arguments: string;
+                };
+            }>;
+        };
+    };
+    last_error?: {
+        code: string;
+        message: string;
+    };
+    expires_at: number;
+    started_at: number | null;
+    cancelled_at: number | null;
+    failed_at: number | null;
+    completed_at: number | null;
+    model: string;
+    instructions: string | null;
+    tools: Array<{
+        type: string;
+    }>;
+    file_ids: string[];
+    metadata: Record<string, unknown>;
+    usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
+}
+
 // Função auxiliar para desenhar tabela
 function drawPDFTable(doc: PDFKit.PDFDocument, table: PDFTable, options: TableOptions = {}) {
     const cellWidth = (options.width || 500) / table.rows[0].cells.length;
@@ -394,13 +437,37 @@ function splitIntoChunks(content: string): ChunkInfo[] {
     return chunks;
 }
 
-async function waitForRunCompletion(threadId: string, runId: string, translationId: string): Promise<string> {
+const MODEL_COSTS = {
+    'gpt-3.5-turbo': {
+        inputCost: 0.50,
+        outputCost: 1.50
+    },
+    'gpt-4o-mini': {
+        inputCost: 0.150,
+        outputCost: 0.600,
+        cachedInputCost: 0.075
+    }
+} as const;
+
+function calculateTranslationCost(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; } | undefined, model: string): number {
+    if (!usage) return 0;
+    
+    const costs = MODEL_COSTS[model as keyof typeof MODEL_COSTS];
+    if (!costs) return 0;
+
+    const inputCost = (usage.prompt_tokens / 1_000_000) * costs.inputCost;
+    const outputCost = (usage.completion_tokens / 1_000_000) * costs.outputCost;
+
+    return inputCost + outputCost;
+}
+
+async function waitForRunCompletion(threadId: string, runId: string, translationId: string): Promise<{ text: string; cost: number }> {
     let retries = 0;
     const startTime = Date.now();
 
     while (true) {
         try {
-            const runStatus = await openaiClient.beta.threads.runs.retrieve(threadId, runId);
+            const runStatus = await openaiClient.beta.threads.runs.retrieve(threadId, runId) as RunResponse;
             
             console.log(`🔄 Status da run ${runId}:`, {
                 status: runStatus.status,
@@ -418,11 +485,15 @@ async function waitForRunCompletion(threadId: string, runId: string, translation
                     const assistantMessage = messages.data.find(m => m.role === 'assistant');
                     if (assistantMessage?.content[0]?.type === 'text') {
                         const resposta = assistantMessage.content[0].text.value;
+                        const cost = calculateTranslationCost(runStatus.usage, runStatus.model);
                         console.log(`✅ Tradução concluída:`, {
                             tamanhoResposta: resposta.length,
                             tempoTotal: `${Math.round((Date.now() - startTime) / 1000)}s`
                         });
-                        return resposta;
+                        return { 
+                            text: resposta,
+                            cost
+                        };
                     }
                     throw new Error('Resposta do assistant em formato inválido');
 
@@ -462,6 +533,7 @@ async function waitForRunCompletion(threadId: string, runId: string, translation
 export const translateFile = async (params: TranslateFileParams & { fileBuffer: Buffer }): Promise<TranslationData> => {
     let thread: { id: string } | null = null;
     let currentChunkIndex = 0;
+    let totalCost = 0;
 
     try {
         console.log('🚀 Iniciando tradução:', {
@@ -516,7 +588,8 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
                     });
 
                     // Aguardar tradução do chunk
-                    const chunkTranslation = await waitForRunCompletion(thread.id, run.id, params.translationId);
+                    const { text: chunkTranslation, cost } = await waitForRunCompletion(thread.id, run.id, params.translationId);
+                    totalCost += cost;
 
                     // Processar e adicionar a tradução do chunk
                     const processedTranslation = mergeTranslatedChunk(
@@ -565,6 +638,7 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
         );
 
         // Atualizar registro da tradução
+        const startTime = Date.now();
         const updatedTranslation = await prisma.translation.update({
             where: { id: params.translationId },
             data: {
@@ -573,7 +647,11 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
                 fileSize: savedFile.fileSize,
                 fileName: savedFile.fileName,
                 plainTextContent: translatedContent,
-                errorMessage: null
+                errorMessage: null,
+                costData: JSON.stringify({
+                    totalCost,
+                    processingTime: Date.now() - startTime
+                })
             }
         });
 

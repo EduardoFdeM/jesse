@@ -160,6 +160,11 @@ interface RunResponse {
     }>;
     file_ids: string[];
     metadata: Record<string, unknown>;
+    usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
 }
 
 // Funções para Vector Store
