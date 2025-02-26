@@ -84,7 +84,7 @@ export interface OpenAIAssistantList {
 }
 
 // Configuração centralizada
-const getHeaders = (beta: boolean = false) => ({
+export const getHeaders = (beta: boolean = false) => ({
     'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
     'Content-Type': 'application/json',
     ...(beta ? { 'OpenAI-Beta': 'assistants=v2' } : {})
@@ -475,6 +475,12 @@ const threadsApi = {
             assistant_id: string;
             instructions?: string;
         }): Promise<RunResponse> => {
+            console.log('📝 Criando run com:', {
+                threadId,
+                params,
+                url: `https://api.openai.com/v1/threads/${threadId}/runs`
+            });
+
             const response = await fetch(`https://api.openai.com/v1/threads/${threadId}/runs`, {
                 method: 'POST',
                 headers: getHeaders(true),
@@ -482,7 +488,13 @@ const threadsApi = {
             });
 
             if (!response.ok) {
-                throw new Error('Erro ao criar run');
+                const errorData = await response.text();
+                console.error('❌ Erro ao criar run:', {
+                    status: response.status,
+                    statusText: response.statusText,
+                    error: errorData
+                });
+                throw new Error(`Erro ao criar run: ${errorData}`);
             }
 
             return await response.json();

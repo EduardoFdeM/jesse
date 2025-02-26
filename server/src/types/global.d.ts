@@ -81,6 +81,9 @@ declare global {
         createdAt: Date;
         updatedAt: Date;
         userId: string;
+        isPublic: boolean;
+        canEdit: boolean;
+        editableBy: User[];
     }
 
     // Socket Events
@@ -187,6 +190,8 @@ declare global {
         createdAt: Date;
         updatedAt: Date;
         isPublic: boolean;
+        canEdit: boolean;
+        editableBy: User[];
         model: string;
         temperature: number;
         assistantId: string;

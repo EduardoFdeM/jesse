@@ -22,8 +22,18 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
         where: { 
             OR: [
                 { userId: req.user!.id },
-                { isPublic: true }
+                { isPublic: true },
+                { editableBy: { some: { id: req.user!.id } } }
             ]
+        },
+        include: {
+            editableBy: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+            }
         },
         orderBy: { createdAt: 'desc' }
     });
@@ -48,7 +58,7 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
 export const createAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const { name, description, instructions, tags, model, temperature, isPublic } = req.body;
+    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy } = req.body;
     
     // Criar assistant na OpenAI
     const openaiAssistant = await openai.assistant.create({
@@ -68,10 +78,23 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
             model: model || 'gpt-4o-mini',
             temperature: temperature || 0.3,
             isPublic,
+            canEdit,
             userId: req.user!.id,
             assistantId: openaiAssistant.id,
-            status: 'active'
+            status: 'active',
+            editableBy: canEdit && editableBy ? {
+                connect: editableBy.map((id: string) => ({ id }))
+            } : undefined
         },
+        include: {
+            editableBy: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+            }
+        }
     });
 
     res.status(201).json({ status: 'success', data: assistant });
@@ -97,12 +120,15 @@ export const getAssistant = asyncHandler(async (req: Request, res: Response) => 
 export const updateAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const { name, description, instructions, tags, model, temperature, isPublic } = req.body;
+    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy } = req.body;
     
     const assistant = await prisma.assistant.findFirst({ 
         where: { 
             id: req.params.id, 
-            userId: req.user!.id 
+            OR: [
+                { userId: req.user!.id },
+                { editableBy: { some: { id: req.user!.id } } }
+            ]
         } 
     });
     
@@ -119,6 +145,7 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
         });
     }
 
+    // Atualizar no banco
     const updatedAssistant = await prisma.assistant.update({
         where: { id: req.params.id },
         data: { 
@@ -128,8 +155,21 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
             tags, 
             model, 
             temperature,
-            isPublic 
+            isPublic,
+            canEdit,
+            editableBy: {
+                set: canEdit && editableBy ? editableBy.map((id: string) => ({ id })) : []
+            }
         },
+        include: {
+            editableBy: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+            }
+        }
     });
     
     res.json({ status: 'success', data: updatedAssistant });

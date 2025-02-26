@@ -23,6 +23,12 @@ interface OpenAIFile {
     status: string;
 }
 
+interface User {
+    id: string;
+    name: string;
+    email: string;
+}
+
 interface KnowledgeBaseFormProps {
     initialData?: {
         id?: string;
@@ -32,6 +38,9 @@ interface KnowledgeBaseFormProps {
         fileIds?: string[];
         updatedAt?: string;
         createdAt?: string;
+        isPublic?: boolean;
+        canEdit?: boolean;
+        editableBy?: { id: string; name: string; email: string }[];
     };
 }
 
@@ -42,7 +51,9 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [formData, setFormData] = useState({
         name: initialData?.name || '',
-        description: initialData?.description || ''
+        description: initialData?.description || '',
+        isPublic: initialData?.isPublic || false,
+        canEdit: initialData?.canEdit || false
     });
     const [files, setFiles] = useState<FileWithLanguages[]>([]);
     const [error, setError] = useState<string | null>(null);
@@ -50,6 +61,11 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
     const [selectedExistingFiles, setSelectedExistingFiles] = useState<string[]>(initialData?.fileIds || []);
     const [existingFiles, setExistingFiles] = useState<OpenAIFile[]>([]);
     const [isLoadingFiles, setIsLoadingFiles] = useState(true);
+    const [selectedEditableUsers, setSelectedEditableUsers] = useState<string[]>(
+        initialData?.editableBy?.map(user => user.id) || []
+    );
+    const [showEditableUsersModal, setShowEditableUsersModal] = useState(false);
+    const [availableUsers, setAvailableUsers] = useState<User[]>([]);
 
     const filterSupportedFiles = (files: OpenAIFile[]) => {
         return files.filter(file => {
@@ -68,6 +84,8 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                     setFormData({
                         name: data.name,
                         description: data.description,
+                        isPublic: data.isPublic,
+                        canEdit: data.canEdit
                     });
                     setSelectedExistingFiles(data.fileIds || []);
                 } catch (err) {
@@ -99,6 +117,16 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
         }
     };
 
+    const loadAvailableUsers = async () => {
+        try {
+            const response = await api.get('/api/admin/users/available');
+            setAvailableUsers(response.data.users);
+        } catch (error) {
+            console.error('Erro ao carregar usuários:', error);
+            toast.error('Erro ao carregar lista de usuários');
+        }
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -125,13 +153,20 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
             const endpoint = id ? `/api/knowledge-bases/${id}` : '/api/knowledge-bases';
             const method = id ? 'put' : 'post';
 
+            const formDataToSend = new FormData();
+            formDataToSend.append('name', formData.name);
+            formDataToSend.append('description', formData.description);
+            formDataToSend.append('isPublic', String(formData.isPublic));
+            formDataToSend.append('canEdit', String(formData.canEdit));
+            
+            if (formData.canEdit) {
+                selectedEditableUsers.forEach(userId => {
+                    formDataToSend.append('editableBy[]', userId);
+                });
+            }
+            
             if (files.length > 0) {
                 // Se tiver novos arquivos, usar FormData
-                const formDataToSend = new FormData();
-                formDataToSend.append('name', formData.name);
-                formDataToSend.append('description', formData.description);
-                
-                // Adicionar cada ID de arquivo existente separadamente
                 selectedExistingFiles.forEach(fileId => {
                     formDataToSend.append('existingFileIds[]', fileId);
                 });
@@ -344,6 +379,63 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                             </div>
                         </div>
                     </div>
+
+                    <div className="space-y-2">
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={formData.isPublic}
+                                onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Tornar público</span>
+                        </label>
+
+                        <label className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                checked={formData.canEdit}
+                                onChange={(e) => {
+                                    setFormData({ ...formData, canEdit: e.target.checked });
+                                    if (e.target.checked) {
+                                        loadAvailableUsers();
+                                        setShowEditableUsersModal(true);
+                                    }
+                                }}
+                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Permitir edição compartilhada</span>
+                        </label>
+
+                        {formData.canEdit && selectedEditableUsers.length > 0 && (
+                            <div className="mt-2">
+                                <p className="text-sm text-gray-600 mb-1">Usuários com permissão de edição:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {selectedEditableUsers.map(userId => {
+                                        const user = availableUsers.find(u => u.id === userId);
+                                        return user ? (
+                                            <span
+                                                key={user.id}
+                                                className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                            >
+                                                {user.name}
+                                            </span>
+                                        ) : null;
+                                    })}
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            loadAvailableUsers();
+                                            setShowEditableUsersModal(true);
+                                        }}
+                                        className="text-sm text-blue-600 hover:text-blue-800"
+                                    >
+                                        Editar permissões
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 <div className="flex justify-between items-center border-t pt-4">
@@ -368,6 +460,44 @@ export function KnowledgeBaseForm({ initialData }: KnowledgeBaseFormProps) {
                     </div>
                 </div>
             </form>
+
+            {showEditableUsersModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+                        <h3 className="text-lg font-medium mb-4">Selecionar Usuários para Edição</h3>
+                        <div className="space-y-4">
+                            {availableUsers.map(user => (
+                                <label key={user.id} className="flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedEditableUsers.includes(user.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedEditableUsers([...selectedEditableUsers, user.id]);
+                                            } else {
+                                                setSelectedEditableUsers(
+                                                    selectedEditableUsers.filter(id => id !== user.id)
+                                                );
+                                            }
+                                        }}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="ml-2 text-sm">{user.name} ({user.email})</span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowEditableUsersModal(false)}
+                                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

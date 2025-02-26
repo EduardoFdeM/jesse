@@ -249,8 +249,11 @@ export const downloadTranslation = authenticatedHandler(async (req, res) => {
             throw new NotFoundError('Tradução não encontrada');
         }
 
+        // Usar o URL do arquivo traduzido se disponível, senão usar o original
+        const fileUrl = translation.translatedUrl || translation.filePath;
+        
         // Extrair a chave do S3 da URL completa
-        const s3Key = translation.filePath.split('.amazonaws.com/')[1];
+        const s3Key = fileUrl.split('.amazonaws.com/')[1];
         
         // Gerar URL assinada
         const signedUrl = await generateSignedUrl(s3Key);

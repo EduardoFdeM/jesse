@@ -14,6 +14,7 @@ interface AssistantFormData {
     model: string;
     temperature: number;
     isPublic: boolean;
+    canEdit: boolean;
 }
 
 export function AssistantForm() {
@@ -27,12 +28,26 @@ export function AssistantForm() {
         tags: [],
         model: 'gpt-4o-mini',
         temperature: 0.3,
-        isPublic: false
+        isPublic: false,
+        canEdit: false
     });
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [lastUpdate, setLastUpdate] = useState<string>('');
     const [newTag, setNewTag] = useState('');
+    const [selectedEditableUsers, setSelectedEditableUsers] = useState<string[]>([]);
+    const [showEditableUsersModal, setShowEditableUsersModal] = useState(false);
+    const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+
+    const loadAvailableUsers = async () => {
+        try {
+            const response = await api.get('/api/admin/users/available');
+            setAvailableUsers(response.data.users);
+        } catch (err) {
+            console.error('Erro ao carregar usuários:', err);
+            toast.error('Erro ao carregar lista de usuários');
+        }
+    };
 
     useEffect(() => {
         const loadAssistant = async () => {
@@ -48,8 +63,12 @@ export function AssistantForm() {
                         tags: data.tags,
                         model: data.model,
                         temperature: data.temperature,
-                        isPublic: data.isPublic
+                        isPublic: data.isPublic,
+                        canEdit: data.canEdit
                     });
+                    if (data.editableBy) {
+                        setSelectedEditableUsers(data.editableBy.map((user: any) => user.id));
+                    }
                     setLastUpdate(data.updatedAt || data.createdAt);
                 } catch (err) {
                     console.error('Erro ao carregar assistant:', err);
@@ -90,7 +109,12 @@ export function AssistantForm() {
             const endpoint = id ? `/api/assistants/${id}` : '/api/assistants';
             const method = id ? 'put' : 'post';
             
-            const response = await api[method](endpoint, formData);
+            const dataToSend = {
+                ...formData,
+                editableBy: formData.canEdit ? selectedEditableUsers : []
+            };
+            
+            const response = await api[method](endpoint, dataToSend);
             
             if (response.data.status === 'success') {
                 toast.success(`Assistant ${id ? 'atualizado' : 'criado'} com sucesso`);
@@ -220,12 +244,16 @@ export function AssistantForm() {
                         </label>
                         <select
                             value={formData.model}
-                            onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                            onChange={(e) =>
+                                setFormData({
+                                    ...formData,
+                                    model: e.target.value
+                                })
+                            }
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         >
-                            <option value="gpt-4o-mini">GPT-4 Mini</option>
-                            <option value="gpt-4o">GPT-4</option>
-                            <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                            <option value="gpt-4o-mini">GPT-4o-Mini</option>
+                            <option value="gpt-3.5-turbo">GPT-3.5-Turbo</option>
                         </select>
                     </div>
 
@@ -245,15 +273,62 @@ export function AssistantForm() {
                     </div>
 
                     <div>
-                        <label className="flex items-center gap-2">
-                            <input
-                                type="checkbox"
-                                checked={formData.isPublic}
-                                onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
-                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm font-medium text-gray-700">Tornar público</span>
-                        </label>
+                        <div className="space-y-2">
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.isPublic}
+                                    onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Tornar público</span>
+                            </label>
+
+                            <label className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.canEdit}
+                                    onChange={(e) => {
+                                        setFormData({ ...formData, canEdit: e.target.checked });
+                                        if (e.target.checked) {
+                                            loadAvailableUsers();
+                                            setShowEditableUsersModal(true);
+                                        }
+                                    }}
+                                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700">Permitir edição compartilhada</span>
+                            </label>
+
+                            {formData.canEdit && selectedEditableUsers.length > 0 && (
+                                <div className="mt-2">
+                                    <p className="text-sm text-gray-600 mb-1">Usuários com permissão de edição:</p>
+                                    <div className="flex flex-wrap gap-2">
+                                        {selectedEditableUsers.map(userId => {
+                                            const user = availableUsers.find(u => u.id === userId);
+                                            return user ? (
+                                                <span
+                                                    key={user.id}
+                                                    className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                                >
+                                                    {user.name}
+                                                </span>
+                                            ) : null;
+                                        })}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                loadAvailableUsers();
+                                                setShowEditableUsersModal(true);
+                                            }}
+                                            className="text-sm text-blue-600 hover:text-blue-800"
+                                        >
+                                            Editar permissões
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div>
@@ -319,6 +394,44 @@ export function AssistantForm() {
                     </div>
                 </div>
             </form>
+
+            {showEditableUsersModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-96 max-h-[80vh] overflow-y-auto">
+                        <h3 className="text-lg font-medium mb-4">Selecionar Usuários para Edição</h3>
+                        <div className="space-y-4">
+                            {availableUsers.map(user => (
+                                <label key={user.id} className="flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedEditableUsers.includes(user.id)}
+                                        onChange={(e) => {
+                                            if (e.target.checked) {
+                                                setSelectedEditableUsers([...selectedEditableUsers, user.id]);
+                                            } else {
+                                                setSelectedEditableUsers(
+                                                    selectedEditableUsers.filter(id => id !== user.id)
+                                                );
+                                            }
+                                        }}
+                                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="ml-2 text-sm">{user.name} ({user.email})</span>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex justify-end gap-2 mt-4">
+                            <button
+                                type="button"
+                                onClick={() => setShowEditableUsersModal(false)}
+                                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                            >
+                                Fechar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 } 

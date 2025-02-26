@@ -31,7 +31,7 @@ export class PDFParser implements FileParser {
             const data = new Uint8Array(buffer);
             const loadingTask = pdfjsLib.getDocument({ data });
             const pdf = await loadingTask.promise;
-            
+          
             let content = '';
             let hasImages = false;
             const imageText: string[] = [];

@@ -23,6 +23,9 @@ interface ProcessKnowledgeBaseParams {
     userId: string;
     files: Express.Multer.File[];
     existingFileIds?: string[];
+    isPublic?: boolean;
+    canEdit?: boolean;
+    editableBy?: string[];
 }
 
 const MAX_FILES_PER_STORE = 10;
@@ -145,7 +148,21 @@ export class KnowledgeService {
                     fileName: uploadedFiles.map(f => f.fileName).join(', '),
                     filePath: 'vector_store',
                     fileSize: uploadedFiles.reduce((acc, file) => acc + file.fileSize, 0),
-                    fileType: uploadedFiles.map(f => f.fileType).join(', ')
+                    fileType: uploadedFiles.map(f => f.fileType).join(', '),
+                    isPublic: params.isPublic || false,
+                    canEdit: params.canEdit || false,
+                    editableBy: params.canEdit && params.editableBy ? {
+                        connect: params.editableBy.map(id => ({ id }))
+                    } : undefined
+                },
+                include: {
+                    editableBy: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true
+                        }
+                    }
                 }
             });
 
@@ -169,8 +186,11 @@ export class KnowledgeService {
         userId: string;
         files?: Express.Multer.File[];
         existingFileIds?: string[];
+        isPublic?: boolean;
+        canEdit?: boolean;
+        editableBy?: string[];
     }) {
-        const { id, name, description, userId, files = [], existingFileIds = [] } = params;
+        const { id, name, description, userId, files = [], existingFileIds = [], isPublic, canEdit, editableBy } = params;
 
         // Verificar se existe e pertence ao usuário
         const existingBase = await prisma.knowledgeBase.findFirst({
@@ -260,7 +280,21 @@ export class KnowledgeService {
                     fileName: [...remainingFiles, ...uploadedFiles].map(f => f.fileName).join(', '),
                     fileSize: [...remainingFiles, ...uploadedFiles].reduce((acc, file) => acc + file.fileSize, 0),
                     fileType: [...remainingFiles, ...uploadedFiles].map(f => f.fileType).join(', '),
-                    updatedAt: new Date()
+                    updatedAt: new Date(),
+                    isPublic,
+                    canEdit,
+                    editableBy: {
+                        set: canEdit && editableBy ? editableBy.map(id => ({ id })) : []
+                    }
+                },
+                include: {
+                    editableBy: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true
+                        }
+                    }
                 }
             });
 

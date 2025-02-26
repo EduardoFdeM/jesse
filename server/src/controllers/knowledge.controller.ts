@@ -13,11 +13,28 @@ export class KnowledgeController {
 
   // Criar base de conhecimento
   createKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
-    const { name, description } = req.body;
+    const { name, description, isPublic, canEdit } = req.body;
     const files = req.files as Express.Multer.File[];
     let existingFileIds: string[] = [];
+    let editableBy: string[] = [];
     
     try {
+        // Tratar editableBy
+        if (canEdit && req.body.editableBy) {
+            if (Array.isArray(req.body.editableBy)) {
+                editableBy = req.body.editableBy;
+            } else if (typeof req.body.editableBy === 'string') {
+                try {
+                    const parsed = JSON.parse(req.body.editableBy);
+                    if (Array.isArray(parsed)) {
+                        editableBy = parsed;
+                    }
+                } catch {
+                    editableBy = [req.body.editableBy];
+                }
+            }
+        }
+
         // Tratar tanto JSON direto quanto array do FormData
         if (req.body.existingFileIds) {
             // Se for um array do FormData
@@ -73,7 +90,10 @@ export class KnowledgeController {
             description,
             userId,
             files: files || [],
-            existingFileIds
+            existingFileIds,
+            isPublic: isPublic === 'true' || isPublic === true,
+            canEdit: canEdit === 'true' || canEdit === true,
+            editableBy
         });
 
         res.status(201).json({
@@ -95,7 +115,22 @@ export class KnowledgeController {
   // Listar bases de conhecimento
   getKnowledgeBases = asyncHandler(async (req: Request, res: Response) => {
     const knowledgeBases = await prisma.knowledgeBase.findMany({
-        where: { userId: req.user!.id }
+        where: {
+            OR: [
+                { userId: req.user!.id },
+                { isPublic: true },
+                { editableBy: { some: { id: req.user!.id } } }
+            ]
+        },
+        include: {
+            editableBy: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+            }
+        }
     });
 
     res.json({
@@ -128,11 +163,28 @@ export class KnowledgeController {
   // Atualizar base de conhecimento
   updateKnowledgeBase = asyncHandler(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, isPublic, canEdit } = req.body;
     const files = req.files as Express.Multer.File[];
     let existingFileIds: string[] = [];
+    let editableBy: string[] = [];
     
     try {
+        // Tratar editableBy
+        if (canEdit && req.body.editableBy) {
+            if (Array.isArray(req.body.editableBy)) {
+                editableBy = req.body.editableBy;
+            } else if (typeof req.body.editableBy === 'string') {
+                try {
+                    const parsed = JSON.parse(req.body.editableBy);
+                    if (Array.isArray(parsed)) {
+                        editableBy = parsed;
+                    }
+                } catch {
+                    editableBy = [req.body.editableBy];
+                }
+            }
+        }
+
         // Tratar tanto JSON direto quanto string JSON do FormData
         if (req.body.existingFileIds) {
             const parsed = typeof req.body.existingFileIds === 'string' 
@@ -151,7 +203,10 @@ export class KnowledgeController {
             description,
             userId: req.user!.id,
             files,
-            existingFileIds
+            existingFileIds,
+            isPublic: isPublic === 'true' || isPublic === true,
+            canEdit: canEdit === 'true' || canEdit === true,
+            editableBy
         });
 
         res.json({

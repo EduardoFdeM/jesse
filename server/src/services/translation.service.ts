@@ -582,10 +582,23 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
                     });
 
                     // Criar run para este chunk
+                    console.log('📝 Dados para criar run:', {
+                        threadId: thread.id,
+                        assistantId: params.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
+                    });
+
                     const run = await openaiClient.beta.threads.runs.create(thread.id, {
-                        assistant_id: params.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
+                        assistant_id: params.assistantId ? 
+                            (await prisma.assistant.findUnique({
+                                where: { id: params.assistantId },
+                                select: { assistantId: true }
+                            }))?.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID! 
+                            : process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
                         instructions: "Mantenha todos os números, referências e citações exatamente como estão no texto original."
                     });
+
+                    // Log após criar o run
+                    console.log('📝 Run criado com sucesso:', run);
 
                     // Aguardar tradução do chunk
                     const { text: chunkTranslation, cost } = await waitForRunCompletion(thread.id, run.id, params.translationId);

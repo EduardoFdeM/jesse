@@ -23,6 +23,8 @@ model User {
   assistants     Assistant[]
   sharedWithMe   TranslationShare[] @relation("shared_with")
   sharedByMe     TranslationShare[] @relation("shared_by")
+  editableKnowledgeBases KnowledgeBase[] @relation("editable_knowledge_bases")
+  editableAssistants     Assistant[]     @relation("editable_assistants")
 }
 
 model Translation {
@@ -78,6 +80,8 @@ model KnowledgeBase {
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
   isPublic       Boolean       @default(false)
+  canEdit        Boolean       @default(false)
+  editableBy     User[]        @relation("editable_knowledge_bases")
 
   @@index([userId])
 }
@@ -94,7 +98,9 @@ model Assistant {
   updatedAt    DateTime      @updatedAt
   translations Translation[]
   isPublic     Boolean       @default(false)
-  model        String        @default("gpt-4-turbo-preview")
+  canEdit      Boolean       @default(false)
+  editableBy   User[]        @relation("editable_assistants")
+  model        String        @default("gpt-3.5-turbo")
   temperature  Float         @default(0.3)
   assistantId  String        // ID do assistant na OpenAI (obrigatório)
   status       String        @default("pending") // pending, active, error
