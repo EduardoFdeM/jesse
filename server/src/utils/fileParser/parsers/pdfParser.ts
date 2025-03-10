@@ -31,120 +31,33 @@ export class PDFParser implements FileParser {
             const data = new Uint8Array(buffer);
             const loadingTask = pdfjsLib.getDocument({ data });
             const pdf = await loadingTask.promise;
-          
-            let content = '';
-            let hasImages = false;
-            const imageText: string[] = [];
-            let totalCharacters = 0;
-            
-            // Inicializar estrutura do documento
-            this.documentStructure = {
-                type: 'document',
-                elements: [],
-                pages: [],
-                metadata: {
-                    pageCount: pdf.numPages,
-                    title: await this.extractTitle(pdf),
-                    author: await this.extractAuthor(pdf)
-                }
-            };
 
-            console.log(`📄 Processando PDF com ${pdf.numPages} páginas...`);
+            let content = '';
+            let totalCharacters = 0;
 
             for (let i = 1; i <= pdf.numPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
-                const viewport = page.getViewport({ scale: 1.0 });
-                
-                // Processar página e adicionar à estrutura do documento
-                const pageElements = await this.processPageContent(textContent, page);
-                
-                // Adicionar página à estrutura do documento
-                const pageStructure: PageStructure = {
-                    pageIndex: i - 1,
-                    elements: pageElements.map((element, index) => ({
-                        ...element,
-                        elementIndex: index
-                    })) as PageElement[],
-                    metadata: {
-                        pageNumber: i,
-                        hasColumns: this.detectMultipleColumns(textContent),
-                        columnCount: this.detectColumns(textContent).length
-                    }
-                };
-                
-                this.documentStructure.pages.push(pageStructure);
-                this.documentStructure.elements.push(...pageElements);
 
-                // Processar texto da página
-                const pageText = this.processPageText(textContent);
-                
-                // Adicionar texto à estrutura geral
+                const pageText = textContent.items
+                    .filter((item): item is PDFTextItem => 'str' in item)
+                    .map(item => item.str)
+                    .join(' ');
+
                 if (pageText.trim()) {
                     if (content) content += `\n${MARKERS.PAGE_BREAK}\n`;
                     content += pageText;
                     totalCharacters += pageText.length;
                 }
-
-                // Processar imagens se necessário
-                if (options?.extractImages || options?.useOCR) {
-                    const operatorList = await page.getOperatorList();
-                    const hasPageImages = operatorList.fnArray.includes(pdfjsLib.OPS.paintImageXObject);
-                    
-                    if (hasPageImages) {
-                        hasImages = true;
-                        if (options.useOCR) {
-                            try {
-                                const canvas = document.createElement('canvas');
-                                const context = canvas.getContext('2d');
-                                if (!context) throw new Error('Não foi possível criar contexto 2D');
-                                
-                                canvas.height = viewport.height;
-                                canvas.width = viewport.width;
-                                
-                                await page.render({
-                                    canvasContext: context,
-                                    viewport: viewport
-                                }).promise;
-
-                                const imageBuffer = Buffer.from(
-                                    canvas.toDataURL('image/png').split(',')[1],
-                                    'base64'
-                                );
-
-                                const extractedText = await this.ocrService.extractTextFromImage(
-                                    imageBuffer,
-                                    options.language
-                                );
-                                
-                                if (extractedText.trim()) {
-                                    imageText.push(extractedText);
-                                }
-                            } catch (ocrError) {
-                                console.error('Erro ao processar OCR:', ocrError);
-                            }
-                        }
-                    }
-                }
             }
-
-            console.log('📊 Estatísticas do PDF:', {
-                totalPaginas: pdf.numPages,
-                totalCaracteres: totalCharacters,
-                mediaCaracteresPorPagina: Math.round(totalCharacters / pdf.numPages),
-                tamanhoArquivo: `${Math.round(buffer.length / 1024)}KB`
-            });
 
             return {
                 content: content.trim(),
                 metadata: {
                     pageCount: pdf.numPages,
-                    hasImages,
-                    imageText: imageText.length > 0 ? imageText : undefined,
                     mimeType: 'application/pdf',
                     fileSize: buffer.length,
-                    totalCharacters,
-                    structure: this.documentStructure
+                    totalCharacters
                 }
             };
         } catch (error) {
