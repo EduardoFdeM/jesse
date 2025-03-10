@@ -259,128 +259,55 @@ export class PDFParser implements FileParser {
     }
 
     private processPageText(textContent: PDFTextContent): string {
-        // Configurações de layout
-        const MIN_COLUMN_WIDTH = 150;
-        const TITLE_FONT_SIZE = 14;
-        const Y_THRESHOLD = 5;
-        const X_THRESHOLD = 50;
-
-        // Filtrar itens válidos
-        const validItems = textContent.items
-            .filter((item): item is PDFTextItem => 
-                'str' in item && 
-                'transform' in item && 
-                Array.isArray(item.transform) &&
-                typeof item.str === 'string' && 
-                item.str.trim().length > 0 // Ignorar strings vazias
-            )
-            .map(item => ({
-                str: item.str.trim(),
-                x: Math.round(item.transform[4]),
-                y: Math.round(-item.transform[5]), // Invertido e arredondado
-                fontSize: Math.round(Math.abs(item.transform[0])),
-                width: item.width || 0
-            }));
-
-        // Detectar página vazia
-        if (validItems.length === 0) {
-            return '';
-        }
-
-        // Identificar número da página (geralmente no topo e centralizado)
-        const pageNumberItem = validItems.find(item => {
-            const isNumber = /^\d+$/.test(item.str);
-            const isNearTop = item.y > -50; // Próximo ao topo
-            const isCentered = item.x > 250 && item.x < 350; // Aproximadamente centralizado
-            return isNumber && isNearTop && isCentered;
-        });
-
-        // Remover número da página dos itens válidos se encontrado
-        const contentItems = pageNumberItem 
-            ? validItems.filter(item => item !== pageNumberItem)
-            : validItems;
-
-        // Detectar colunas
-        const xPositions = contentItems.map(item => item.x);
-        const uniqueXPositions = Array.from(new Set(xPositions)).sort((a, b) => a - b);
-        
-        const columns = this.clusterXPositions(uniqueXPositions)
-            .filter(cluster => cluster[cluster.length - 1] - cluster[0] >= MIN_COLUMN_WIDTH)
-            .map(cluster => ({
-                start: Math.min(...cluster),
-                end: Math.max(...cluster),
-                items: [] as typeof contentItems
-            }));
-
-        // Distribuir itens nas colunas
-        contentItems.forEach(item => {
-            const column = columns.find(col => 
-                item.x >= col.start - X_THRESHOLD && 
-                item.x <= col.end + X_THRESHOLD
-            );
-            if (column) {
-                column.items.push(item);
-            }
-        });
-
+        const columns = this.detectColumns(textContent);
         let text = '';
 
-        // Adicionar número da página se existir
-        if (pageNumberItem) {
-            text += pageNumberItem.str + '\n\n';
-        }
+        // Processar cada coluna
+        columns.forEach((column, columnIndex) => {
+            // Ordenar itens por Y (de cima para baixo) e X
+            const sortedItems = column.items.sort((a, b) => {
+                const aY = a.transform ? -a.transform[5] : 0;
+                const bY = b.transform ? -b.transform[5] : 0;
+                const yDiff = aY - bY;
+                
+                if (Math.abs(yDiff) < 5) { // Tolerância para mesma linha
+                    const aX = a.transform ? a.transform[4] : 0;
+                    const bX = b.transform ? b.transform[4] : 0;
+                    return aX - bX;
+                }
+                return yDiff;
+            });
 
-        // Processar títulos principais
-        const maxFontSize = Math.max(...contentItems.map(item => item.fontSize));
-        const mainTitles = contentItems.filter(item => 
-            item.fontSize >= Math.max(TITLE_FONT_SIZE, maxFontSize * 0.8) &&
-            item.y > -100 // Próximo ao topo
-        );
-
-        mainTitles.forEach(title => {
-            text += title.str + '\n\n';
-        });
-
-        // Processar colunas
-        columns.sort((a, b) => a.start - b.start).forEach((column, colIndex) => {
+            // Processar itens da coluna
             let lastY: number | null = null;
-            let lastFontSize: number | null = null;
+            let lineText = '';
 
-            column.items
-                .sort((a, b) => a.y - b.y)
-                .forEach(item => {
-                    // Pular se for um título principal
-                    if (mainTitles.some(title => title.str === item.str)) {
-                        return;
-                    }
+            sortedItems.forEach((item) => {
+                const currentY = item.transform ? -item.transform[5] : 0;
+                
+                // Se mudou de linha
+                if (lastY !== null && Math.abs(currentY - lastY) > 5) {
+                    text += lineText.trim() + '\n';
+                    lineText = '';
+                }
+                
+                // Adicionar espaço se necessário
+                if (lineText && !lineText.endsWith(' ')) {
+                    lineText += ' ';
+                }
+                
+                lineText += item.str;
+                lastY = currentY;
+            });
 
-                    // Adicionar quebras de linha apropriadas
-                    if (lastY !== null) {
-                        const yDiff = Math.abs(item.y - lastY);
-                        if (yDiff > Y_THRESHOLD) {
-                            text += '\n';
-                            // Adicionar linha extra se a diferença for maior
-                            if (yDiff > Y_THRESHOLD * 3) {
-                                text += '\n';
-                            }
-                        }
-                    }
-
-                    // Adicionar espaço se necessário
-                    if (text.length > 0 && !text.endsWith('\n')) {
-                        text += ' ';
-                    }
-
-                    // Adicionar o texto
-                    text += item.str;
-
-                    lastY = item.y;
-                    lastFontSize = item.fontSize;
-                });
+            // Adicionar última linha da coluna
+            if (lineText) {
+                text += lineText.trim() + '\n';
+            }
 
             // Adicionar separador entre colunas
-            if (colIndex < columns.length - 1) {
-                text += `\n${MARKERS.COLUMN_BREAK}\n`;
+            if (columnIndex < columns.length - 1) {
+                text += MARKERS.COLUMN_BREAK;
             }
         });
 
@@ -399,60 +326,58 @@ export class PDFParser implements FileParser {
         return new Set(positions).size > 1;
     }
 
-    private detectColumns(textContent: PDFTextContent): Array<{start: number; end: number}> {
-        // Filtrar apenas itens de texto válidos
-        const validItems = textContent.items
-            .filter((item): item is PDFTextItem => 
-                'str' in item && 'transform' in item
-            );
+    private detectColumns(textContent: PDFTextContent): Array<{start: number; end: number; items: PDFTextItem[]}> {
+        const items = textContent.items as PDFTextItem[];
+        const xPositions = items.map(item => item.transform ? item.transform[4] : 0);
         
-        const positions = validItems.map(item => item.transform[4]);
-        const uniquePositions = new Set(positions);
+        // Agrupar posições X próximas
+        const clusters = this.clusterXPositions(xPositions);
         
-        if (uniquePositions.size > 1) {
-            const clusters = this.clusterXPositions(Array.from(uniquePositions));
-            return clusters.map(cluster => ({
-                start: Math.min(...cluster),
-                end: Math.max(...cluster)
-            }));
+        // Se houver apenas um cluster, retornar uma única coluna
+        if (clusters.length <= 1) {
+            return [{
+                start: Math.min(...xPositions),
+                end: Math.max(...xPositions),
+                items: items
+            }];
         }
-        
-        return [{ start: 0, end: 595.28 }]; // Assuming A4 width
+
+        // Calcular limites das colunas
+        return clusters.map(cluster => {
+            const start = Math.min(...cluster);
+            const end = Math.max(...cluster);
+            const columnItems = items.filter(item => {
+                const x = item.transform ? item.transform[4] : 0;
+                return x >= start && x <= end;
+            });
+            return { start, end, items: columnItems };
+        });
     }
 
     private clusterXPositions(positions: number[]): number[][] {
-        const threshold = 30; // Reduzido para melhor precisão
+        const tolerance = 10; // Tolerância para agrupar posições X próximas
+        const uniquePositions = Array.from(new Set(positions)).sort((a, b) => a - b);
+        
         const clusters: number[][] = [];
+        let currentCluster: number[] = [uniquePositions[0]];
         
-        positions.sort((a, b) => a - b);
-        
-        let currentCluster: number[] = [positions[0]];
-        let lastPosition = positions[0];
-        
-        for (let i = 1; i < positions.length; i++) {
-            const currentPosition = positions[i];
-            if (currentPosition - lastPosition < threshold) {
-                currentCluster.push(currentPosition);
+        for (let i = 1; i < uniquePositions.length; i++) {
+            const current = uniquePositions[i];
+            const last = currentCluster[currentCluster.length - 1];
+            
+            if (current - last <= tolerance) {
+                currentCluster.push(current);
             } else {
-                if (currentCluster.length > 0) {
-                    clusters.push(currentCluster);
-                }
-                currentCluster = [currentPosition];
+                clusters.push(currentCluster);
+                currentCluster = [current];
             }
-            lastPosition = currentPosition;
         }
         
         if (currentCluster.length > 0) {
             clusters.push(currentCluster);
         }
-
-        // Filtrar clusters muito próximos
-        return clusters.filter((cluster, index) => {
-            if (index === 0) return true;
-            const prevClusterEnd = Math.max(...clusters[index - 1]);
-            const currentClusterStart = Math.min(...cluster);
-            return currentClusterStart - prevClusterEnd >= threshold;
-        });
+        
+        return clusters;
     }
 
     private async extractTitle(pdf: pdfjsLib.PDFDocumentProxy): Promise<string | undefined> {

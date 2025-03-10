@@ -181,6 +181,12 @@ const saveFileContent = async (
             tamanhoTexto: text.length
         });
 
+        // Limpar marcadores especiais antes de salvar
+        const cleanedText = text
+            .replace(new RegExp(MARKERS.PAGE_BREAK, 'g'), '\n')
+            .replace(new RegExp(MARKERS.COLUMN_BREAK, 'g'), '\n')
+            .trim();
+
         let fileBuffer: Buffer;
         const finalFileName = fileName.replace(/\.[^/.]+$/, `.${outputFormat}`);
 
@@ -188,7 +194,7 @@ const saveFileContent = async (
             case 'txt':
             case 'text':
             case 'plain': {
-                fileBuffer = Buffer.from(text, 'utf-8');
+                fileBuffer = Buffer.from(cleanedText, 'utf-8');
                 break;
             }
             case 'docx':
@@ -196,7 +202,7 @@ const saveFileContent = async (
                 const doc = new Document({
                     sections: [{
                         properties: {},
-                        children: text.split('\n').map(line => 
+                        children: cleanedText.split('\n').map(line => 
                             new Paragraph({
                                 children: [new TextRun(line)],
                                 spacing: { before: 200, after: 200 }
@@ -232,8 +238,8 @@ const saveFileContent = async (
                     });
 
                     // Verificar se temos uma estrutura de documento
-                    const structure = text.includes('<structure>') ? 
-                        JSON.parse(text.split('<structure>')[1].split('</structure>')[0]) : null;
+                    const structure = cleanedText.includes('<structure>') ? 
+                        JSON.parse(cleanedText.split('<structure>')[1].split('</structure>')[0]) : null;
 
                     if (structure) {
                         // Usar a estrutura para reconstruir o PDF
@@ -311,8 +317,8 @@ const saveFileContent = async (
                         });
                     } else {
                         // Manter o comportamento anterior para compatibilidade
-                        if (text.includes(MARKERS.PAGE_BREAK)) {
-                            const pages = text.split(MARKERS.PAGE_BREAK);
+                        if (cleanedText.includes(MARKERS.PAGE_BREAK)) {
+                            const pages = cleanedText.split(MARKERS.PAGE_BREAK);
                             pages.forEach((pageContent, pageIndex) => {
                                 pdfDoc.addPage();
                                 if (pageContent.includes(MARKERS.COLUMN_BREAK)) {
@@ -337,7 +343,7 @@ const saveFileContent = async (
                             });
                         } else {
                             pdfDoc.addPage();
-                            pdfDoc.text(text, { align: 'left' });
+                            pdfDoc.text(cleanedText, { align: 'left' });
                         }
                     }
                     pdfDoc.end();
@@ -851,7 +857,6 @@ function mergeTranslatedChunk(translatedText: string, isFirst: boolean, isLast: 
         if (startIndex !== -1) {
             cleanedText = translatedText.slice(startIndex + 'Texto para traduzir:'.length);
         }
-
     }
 
     if (!isLast && cleanedText.includes('Contexto posterior:')) {
@@ -861,7 +866,13 @@ function mergeTranslatedChunk(translatedText: string, isFirst: boolean, isLast: 
         }
     }
 
-    return cleanedText.trim() + '\n';
+    // Remover marcadores especiais
+    cleanedText = cleanedText
+        .replace(new RegExp(MARKERS.PAGE_BREAK, 'g'), '\n')
+        .replace(new RegExp(MARKERS.COLUMN_BREAK, 'g'), '\n')
+        .trim();
+
+    return cleanedText + '\n';
 }
 
 async function translateStructuredDocument(
