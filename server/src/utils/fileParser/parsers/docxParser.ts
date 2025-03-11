@@ -1,6 +1,7 @@
 import { FileParser, ParseResult, ParserOptions, DocumentStructure, DocumentElement, ElementType, ElementStyle, PageStructure } from '../types.js';
 import mammoth from 'mammoth';
 import { MARKERS } from '../types.js';
+import { JSDOM } from 'jsdom';
 
 export class DocxParser implements FileParser {
     async parse(buffer: Buffer, options?: ParserOptions): Promise<ParseResult> {
@@ -54,8 +55,8 @@ export class DocxParser implements FileParser {
     }
 
     private async processHtml(html: string): Promise<DocumentStructure> {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
+        const dom = new JSDOM(html);
+        const doc = dom.window.document;
         
         const structure: DocumentStructure = {
             type: 'document',
@@ -73,8 +74,8 @@ export class DocxParser implements FileParser {
             elements: []
         };
         
-        for (const node of body.children) {
-            const element = this.processNode(node);
+        for (const node of Array.from(body.children)) {
+            const element = this.processNode(node as Element);
             if (element) {
                 structure.elements.push(element);
                 // Adicionar elemento à página atual
@@ -87,7 +88,7 @@ export class DocxParser implements FileParser {
                 });
                 
                 // Se encontrar um quebra de página ou for um elemento que tipicamente causa quebra
-                if (this.shouldBreakPage(node, element)) {
+                if (this.shouldBreakPage(node as Element, element)) {
                     structure.pages.push(currentPage);
                     currentPage = {
                         pageIndex: structure.pages.length,
@@ -143,10 +144,10 @@ export class DocxParser implements FileParser {
     private processTable(table: Element): DocumentElement {
         const rows: DocumentElement[] = [];
         
-        for (const row of table.getElementsByTagName('tr')) {
+        for (const row of Array.from(table.getElementsByTagName('tr'))) {
             const cells: DocumentElement[] = [];
             
-            for (const cell of row.children) {
+            for (const cell of Array.from(row.children)) {
                 cells.push({
                     type: 'table-cell',
                     content: cell.textContent || '',
@@ -175,7 +176,7 @@ export class DocxParser implements FileParser {
     private processList(list: Element): DocumentElement {
         const items: DocumentElement[] = [];
         
-        for (const item of list.getElementsByTagName('li')) {
+        for (const item of Array.from(list.getElementsByTagName('li'))) {
             items.push({
                 type: 'list-item',
                 content: item.textContent || ''
@@ -194,12 +195,17 @@ export class DocxParser implements FileParser {
 
     private extractStyle(element: Element): ElementStyle {
         const style: ElementStyle = {};
-        const computedStyle = window.getComputedStyle(element);
-
-        if (computedStyle.fontFamily) style.fontFamily = computedStyle.fontFamily;
-        if (computedStyle.fontSize) style.fontSize = parseInt(computedStyle.fontSize);
-        if (computedStyle.fontWeight) style.fontWeight = computedStyle.fontWeight;
-        if (computedStyle.textAlign) style.alignment = computedStyle.textAlign as ElementStyle['alignment'];
+        
+        // Substituir window.getComputedStyle por acesso direto aos atributos de estilo
+        const fontFamily = element.getAttribute('style')?.match(/font-family:\s*([^;]+)/)?.[1];
+        const fontSize = element.getAttribute('style')?.match(/font-size:\s*([^;]+)/)?.[1];
+        const fontWeight = element.getAttribute('style')?.match(/font-weight:\s*([^;]+)/)?.[1];
+        const textAlign = element.getAttribute('style')?.match(/text-align:\s*([^;]+)/)?.[1];
+        
+        if (fontFamily) style.fontFamily = fontFamily;
+        if (fontSize) style.fontSize = parseInt(fontSize);
+        if (fontWeight) style.fontWeight = fontWeight;
+        if (textAlign) style.alignment = textAlign as ElementStyle['alignment'];
 
         return style;
     }
@@ -316,8 +322,8 @@ export class DocxParser implements FileParser {
 
     private shouldBreakPage(node: Element, element: DocumentElement): boolean {
         // Elementos que tipicamente causam quebra de página
-        const tagName = (node.tagName || '').toLowerCase();
-        const className = (node.className || '').toString();
+        const tagName = node.tagName?.toLowerCase() || '';
+        const className = node.getAttribute('class') || '';
         
         return Boolean(
             tagName === 'div' && 

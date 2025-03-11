@@ -213,6 +213,24 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         });
 
         console.log('🚀 Iniciando processo de tradução...');
+        // Determinar o formato de saída baseado no MIME type ou extensão
+        const getOutputFormat = (file: Express.Multer.File): string => {
+            // Tentar extrair da extensão do arquivo original
+            const originalExt = file.originalname.split('.').pop()?.toLowerCase();
+            
+            // Mapear MIME types comuns para extensões simples
+            const mimeToExt: Record<string, string> = {
+                'application/pdf': 'pdf',
+                'text/plain': 'txt',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+                'application/msword': 'doc',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx'
+            };
+            
+            // Usar o mapeamento se disponível, senão usar a extensão original ou 'txt' como fallback
+            return mimeToExt[file.mimetype] || originalExt || 'txt';
+        };
+
         // Iniciar tradução com o buffer do arquivo
         translateFile({
             filePath: s3FilePath,
@@ -220,7 +238,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             targetLanguage: req.body.targetLanguage,
             userId: req.user.id,
             translationId: translation.id,
-            outputFormat: file.mimetype === 'text/plain' ? 'txt' : file.mimetype.split('/')[1],
+            outputFormat: getOutputFormat(file),
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             assistantId: useCustomAssistant ? assistantId : undefined,

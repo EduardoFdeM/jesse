@@ -324,7 +324,10 @@ const saveFileContent = async (
                 break;
             }
             case 'docx':
-            case 'document': {
+            case 'document':
+            case 'doc':
+            case 'word': {
+                console.log('🗎 Criando documento DOCX...');
                 const doc = new Document({
                     sections: [{
                         properties: {},
@@ -340,6 +343,7 @@ const saveFileContent = async (
                 break;
             }
             case 'pdf': {
+                console.log('🗎 Criando documento PDF...');
                 const pdfDoc = new PDFDocument({
                     margin: 50,
                     size: 'A4',
@@ -676,11 +680,44 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
             useOCR: params.useOCR
         });
 
+        // Mapeamento de extensões para MIME types
+        const mimeTypeMap: Record<string, string> = {
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
+            'pdf': 'application/pdf',
+            'txt': 'text/plain',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        };
+
         // Extrair texto do buffer do arquivo
-        const outputFormat = params.outputFormat.split('/').pop() || 'txt';
+        // Melhorar a lógica para determinar o formato de saída
+        let outputFormat = params.outputFormat.split('/').pop() || 'txt';
+        
+        // Mapear MIMEs complexos para formatos simples
+        const mimeToFormat: Record<string, string> = {
+            'vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+            'msword': 'doc',
+            'vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx'
+        };
+        
+        // Verificar se é um MIME complexo que precisa ser mapeado
+        for (const [mimeSubtype, format] of Object.entries(mimeToFormat)) {
+            if (outputFormat.includes(mimeSubtype)) {
+                outputFormat = format;
+                break;
+            }
+        }
+        
+        // Determinar o MIME type correto com base na extensão ou usar o próprio outputFormat se já for um MIME type
+        const mimeType = params.outputFormat.includes('/') 
+            ? params.outputFormat 
+            : mimeTypeMap[params.outputFormat] || `application/${params.outputFormat}`;
+
+        console.log('🧩 Usando MIME type:', mimeType, 'Formato de saída:', outputFormat);
+        
         const fileContent = await extractTextFromBuffer(
             params.fileBuffer, 
-            params.outputFormat, 
+            mimeType, 
             params.useOCR, 
             params.sourceLanguage
         );
