@@ -137,11 +137,19 @@ export function TranslatedDocuments() {
             setTranslations(prev => sortTranslations([...prev, data]));
         };
 
-        const handleProgress = ({ id, progress }: { id: string; progress: number }) => {
+        const handleProgress = ({ id, progress, message }: { id: string; progress: number; message?: string }) => {
+            // Se tiver uma mensagem sobre OCR, mostrar como toast informativo
+            if (message && message.includes('OCR')) {
+                toast.info(message);
+            }
+            
             setTranslations(prev => 
                 prev.map(t => 
                     t.id === id 
-                        ? { ...t, status: `processing (${progress}%)` }
+                        ? { 
+                            ...t, 
+                            status: `processing (${progress}%)${message ? ` - ${message}` : ''}` 
+                        }
                         : t
                 )
             );

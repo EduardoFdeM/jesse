@@ -147,8 +147,74 @@ function drawPDFTable(doc: PDFKit.PDFDocument, table: PDFTable, options: TableOp
     });
 }
 
+const MODEL_COSTS = {
+    'gpt-3.5-turbo': {
+        inputCost: 0.50,
+        outputCost: 1.50
+    },
+    'gpt-4o-mini': {
+        inputCost: 0.150,
+        outputCost: 0.600,
+        cachedInputCost: 0.075,
+        vision: {
+            lowResTokens: 85,
+            highResBaseTokens: 85,
+            highResTileTokens: 170,
+            inputCost: 0.150
+        }
+    }
+} as const;
+
+// Função para calcular o custo de processamento de imagem pela Vision API
+function calculateImageTokenCost(imageBuffer: Buffer, detail: 'low' | 'high' = 'high'): number {
+    // Para detalhamento baixo, custo fixo
+    if (detail === 'low') {
+        return MODEL_COSTS["gpt-4o-mini"].vision.lowResTokens;
+    }
+
+    // Para detalhamento alto, calcular baseado no tamanho
+    try {
+        // Como não temos a biblioteca de processamento de imagem disponível diretamente,
+        // vamos fazer uma estimativa baseada no tamanho do buffer
+        const bufferSizeKB = imageBuffer.length / 1024;
+        
+        // Estimativa grosseira do número de tiles 512x512 baseado no tamanho do arquivo
+        // Esta é uma aproximação simples e não precisa; em produção você usaria uma biblioteca 
+        // como Sharp para obter as dimensões reais da imagem
+        let estimatedTiles = 1;
+        
+        if (bufferSizeKB > 100) estimatedTiles = 2;
+        if (bufferSizeKB > 300) estimatedTiles = 4;
+        if (bufferSizeKB > 800) estimatedTiles = 6;
+        if (bufferSizeKB > 2000) estimatedTiles = 8;
+        
+        // Calcular conforme a fórmula da OpenAI: (número de tiles * custo por tile) + custo base
+        const tokenCost = (MODEL_COSTS["gpt-4o-mini"].vision.highResTileTokens * estimatedTiles) + 
+                           MODEL_COSTS["gpt-4o-mini"].vision.highResBaseTokens;
+        
+        console.log(`💰 Estimativa de tokens para OCR: ${tokenCost} tokens (${estimatedTiles} tiles estimados)`);
+        return tokenCost;
+    } catch (error) {
+        console.error('Erro ao calcular custo de tokens da imagem:', error);
+        // Valor conservador caso não consiga calcular
+        return MODEL_COSTS["gpt-4o-mini"].vision.highResTileTokens * 4 + MODEL_COSTS["gpt-4o-mini"].vision.highResBaseTokens;
+    }
+}
+
+function calculateTranslationCost(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; } | undefined, model: string): number {
+    if (!usage) return 0;
+    
+    const costs = MODEL_COSTS[model as keyof typeof MODEL_COSTS];
+    if (!costs) return 0;
+
+    const inputCost = (usage.prompt_tokens / 1_000_000) * costs.inputCost;
+    const outputCost = (usage.completion_tokens / 1_000_000) * costs.outputCost;
+
+    return inputCost + outputCost;
+}
+
 // Função para extrair texto de documentos usando Vision API
-const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language: string): Promise<string> => {
+const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language: string): Promise<{ text: string; usedOCR: boolean; ocrTokens?: number }> => {
     try {
         // Converter o buffer para base64
         const base64Data = buffer.toString('base64');
@@ -182,9 +248,9 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
         // Determinar o tipo MIME adequado para a URL de dados
         const dataMimeType = mimeType === 'application/pdf' ? 'application/pdf' : 'application/octet-stream';
 
-        // Estimar tokens para controle de custos
-        const approxTokens = (170 * 4) + 85;  // Estimativa para uma página típica
-        console.log(`💰 Estimativa de custo para OCR: aprox. ${approxTokens} tokens`);
+        // Calcular tokens e custo estimado
+        const estimatedTokens = calculateImageTokenCost(buffer, 'high');
+        console.log(`💰 Estimativa de custo para OCR: aprox. ${estimatedTokens} tokens`);
 
         // Fazer chamada para a OpenAI Vision API
         console.log('🔄 Enviando documento para Vision AI...');
@@ -204,7 +270,8 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
                             {
                                 type: "image_url",
                                 image_url: {
-                                    url: `data:${dataMimeType};base64,${base64Data}`
+                                    url: `data:${dataMimeType};base64,${base64Data}`,
+                                    detail: "high"  // high ou low, afeta a qualidade e o custo
                                 }
                             }
                         ]
@@ -228,7 +295,11 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
                     const parseResult = await parseFile(buffer, mimeType);
                     if (parseResult.content) {
                         console.log('✅ Texto extraído com sucesso usando parser padrão');
-                        return parseResult.content;
+                        // Retornar o texto extraído, mas indicando que o OCR não foi usado
+                        return { 
+                            text: parseResult.content,
+                            usedOCR: false 
+                        };
                     }
                 } catch (parseError) {
                     console.error('Erro ao usar parseFile como alternativa:', parseError);
@@ -247,13 +318,18 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
         }
         
         console.log('✅ Texto extraído com sucesso via Vision OCR');
+        console.log('💰 Uso de tokens:', data.usage);
         
         // Substituir marcadores especiais pelos usados no sistema
-        return extractedText
-            .replace(/\[QUEBRA_PAGINA\]/g, MARKERS.PAGE_BREAK)
-            .replace(/\[INICIO_TABELA\](.*?)\[FIM_TABELA\]/gs, (match: string, tableContent: string) => {
-                return `${tableContent}`;
-            });
+        return { 
+            text: extractedText
+                .replace(/\[QUEBRA_PAGINA\]/g, MARKERS.PAGE_BREAK)
+                .replace(/\[INICIO_TABELA\](.*?)\[FIM_TABELA\]/gs, (match: string, tableContent: string) => {
+                    return `${tableContent}`;
+                }),
+            usedOCR: true,
+            ocrTokens: data.usage?.total_tokens || estimatedTokens
+        };
     } catch (error) {
         console.error('Erro ao extrair texto usando Vision:', error);
         
@@ -261,7 +337,10 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
         console.log('🔄 Usando método padrão como último recurso...');
         try {
             const parseResult = await parseFile(buffer, mimeType);
-            return parseResult.content;
+            return { 
+                text: parseResult.content,
+                usedOCR: false 
+            };
         } catch (parseError) {
             console.error('Falha total na extração de texto:', parseError);
             throw new Error(`Falha ao extrair texto usando Vision: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
@@ -270,27 +349,54 @@ const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language
 };
 
 // Função para extrair texto de diferentes tipos de arquivo
-const extractTextFromBuffer = async (buffer: Buffer, mimeType: string, useOCR: boolean = false, language: string = 'por'): Promise<string> => {
+const extractTextFromBuffer = async (buffer: Buffer, mimeType: string, useOCR: boolean = false, language: string = 'por'): Promise<{ text: string; ocrUsed: boolean; ocrTokens?: number }> => {
     try {
-        // Se OCR estiver ativo e NÃO for um arquivo de texto puro, usar Vision
-        if (useOCR && !mimeType.includes('text/plain') && !mimeType.toLowerCase().endsWith('.txt')) {
-            console.log('🧠 Usando Vision AI para extração de texto...');
-            return await extractTextUsingVision(buffer, mimeType, language);
+        console.log(`🔍 Extraindo texto de arquivo ${mimeType} ${useOCR ? 'usando OCR' : 'sem OCR'}`);
+        
+        // Verificar se devemos usar OCR
+        if (useOCR) {
+            try {
+                console.log('🔎 Tentando OCR via Vision API...');
+                const visionResult = await extractTextUsingVision(buffer, mimeType, language);
+                console.log('✅ OCR bem-sucedido via Vision API');
+                return {
+                    text: visionResult.text,
+                    ocrUsed: true,
+                    ocrTokens: visionResult.ocrTokens
+                };
+            } catch (ocrError) {
+                // Se OCR falhar, registrar erro e prosseguir com método padrão
+                console.error('❌ Erro ao processar OCR via Vision API:', ocrError);
+                console.log('⚠️ Usando método padrão como fallback após falha no OCR');
+            }
         }
-
-        // Método padrão de extração
-        const result = await parseFile(buffer, mimeType);
-        return result.content;
-    } catch (error: unknown) {
-        console.error('Erro ao extrair texto:', error);
+        
+        // Usar método padrão de extração (sem OCR)
+        try {
+            console.log('📄 Extraindo texto usando parser padrão...');
+            const parseResult = await parseFile(buffer, mimeType);
+            console.log('✅ Texto extraído com sucesso usando parser padrão');
+            return { 
+                text: parseResult.content, 
+                ocrUsed: false 
+            };
+        } catch (parseError) {
+            // Se o método padrão falhar e OCR estiver desativado ou também falhou
+            console.error('❌ Erro ao analisar arquivo:', parseError);
+            throw new BaseError(
+                'Erro ao extrair texto do arquivo',
+                500,
+                'EXTRACTION_ERROR'
+            );
+        }
+    } catch (error) {
+        console.error('❌ Erro geral na extração de texto:', error);
+        // Verificar o tipo do erro antes de acessar a propriedade message
         if (error instanceof Error) {
             throw new Error(`Erro ao extrair texto: ${error.message}`);
+        } else {
+            throw new Error('Erro ao extrair texto: Erro desconhecido');
         }
-        throw new BaseError(
-            'Erro ao extrair texto do arquivo',
-            500,
-            'EXTRACTION_ERROR'
-        );
     }
 };
 
@@ -573,30 +679,6 @@ function splitIntoChunks(content: string): ChunkInfo[] {
     return chunks;
 }
 
-const MODEL_COSTS = {
-    'gpt-3.5-turbo': {
-        inputCost: 0.50,
-        outputCost: 1.50
-    },
-    'gpt-4o-mini': {
-        inputCost: 0.150,
-        outputCost: 0.600,
-        cachedInputCost: 0.075
-    }
-} as const;
-
-function calculateTranslationCost(usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number; } | undefined, model: string): number {
-    if (!usage) return 0;
-    
-    const costs = MODEL_COSTS[model as keyof typeof MODEL_COSTS];
-    if (!costs) return 0;
-
-    const inputCost = (usage.prompt_tokens / 1_000_000) * costs.inputCost;
-    const outputCost = (usage.completion_tokens / 1_000_000) * costs.outputCost;
-
-    return inputCost + outputCost;
-}
-
 async function waitForRunCompletion(threadId: string, runId: string, translationId: string): Promise<{ text: string; cost: number }> {
     let retries = 0;
     const startTime = Date.now();
@@ -670,6 +752,8 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
     let thread: { id: string } | null = null;
     let currentChunkIndex = 0;
     let totalCost = 0;
+    let ocrActuallyUsed = false;
+    let ocrTokens = 0;
 
     try {
         console.log('🚀 Iniciando tradução:', {
@@ -715,12 +799,22 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
 
         console.log('🧩 Usando MIME type:', mimeType, 'Formato de saída:', outputFormat);
         
-        const fileContent = await extractTextFromBuffer(
+        const { text: fileContent, ocrUsed, ocrTokens: extractedOcrTokens } = await extractTextFromBuffer(
             params.fileBuffer, 
             mimeType, 
             params.useOCR, 
             params.sourceLanguage
         );
+        
+        // Registrar se OCR foi realmente usado
+        ocrActuallyUsed = ocrUsed;
+        if (ocrUsed && extractedOcrTokens) {
+            ocrTokens = extractedOcrTokens;
+            // Calcular custo do OCR (tokens / 1M * preço por 1M tokens)
+            const ocrCost = (ocrTokens / 1_000_000) * MODEL_COSTS["gpt-4o-mini"].vision.inputCost;
+            console.log(`💰 Custo estimado do OCR: $${ocrCost.toFixed(6)} (${ocrTokens} tokens)`);
+            totalCost += ocrCost;
+        }
 
         // Dividir o conteúdo em chunks
         const chunks = splitIntoChunks(fileContent);
@@ -836,9 +930,12 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
                 fileName: savedFile.fileName,
                 plainTextContent: translatedContent,
                 errorMessage: null,
+                usedOCR: ocrActuallyUsed,
                 costData: JSON.stringify({
                     totalCost,
-                    processingTime: Date.now() - startTime
+                    processingTime: Date.now() - startTime,
+                    ocrUsed: ocrActuallyUsed,
+                    ocrTokens: ocrTokens
                 })
             }
         });

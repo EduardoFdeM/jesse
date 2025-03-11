@@ -28,17 +28,19 @@ export const emitTranslationStarted = (translation: Translation) => {
     }
 };
 
-export const emitTranslationProgress = (translationId: string, progress: number) => {
+export const emitTranslationProgress = (translationId: string, progress: number, message?: string) => {
     try {
         console.log('🔄 Emitindo progresso da tradução:', {
             id: translationId,
-            progress
+            progress,
+            message
         });
         
         const io = getIO();
         io.emit(SocketEvents.TRANSLATION_PROGRESS, {
             id: translationId,
-            progress
+            progress,
+            message
         });
     } catch (error) {
         console.error('❌ Erro ao emitir evento de progresso:', error);

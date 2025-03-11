@@ -256,6 +256,8 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         console.error('❌ Erro crítico no processo de tradução:', error);
         if (error instanceof Error) {
             emitTranslationError(req.params.id, error.message);
+        } else {
+            emitTranslationError(req.params.id, 'Erro desconhecido durante o processo de tradução');
         }
         throw error;
     }
@@ -530,26 +532,47 @@ export const shareTranslation = authenticatedHandler(async (req: AuthenticatedRe
     }
 
     try {
-        // Verificar se a tradução existe e pertence ao usuário
-        const translation = await prisma.translation.findFirst({
-            where: {
-                id,
-                userId: req.user!.id
-            }
+        // Obter e validar a tradução
+        const translation = await prisma.translation.findUnique({
+            where: { id }
         });
 
         if (!translation) {
-            throw new NotFoundError('Tradução não encontrada ou sem permissão');
+            throw new NotFoundError('Tradução não encontrada');
         }
 
-        // Criar os compartilhamentos
-        const shares = await prisma.$transaction(
-            userIds.map(userId => 
+        // Verificar se o usuário é o dono da tradução
+        if (translation.userId !== req.user.id) {
+            throw new UnauthorizedError('Você não tem permissão para compartilhar esta tradução');
+        }
+
+        // Obter compartilhamentos existentes para esta tradução
+        const existingShares = await prisma.translationShare.findMany({
+            where: { translationId: id },
+            include: { sharedWith: true }
+        });
+
+        // Filtrar usuários que já têm acesso
+        const newUserIds = userIds.filter(userId => 
+            !existingShares.some(share => share.sharedWithId === userId)
+        );
+
+        // Se não houver novos usuários, retornar os existentes
+        if (newUserIds.length === 0) {
+            return res.status(200).json({
+                message: 'Todos os usuários já possuem acesso',
+                data: existingShares
+            });
+        }
+
+        // Criar novos compartilhamentos
+        const shares = await Promise.all(
+            newUserIds.map(sharedWithId => 
                 prisma.translationShare.create({
                     data: {
                         translationId: id,
-                        sharedWithId: userId,
-                        sharedById: req.user!.id
+                        sharedWithId,
+                        sharedById: req.user.id
                     }
                 })
             )
@@ -562,8 +585,9 @@ export const shareTranslation = authenticatedHandler(async (req: AuthenticatedRe
     } catch (error) {
         if (error instanceof Error) {
             throw new Error(`Erro ao compartilhar tradução: ${error.message}`);
+        } else {
+            throw new Error('Erro desconhecido ao compartilhar tradução');
         }
-        throw new Error('Erro desconhecido ao compartilhar tradução');
     }
 });
 
