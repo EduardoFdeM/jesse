@@ -10,6 +10,7 @@ import { BaseError } from '../utils/errors.js';
 import { parseFile } from '../utils/fileParser/index.js';
 import { DocumentStructure, PageStructure, PageElement, DocumentElement, PDFTable, PDFTableRow, PDFTableCell, TableOptions } from '../utils/fileParser/types.js';
 import { MARKERS } from '../utils/fileParser/types.js';
+import fetch from 'node-fetch';
 
 interface TranslationData {
     id: string;
@@ -29,6 +30,7 @@ interface TranslationData {
     runId?: string;
     assistantId?: string;
     usedAssistant: boolean;
+    usedOCR?: boolean;
     assistant?: {
         id: string;
         name: string;
@@ -46,6 +48,7 @@ interface TranslateFileParams {
     originalName: string;
     knowledgeBaseId?: string;
     assistantId?: string;
+    useOCR?: boolean;
 }
 
 interface ChunkInfo {
@@ -70,7 +73,7 @@ interface TranslationChunk {
     metadata: {
         pageIndex: number;
         elementIndices: number[];
-        style: Record<string, any>;
+        style: Record<string, unknown>;
     };
 }
 
@@ -144,24 +147,147 @@ function drawPDFTable(doc: PDFKit.PDFDocument, table: PDFTable, options: TableOp
     });
 }
 
-// Função para extrair texto de diferentes tipos de arquivo
-const extractTextFromBuffer = async (buffer: Buffer, mimeType: string): Promise<string> => {
+// Função para extrair texto de documentos usando Vision API
+const extractTextUsingVision = async (buffer: Buffer, mimeType: string, language: string): Promise<string> => {
     try {
+        // Converter o buffer para base64
+        const base64Data = buffer.toString('base64');
+        
+        // Buscar o prompt configurado no banco
+        let promptConfig;
+        try {
+            promptConfig = await prisma.systemConfig.findUnique({
+                where: { key: 'vision_prompt' }
+            });
+        } catch (e) {
+            console.log('Erro ao buscar configuração do Vision:', e);
+        }
+        
+        // Usar o prompt configurado ou um prompt padrão caso não exista
+        const defaultVisionPrompt = `Extraia todo o texto deste documento.
+        Preste atenção às seguintes estruturas complexas:
+        1. Tabelas - extraia o conteúdo linha por linha, preservando as relações entre as colunas
+        2. Múltiplas colunas - leia de cima para baixo, coluna por coluna, da esquerda para a direita
+        3. Imagens com texto - extraia o texto visível nas imagens
+        4. Gráficos e diagramas - descreva e extraia quaisquer textos
+        
+        Mantenha a estrutura do documento, incluindo parágrafos, tópicos e seções.
+        Preserve números, fórmulas, referências e citações exatamente como aparecem.
+        Indique quebras de página com [QUEBRA_PAGINA].
+        Se houver texto em uma tabela, formate como: [INICIO_TABELA] conteúdo [FIM_TABELA].
+        Retorne APENAS o texto extraído, sem explicações adicionais.`;
+        
+        const visionPrompt = promptConfig?.value || defaultVisionPrompt;
+        
+        // Determinar o tipo MIME adequado para a URL de dados
+        const dataMimeType = mimeType === 'application/pdf' ? 'application/pdf' : 'application/octet-stream';
+
+        // Estimar tokens para controle de custos
+        const approxTokens = (170 * 4) + 85;  // Estimativa para uma página típica
+        console.log(`💰 Estimativa de custo para OCR: aprox. ${approxTokens} tokens`);
+
+        // Fazer chamada para a OpenAI Vision API
+        console.log('🔄 Enviando documento para Vision AI...');
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",  // Modelo mais econômico que suporta Vision
+                messages: [
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: visionPrompt },
+                            {
+                                type: "image_url",
+                                image_url: {
+                                    url: `data:${dataMimeType};base64,${base64Data}`
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens: 4096
+            })
+        });
+
+        // Se ocorrer erro na API
+        if (!response.ok) {
+            const errorData = await response.json();
+            console.error('Erro na resposta da Vision API:', errorData);
+            
+            // Tentativa alternativa se for PDF
+            if (mimeType === 'application/pdf') {
+                console.log('⚠️ Tentando extrair texto do PDF usando métodos alternativos...');
+                
+                // Usar parseFile como alternativa segura
+                try {
+                    const parseResult = await parseFile(buffer, mimeType);
+                    if (parseResult.content) {
+                        console.log('✅ Texto extraído com sucesso usando parser padrão');
+                        return parseResult.content;
+                    }
+                } catch (parseError) {
+                    console.error('Erro ao usar parseFile como alternativa:', parseError);
+                    // Continuamos para lançar o erro original da API
+                }
+            }
+            
+            throw new Error(`Erro na API Vision: ${errorData.error?.message || 'Erro desconhecido'}`);
+        }
+        
+        const data = await response.json();
+        const extractedText = data.choices[0]?.message?.content;
+        
+        if (!extractedText) {
+            throw new Error('Nenhum texto foi extraído pela Vision API');
+        }
+        
+        console.log('✅ Texto extraído com sucesso via Vision OCR');
+        
+        // Substituir marcadores especiais pelos usados no sistema
+        return extractedText
+            .replace(/\[QUEBRA_PAGINA\]/g, MARKERS.PAGE_BREAK)
+            .replace(/\[INICIO_TABELA\](.*?)\[FIM_TABELA\]/gs, (match: string, tableContent: string) => {
+                return `${tableContent}`;
+            });
+    } catch (error) {
+        console.error('Erro ao extrair texto usando Vision:', error);
+        
+        // Em caso de falha, tentar método padrão como último recurso
+        console.log('🔄 Usando método padrão como último recurso...');
+        try {
+            const parseResult = await parseFile(buffer, mimeType);
+            return parseResult.content;
+        } catch (parseError) {
+            console.error('Falha total na extração de texto:', parseError);
+            throw new Error(`Falha ao extrair texto usando Vision: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        }
+    }
+};
+
+// Função para extrair texto de diferentes tipos de arquivo
+const extractTextFromBuffer = async (buffer: Buffer, mimeType: string, useOCR: boolean = false, language: string = 'por'): Promise<string> => {
+    try {
+        // Se OCR estiver ativo e NÃO for um arquivo de texto puro, usar Vision
+        if (useOCR && !mimeType.includes('text/plain') && !mimeType.toLowerCase().endsWith('.txt')) {
+            console.log('🧠 Usando Vision AI para extração de texto...');
+            return await extractTextUsingVision(buffer, mimeType, language);
+        }
+
+        // Método padrão de extração
         const result = await parseFile(buffer, mimeType);
         return result.content;
     } catch (error: unknown) {
         console.error('Erro ao extrair texto:', error);
-        
         if (error instanceof Error) {
-            throw new BaseError(
-                `Falha ao extrair texto do arquivo: ${error.message}`,
-                500,
-                'EXTRACTION_ERROR'
-            );
+            throw new Error(`Erro ao extrair texto: ${error.message}`);
         }
-        
         throw new BaseError(
-            'Falha ao extrair texto do arquivo',
+            'Erro ao extrair texto do arquivo',
             500,
             'EXTRACTION_ERROR'
         );
@@ -546,12 +672,18 @@ export const translateFile = async (params: TranslateFileParams & { fileBuffer: 
             id: params.translationId,
             arquivo: params.originalName,
             tamanho: `${Math.round(params.fileBuffer.length / 1024)}KB`,
-            idiomas: `${params.sourceLanguage} → ${params.targetLanguage}`
+            idiomas: `${params.sourceLanguage} → ${params.targetLanguage}`,
+            useOCR: params.useOCR
         });
 
         // Extrair texto do buffer do arquivo
         const outputFormat = params.outputFormat.split('/').pop() || 'txt';
-        const fileContent = await extractTextFromBuffer(params.fileBuffer, params.outputFormat);
+        const fileContent = await extractTextFromBuffer(
+            params.fileBuffer, 
+            params.outputFormat, 
+            params.useOCR, 
+            params.sourceLanguage
+        );
 
         // Dividir o conteúdo em chunks
         const chunks = splitIntoChunks(fileContent);

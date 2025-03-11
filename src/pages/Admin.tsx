@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Users, Settings } from 'lucide-react';
+import { Users, Settings, Eye } from 'lucide-react';
 import api from '../axiosConfig';
 import { toast } from 'react-hot-toast';
 import type { User, AssistantConfig, UserStats, ModelConfig } from '../types/index';
@@ -12,15 +12,26 @@ const defaultConfig: AssistantConfig = {
     temperature: 0.3
 };
 
+interface VisionConfig {
+    prompt: string;
+    model: string;
+}
+
+const defaultVisionConfig: VisionConfig = {
+    prompt: '',
+    model: 'gpt-4o-mini'
+};
+
 interface UserDetails extends User {
     stats?: UserStats;
 }
 
 export function Admin() {
-    const [activeTab, setActiveTab] = useState<'users' | 'assistant' | 'models'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'assistant' | 'vision' | 'models'>('users');
     const [users, setUsers] = useState<User[]>([]);
     const [selectedUser, setSelectedUser] = useState<UserDetails | null>(null);
     const [assistantConfig, setAssistantConfig] = useState<AssistantConfig>(defaultConfig);
+    const [visionConfig, setVisionConfig] = useState<VisionConfig>(defaultVisionConfig);
     const [loading, setLoading] = useState(true);
 
     const models: ModelConfig[] = [
@@ -51,12 +62,16 @@ export function Admin() {
 
     const loadData = async () => {
         try {
+            setLoading(true);
             if (activeTab === 'users') {
                 const response = await api.get('/api/admin/users');
                 setUsers(response.data.users);
-            } else {
+            } else if (activeTab === 'assistant') {
                 const response = await api.get('/api/admin/assistant/config');
                 setAssistantConfig(response.data.config);
+            } else if (activeTab === 'vision') {
+                const response = await api.get('/api/admin/vision/config');
+                setVisionConfig(response.data.config);
             }
         } catch (error) {
             console.error('Erro ao carregar dados:', error);
@@ -121,6 +136,22 @@ export function Admin() {
         }
     };
 
+    const handleVisionConfigUpdate = async () => {
+        try {
+            setLoading(true);
+            const response = await api.put('/api/admin/vision/config', {
+                prompt: visionConfig.prompt
+            });
+            toast.success('Configuração do OCR atualizada com sucesso');
+            setVisionConfig(response.data.config);
+        } catch (error) {
+            console.error('Erro ao atualizar configuração do OCR:', error);
+            toast.error('Erro ao atualizar configuração do OCR');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="container mx-auto px-4 py-8">
             <h1 className="text-3xl font-bold mb-8">Painel Administrativo</h1>
@@ -150,6 +181,17 @@ export function Admin() {
                 >
                     <Settings className="w-5 h-5 mr-2" />
                     Configuração do Assistente
+                </button>
+                <button
+                    onClick={() => setActiveTab('vision')}
+                    className={`flex items-center px-4 py-2 rounded-lg ${
+                        activeTab === 'vision'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    }`}
+                >
+                    <Eye className="w-5 h-5 mr-2" />
+                    Configuração OCR
                 </button>
                 <button
                     onClick={() => setActiveTab('models')}
@@ -475,6 +517,49 @@ export function Admin() {
                             </button>
                         </div>
                     </form>
+                </div>
+            ) : activeTab === 'vision' ? (
+                <div className="bg-white shadow rounded-lg p-6">
+                    <h2 className="text-xl font-semibold mb-4">Configuração do OCR via Vision</h2>
+                    <p className="text-gray-600 mb-4">
+                        Configure o prompt utilizado para extrair texto de documentos complexos usando OCR.
+                    </p>
+                    
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Prompt do Vision OCR
+                        </label>
+                        <textarea
+                            className="w-full h-64 border rounded-md p-2 text-sm font-mono"
+                            value={visionConfig.prompt}
+                            onChange={(e) => setVisionConfig({...visionConfig, prompt: e.target.value})}
+                            disabled={loading}
+                        />
+                    </div>
+                    
+                    <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Modelo
+                        </label>
+                        <select
+                            className="block w-full rounded-md border-gray-300 shadow-sm"
+                            value={visionConfig.model}
+                            disabled={true}
+                        >
+                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Atualmente apenas o GPT-4o Mini é suportado para OCR.
+                        </p>
+                    </div>
+                    
+                    <button
+                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+                        onClick={handleVisionConfigUpdate}
+                        disabled={loading}
+                    >
+                        {loading ? 'Salvando...' : 'Salvar configurações'}
+                    </button>
                 </div>
             ) : (
                 <div className="bg-white rounded-lg shadow p-6">

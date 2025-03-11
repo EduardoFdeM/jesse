@@ -7,7 +7,9 @@ import {
     updateAssistantConfig,
     getUserStats,
     createUser,
-    getAvailableUsers
+    getAvailableUsers,
+    getVisionConfig,
+    updateVisionConfig
 } from '../controllers/admin.controller.js';
 import { authorize } from '../middlewares/authorization.middleware.js';
 
@@ -24,5 +26,9 @@ router.put('/users/:id/role', authorize(['SUPERUSER']), updateUserRole);
 // Rotas de gerenciamento do Assistente
 router.get('/assistant/config', getAssistantConfig);
 router.put('/assistant/config', updateAssistantConfig);
+
+// Rotas de gerenciamento do Vision OCR
+router.get('/vision/config', getVisionConfig);
+router.put('/vision/config', authorize(['SUPERUSER']), updateVisionConfig);
 
 export default router; 

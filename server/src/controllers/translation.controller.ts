@@ -95,6 +95,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
         const file = req.file;
         const useKnowledgeBase = req.body.useKnowledgeBase === 'true';
         const useCustomAssistant = req.body.useCustomAssistant === 'true';
+        const useOCR = req.body.useOCR === 'true';
         const knowledgeBaseId = useKnowledgeBase ? req.body.knowledgeBaseId : null;
         const assistantId = useCustomAssistant ? req.body.assistantId : null;
 
@@ -104,6 +105,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             fileType: file?.mimetype,
             useKnowledgeBase,
             useCustomAssistant,
+            useOCR,
             knowledgeBaseId,
             assistantId,
             userId: req.user?.id
@@ -179,11 +181,14 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
                 fileSize: file.size,
                 fileType: file.mimetype,
                 usedKnowledgeBase: useKnowledgeBase,
+                usedAssistant: useCustomAssistant,
+                usedOCR: useOCR,
                 knowledgeBaseId,
                 assistantId,
                 translationMetadata: JSON.stringify({
                     usedKnowledgeBase: useKnowledgeBase,
                     usedAssistant: useCustomAssistant,
+                    usedOCR: useOCR,
                     knowledgeBaseName: useKnowledgeBase ? await getKnowledgeBaseName(knowledgeBaseId) : null,
                     assistantName: useCustomAssistant ? await getAssistantName(assistantId) : null
                 }),
@@ -203,7 +208,8 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             assistantId,
             useCustomAssistant,
             knowledgeBaseId,
-            useKnowledgeBase
+            useKnowledgeBase,
+            useOCR
         });
 
         console.log('🚀 Iniciando processo de tradução...');
@@ -218,6 +224,7 @@ export const createTranslation = authenticatedHandler(async (req: AuthenticatedR
             originalName: file.originalname,
             knowledgeBaseId: useKnowledgeBase ? knowledgeBaseId : undefined,
             assistantId: useCustomAssistant ? assistantId : undefined,
+            useOCR: useOCR,
             fileBuffer: file.buffer
         });
 

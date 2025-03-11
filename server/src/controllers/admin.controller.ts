@@ -359,3 +359,70 @@ export const getAvailableUsers = asyncHandler(async (req: Request, res: Response
 
     res.json({ users: sortedUsers });
 });
+
+// Obter configuração do Vision OCR
+export const getVisionConfig = asyncHandler(async (_req: Request, res: Response) => {
+    try {
+        // Buscar configuração no banco de dados
+        const configRecord = await prisma.systemConfig.findUnique({
+            where: { key: 'vision_prompt' }
+        });
+
+        // Configuração padrão caso não exista
+        const defaultVisionPrompt = `Extraia todo o texto deste documento.
+        Preste atenção às seguintes estruturas complexas:
+        1. Tabelas - extraia o conteúdo linha por linha, preservando as relações entre as colunas
+        2. Múltiplas colunas - leia de cima para baixo, coluna por coluna, da esquerda para a direita
+        3. Imagens com texto - extraia o texto visível nas imagens
+        4. Gráficos e diagramas - descreva e extraia quaisquer textos
+        
+        Mantenha a estrutura do documento, incluindo parágrafos, tópicos e seções.
+        Preserve números, fórmulas, referências e citações exatamente como aparecem.
+        Indique quebras de página com [QUEBRA_PAGINA].
+        Se houver texto em uma tabela, formate como: [INICIO_TABELA] conteúdo [FIM_TABELA].
+        Retorne APENAS o texto extraído, sem explicações adicionais.`;
+
+        const config = {
+            prompt: configRecord?.value || defaultVisionPrompt,
+            model: 'gpt-4o-mini'
+        };
+
+        res.json({ config });
+    } catch (error) {
+        console.error('Erro ao buscar configuração do Vision OCR:', error);
+        throw new Error('Erro ao buscar configuração do Vision OCR');
+    }
+});
+
+// Atualizar configuração do Vision OCR
+export const updateVisionConfig = asyncHandler(async (req: Request, res: Response) => {
+    const { prompt } = req.body;
+
+    if (!prompt || typeof prompt !== 'string') {
+        throw new ValidationError('Prompt inválido');
+    }
+
+    try {
+        // Atualizar ou criar configuração
+        const config = await prisma.systemConfig.upsert({
+            where: { key: 'vision_prompt' },
+            update: { 
+                value: prompt,
+                updatedAt: new Date()
+            },
+            create: {
+                key: 'vision_prompt',
+                value: prompt,
+                description: 'Prompt para OCR via Vision'
+            }
+        });
+
+        res.json({ 
+            message: 'Configuração atualizada com sucesso',
+            config
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar configuração do Vision OCR:', error);
+        throw new Error('Erro ao atualizar configuração do Vision OCR');
+    }
+});

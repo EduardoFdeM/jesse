@@ -42,6 +42,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
 }) => {
   const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [useAssistant, setUseAssistant] = useState(false);
+  const [useOCR, setUseOCR] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
@@ -52,6 +53,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const processingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Verificar se o arquivo é diferente de TXT para mostrar opção de OCR
+  const isOCRAvailable = selectedFile && 
+    selectedFile.type !== 'text/plain' && 
+    !selectedFile.name.toLowerCase().endsWith('.txt');
+
   // Limpar recursos ao desmontar
   useEffect(() => {
     return () => {
@@ -61,6 +67,13 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       clearControllers();
     };
   }, []);
+
+  // Reset OCR quando o arquivo é alterado
+  useEffect(() => {
+    if (!isOCRAvailable) {
+      setUseOCR(false);
+    }
+  }, [isOCRAvailable]);
 
   const handleSubmit = async () => {
     if (!selectedFile) {
@@ -83,6 +96,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       formData.append('originalname', selectedFile.name);
       formData.append('useKnowledgeBase', useKnowledgeBase.toString());
       formData.append('useCustomAssistant', useAssistant.toString());
+      formData.append('useOCR', useOCR.toString());
       
       if (useKnowledgeBase && selectedKnowledgeBase) {
         formData.append('knowledgeBaseId', selectedKnowledgeBase);
@@ -141,6 +155,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     accept: {
       'application/pdf': ['.pdf'],
       'text/plain': ['.txt'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
     },
     maxFiles: 1,
     disabled: isLoading || processingRef.current,
@@ -224,6 +239,29 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           </select>
         )}
       </div>
+
+      {/* Seção de OCR (só aparece para arquivos não-TXT) */}
+      {isOCRAvailable && (
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id="useOCR"
+              checked={useOCR}
+              onChange={(e) => setUseOCR(e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="useOCR" className="text-sm text-gray-700">
+              Usar OCR avançado para estruturas complexas (tabelas, colunas, imagens)
+            </label>
+          </div>
+          {useOCR && (
+            <p className="text-xs text-gray-500 italic">
+              Esta opção usa IA para detectar e extrair texto de estruturas complexas como tabelas, múltiplas colunas e imagens.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Área de Upload */}
       <div

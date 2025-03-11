@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2 } from 'lucide-react';
+import { Download, Clock, CheckCircle, XCircle, Edit, Trash2, Share2, RefreshCw } from 'lucide-react';
 import { Translation, KnowledgeBase, Assistant, User, ViewStatus } from '../../types/index';
 import api from '../../axiosConfig';
 import { FileUpload } from '../upload/FileUpload';
@@ -15,6 +15,7 @@ const OUTPUT_TOKEN_RATE = 0.0000006;  // $0.600 / 1M tokens
 interface TranslationMetadata {
     usedKnowledgeBase: boolean;
     usedAssistant: boolean;
+    usedOCR?: boolean;
     knowledgeBaseName?: string;
     assistantName?: string;
 }
@@ -53,6 +54,7 @@ export function TranslatedDocuments() {
     const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
     const userRole = localStorage.getItem('userRole');
     const [viewFilter, setViewFilter] = useState<ViewStatus>(ViewStatus.ALL);
+    const [refreshing, setRefreshing] = useState(false);
 
     // Função para ordenar traduções
     const sortTranslations = (translations: Translation[]): Translation[] => {
@@ -62,6 +64,7 @@ export function TranslatedDocuments() {
     // Função para carregar traduções
     const loadTranslations = useCallback(async () => {
         try {
+            setRefreshing(true);
             const endpoint = userRole === 'EDITOR' 
                 ? '/api/translations/shared'  // Endpoint específico para editores
                 : '/api/translations';        // Endpoint padrão
@@ -70,7 +73,8 @@ export function TranslatedDocuments() {
             const translationsWithMetadata = response.data.data.map((translation: Translation) => {
                 let metadata: TranslationMetadata = {
                     usedKnowledgeBase: false,
-                    usedAssistant: false
+                    usedAssistant: false,
+                    usedOCR: false
                 };
                 try {
                     if (translation.translationMetadata) {
@@ -84,22 +88,20 @@ export function TranslatedDocuments() {
                     ...translation,
                     usedKnowledgeBase: metadata.usedKnowledgeBase || false,
                     usedAssistant: metadata.usedAssistant || false,
+                    usedOCR: metadata.usedOCR || false,
                     knowledgeBaseName: metadata.knowledgeBaseName || translation.knowledgeBase?.name,
                     assistantName: metadata.assistantName || translation.assistant?.name
                 };
             });
             
             setTranslations(sortTranslations(translationsWithMetadata));
-        } catch (err) {
-            console.error('Erro ao carregar traduções:', err);
+        } catch (error) {
+            console.error('Erro ao carregar traduções:', error);
             toast.error('Erro ao carregar traduções');
+        } finally {
+            setRefreshing(false);
         }
     }, [userRole]);
-
-    // Efeito para carregar traduções inicialmente
-    useEffect(() => {
-        loadTranslations();
-    }, [loadTranslations]);
 
     // Efeito para carregar bases de conhecimento e prompts apenas para usuários não-editores
     useEffect(() => {
@@ -121,6 +123,11 @@ export function TranslatedDocuments() {
 
         loadData();
     }, [userRole]);
+
+    // Efeito para carregar traduções inicialmente
+    useEffect(() => {
+        loadTranslations();
+    }, [loadTranslations]);
 
     // Efeito para configurar eventos do Socket.IO
     useEffect(() => {
@@ -173,7 +180,6 @@ export function TranslatedDocuments() {
         socket.on('translation:error', handleError);
 
         // Carregar traduções inicialmente e a cada 30 segundos
-        loadTranslations();
         const interval = setInterval(loadTranslations, 30000);
 
         return () => {
@@ -503,6 +509,11 @@ export function TranslatedDocuments() {
                         )}
                     </div>
                 )}
+                {metadata.usedOCR && (
+                    <div className="flex items-center gap-1">
+                        🔍 OCR avançado: Ativado
+                    </div>
+                )}
             </div>
         );
     };
@@ -694,31 +705,45 @@ export function TranslatedDocuments() {
     };
 
     return (
-        <div className="space-y-6">
-            <div className="sm:flex sm:items-center">
-                <div className="sm:flex-auto">
-                    <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
-                        {userRole === 'EDITOR' ? 'Documentos Compartilhados' : 'Traduções'}
-                    </h1>
-                    {userRole === 'EDITOR' && (
-                        <div className="mt-2 flex gap-4 text-sm text-gray-600">
-                            <span title="Documentos aguardando edição" className="flex items-center gap-1">
-                                ✏️ A editar: {getStatusCounts()[ViewStatus.TO_EDIT] || 0}
-                            </span>
-                            <span title="Documentos editados" className="flex items-center gap-1">
-                                ✅ Editados: {getStatusCounts()[ViewStatus.EDITED] || 0}
-                            </span>
-                            <span title="Documentos aprovados" className="flex items-center gap-1">
-                                🎯 Aprovados: {getStatusCounts()[ViewStatus.APPROVED] || 0}
-                            </span>
-                            <span title="Documentos em revisão" className="flex items-center gap-1">
-                                🔍 Revisão: {getStatusCounts()[ViewStatus.REVIEW] || 0}
-                            </span>
-                            <span title="Documentos arquivados" className="flex items-center gap-1">
-                                📦 Arquivados: {getStatusCounts()[ViewStatus.ARCHIVED] || 0}
-                            </span>
-                        </div>
-                    )}
+        <div className="container mx-auto p-4">
+            <div className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                    <h1 className="text-xl font-semibold">Documentos Traduzidos</h1>
+                    <button 
+                        onClick={loadTranslations}
+                        disabled={refreshing}
+                        className="flex items-center bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                        {refreshing ? 'Atualizando...' : 'Atualizar'}
+                    </button>
+                </div>
+                
+                <div className="sm:flex sm:items-center">
+                    <div className="sm:flex-auto">
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                            {userRole === 'EDITOR' ? 'Documentos Compartilhados' : 'Traduções'}
+                        </h1>
+                        {userRole === 'EDITOR' && (
+                            <div className="mt-2 flex gap-4 text-sm text-gray-600">
+                                <span title="Documentos aguardando edição" className="flex items-center gap-1">
+                                    ✏️ A editar: {getStatusCounts()[ViewStatus.TO_EDIT] || 0}
+                                </span>
+                                <span title="Documentos editados" className="flex items-center gap-1">
+                                    ✅ Editados: {getStatusCounts()[ViewStatus.EDITED] || 0}
+                                </span>
+                                <span title="Documentos aprovados" className="flex items-center gap-1">
+                                    🎯 Aprovados: {getStatusCounts()[ViewStatus.APPROVED] || 0}
+                                </span>
+                                <span title="Documentos em revisão" className="flex items-center gap-1">
+                                    🔍 Revisão: {getStatusCounts()[ViewStatus.REVIEW] || 0}
+                                </span>
+                                <span title="Documentos arquivados" className="flex items-center gap-1">
+                                    📦 Arquivados: {getStatusCounts()[ViewStatus.ARCHIVED] || 0}
+                                </span>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 

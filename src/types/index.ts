@@ -81,6 +81,7 @@ export interface Translation {
     costData?: string;
     usedAssistant: boolean;
     usedKnowledgeBase: boolean;
+    usedOCR?: boolean;
     createdAt: string;
     updatedAt: string;
     userId: string;
