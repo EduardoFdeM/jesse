@@ -1,6 +1,5 @@
 import { FileParser, ParseResult, ParserOptions, MARKERS, DocumentElement, ElementType, ElementStyle, DocumentStructure, PageStructure, PageElement, TextItem, TextMarkedContent } from '../types.js';
 import * as pdfjsLib from 'pdfjs-dist';
-import { OCRService } from '../services/ocrService.js';
 
 // Usar os tipos do pdfjs-dist
 type PDFTextContent = import('pdfjs-dist/types/src/display/api').TextContent;
@@ -11,11 +10,9 @@ interface ExtendedTextItem extends TextItem {
 }
 
 export class PDFParser implements FileParser {
-    private ocrService: OCRService;
     private documentStructure: DocumentStructure;
 
     constructor() {
-        this.ocrService = OCRService.getInstance();
         this.documentStructure = {
             type: 'document',
             elements: [],
