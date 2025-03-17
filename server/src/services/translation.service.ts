@@ -862,8 +862,7 @@ ${chunk.overlap.after ? '\n---\nContexto posterior:\n' + chunk.overlap.after : '
                                 where: { id: params.assistantId },
                                 select: { assistantId: true }
                             }))?.assistantId || process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID! 
-                            : process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!,
-                        instructions: "Mantenha todos os números, referências e citações exatamente como estão no texto original."
+                            : process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID!
                     });
 
                     // Log após criar o run
