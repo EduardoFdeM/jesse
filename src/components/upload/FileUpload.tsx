@@ -2,19 +2,16 @@ import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import api, { clearControllers } from '../../axiosConfig';
 import { toast } from 'react-hot-toast';
-import { KnowledgeBase, Assistant } from '../../types';
+import { Assistant } from '../../types';
 import { LanguageSelector } from '../translation/LanguageSelector';
 
 interface FileUploadProps {
   sourceLanguage: string;
   targetLanguage: string;
   onFileSelect: (files: File[]) => Promise<void>;
-  knowledgeBases: KnowledgeBase[];
   assistants: Assistant[];
   onReset: () => void;
-  selectedKnowledgeBase?: string | undefined;
   selectedAssistant?: string | undefined;
-  onKnowledgeBaseSelect?: (id: string) => void;
   onAssistantSelect?: (id: string | undefined) => void;
 }
 
@@ -32,15 +29,11 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   sourceLanguage,
   targetLanguage,
   onFileSelect,
-  knowledgeBases,
   assistants,
   onReset,
-  selectedKnowledgeBase,
   selectedAssistant,
-  onKnowledgeBaseSelect,
   onAssistantSelect
 }) => {
-  const [useKnowledgeBase, setUseKnowledgeBase] = useState(false);
   const [useAssistant, setUseAssistant] = useState(false);
   const [useOCR, setUseOCR] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -94,13 +87,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({
       formData.append('sourceLanguage', sourceLanguage);
       formData.append('targetLanguage', targetLanguage);
       formData.append('originalname', selectedFile.name);
-      formData.append('useKnowledgeBase', useKnowledgeBase.toString());
       formData.append('useCustomAssistant', useAssistant.toString());
       formData.append('useOCR', useOCR.toString());
       
-      if (useKnowledgeBase && selectedKnowledgeBase) {
-        formData.append('knowledgeBaseId', selectedKnowledgeBase);
-      }
       if (useAssistant && selectedAssistant) {
         formData.append('assistantId', selectedAssistant);
       }
@@ -169,46 +158,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
     }
   }, [useAssistant, onAssistantSelect]);
 
-  // Efeito para limpar a base de conhecimento quando desmarcar o checkbox
-  useEffect(() => {
-    if (!useKnowledgeBase) {
-      onKnowledgeBaseSelect?.('');
-    }
-  }, [useKnowledgeBase, onKnowledgeBaseSelect]);
-
   return (
     <div className="space-y-4">
-      {/* Seção de Base de Conhecimento */}
-      <div className="space-y-2">
-        <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="useKnowledgeBase"
-            checked={useKnowledgeBase}
-            onChange={(e) => setUseKnowledgeBase(e.target.checked)}
-            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <label htmlFor="useKnowledgeBase" className="text-sm text-gray-700">
-            Usar base de conhecimento para tradução
-          </label>
-        </div>
-
-        {useKnowledgeBase && (
-          <select
-            value={selectedKnowledgeBase || ''}
-            onChange={(e) => onKnowledgeBaseSelect?.(e.target.value)}
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="">Selecione uma base</option>
-            {knowledgeBases.map(kb => (
-              <option key={kb.id} value={kb.id}>
-                {kb.name}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
       {/* Seção de Assistant */}
       <div className="space-y-2">
         <div className="flex items-center space-x-2">

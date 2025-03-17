@@ -88,6 +88,7 @@ model KnowledgeBase {
   userId         String
   user           User          @relation(fields: [userId], references: [id])
   translations   Translation[]
+  assistants     Assistant[]   // Relação inversa com Assistant
   isPublic       Boolean       @default(false)
   canEdit        Boolean       @default(false)
   editableBy     User[]        @relation("editable_knowledge_bases")
@@ -113,8 +114,11 @@ model Assistant {
   temperature  Float         @default(0.3)
   assistantId  String        // ID do assistant na OpenAI (obrigatório)
   status       String        @default("pending") // pending, active, error
+  knowledgeBaseId String?    // ID da base de conhecimento vinculada
+  knowledgeBase KnowledgeBase? @relation(fields: [knowledgeBaseId], references: [id])
 
   @@index([userId])
+  @@index([knowledgeBaseId])
 }
 
 model TranslationShare {

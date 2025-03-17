@@ -374,6 +374,8 @@ const assistantApi = {
         instructions: string;
         model: string;
         temperature?: number;
+        tools?: Array<{ type: string }>;
+        file_ids?: string[];
     }): Promise<OpenAIAssistant> => {
         const response = await fetch('https://api.openai.com/v1/assistants', {
             method: 'POST',
@@ -382,8 +384,9 @@ const assistantApi = {
                 name: params.name,
                 instructions: params.instructions,
                 model: params.model || 'gpt-4o-mini',
-                tools: [{ type: "file_search" }],
-                temperature: params.temperature || 0.3
+                tools: params.tools || [{ type: "file_search" }],
+                temperature: params.temperature || 0.3,
+                file_ids: params.file_ids || []
             })
         });
 
@@ -400,6 +403,8 @@ const assistantApi = {
         instructions?: string;
         model?: string;
         temperature?: number;
+        tools?: Array<{ type: string }>;
+        file_ids?: string[];
     }): Promise<OpenAIAssistant> => {
         const response = await fetch(`https://api.openai.com/v1/assistants/${assistantId}`, {
             method: 'POST',

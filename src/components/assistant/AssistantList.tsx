@@ -16,6 +16,10 @@ interface Assistant {
     isPublic: boolean;
     assistantId: string;
     status: string;
+    knowledgeBase?: {
+        id: string;
+        name: string;
+    };
 }
 
 export function AssistantList() {
@@ -135,6 +139,14 @@ export function AssistantList() {
                             </div>
                         </div>
                         <p className="text-sm text-gray-600">{assistant.description}</p>
+                        
+                        {/* Base de Conhecimento */}
+                        {assistant.knowledgeBase && (
+                            <div className="text-sm">
+                                <span className="text-gray-500">Base de Conhecimento:</span>{' '}
+                                <span className="text-gray-700">{assistant.knowledgeBase.name}</span>
+                            </div>
+                        )}
                         
                         {/* Tags */}
                         {assistant.tags && assistant.tags.length > 0 && (

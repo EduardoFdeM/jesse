@@ -15,6 +15,7 @@ interface AssistantFormData {
     temperature: number;
     isPublic: boolean;
     canEdit: boolean;
+    knowledgeBaseId?: string;
 }
 
 export function AssistantForm() {
@@ -29,7 +30,8 @@ export function AssistantForm() {
         model: 'gpt-4o-mini',
         temperature: 0.3,
         isPublic: false,
-        canEdit: false
+        canEdit: false,
+        knowledgeBaseId: undefined
     });
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -38,6 +40,8 @@ export function AssistantForm() {
     const [selectedEditableUsers, setSelectedEditableUsers] = useState<string[]>([]);
     const [showEditableUsersModal, setShowEditableUsersModal] = useState(false);
     const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+    const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+    const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
 
     const loadAvailableUsers = async () => {
         try {
@@ -64,7 +68,8 @@ export function AssistantForm() {
                         model: data.model,
                         temperature: data.temperature,
                         isPublic: data.isPublic,
-                        canEdit: data.canEdit
+                        canEdit: data.canEdit,
+                        knowledgeBaseId: data.knowledgeBaseId
                     });
                     if (data.editableBy) {
                         setSelectedEditableUsers(data.editableBy.map((user: any) => user.id));
@@ -83,6 +88,20 @@ export function AssistantForm() {
 
         loadAssistant();
     }, [id]);
+
+    useEffect(() => {
+        const loadKnowledgeBases = async () => {
+            try {
+                const response = await api.get('/api/knowledge-bases');
+                setKnowledgeBases(response.data.data);
+            } catch (error) {
+                console.error('Erro ao carregar bases de conhecimento:', error);
+                toast.error('Erro ao carregar bases de conhecimento');
+            }
+        };
+
+        loadKnowledgeBases();
+    }, []);
 
     const validateAssistant = (instructions: string) => {
         if (instructions.length < 10) {
@@ -111,7 +130,8 @@ export function AssistantForm() {
             
             const dataToSend = {
                 ...formData,
-                editableBy: formData.canEdit ? selectedEditableUsers : []
+                editableBy: formData.canEdit ? selectedEditableUsers : [],
+                knowledgeBaseId: formData.knowledgeBaseId
             };
             
             const response = await api[method](endpoint, dataToSend);
@@ -329,6 +349,27 @@ export function AssistantForm() {
                                 </div>
                             )}
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                            Base de Conhecimento
+                        </label>
+                        <select
+                            value={formData.knowledgeBaseId || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, knowledgeBaseId: e.target.value || undefined }))}
+                            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                        >
+                            <option value="">Selecione uma base de conhecimento</option>
+                            {knowledgeBases.map(kb => (
+                                <option key={kb.id} value={kb.id}>
+                                    {kb.name}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="mt-1 text-sm text-gray-500">
+                            Selecione uma base de conhecimento para o assistant usar como contexto
+                        </p>
                     </div>
 
                     <div>
