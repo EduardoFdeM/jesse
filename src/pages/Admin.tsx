@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { Users, Settings, Eye } from 'lucide-react';
 import api from '../axiosConfig';
 import { toast } from 'react-hot-toast';
-import type { User, AssistantConfig, UserStats, ModelConfig } from '../types/index';
+import type { User, AssistantConfig, UserStats, ModelConfig, KnowledgeBase } from '../types/index';
 
 const defaultConfig: AssistantConfig = {
     id: '',
     name: '',
     model: 'gpt-3.5-turbo',
     instructions: '',
-    temperature: 0.3
+    temperature: 0.3,
+    tools: [],
+    tool_resources: undefined
 };
 
 interface VisionConfig {
@@ -33,6 +35,8 @@ export function Admin() {
     const [assistantConfig, setAssistantConfig] = useState<AssistantConfig>(defaultConfig);
     const [visionConfig, setVisionConfig] = useState<VisionConfig>(defaultVisionConfig);
     const [loading, setLoading] = useState(true);
+    const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+    const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string | undefined>();
 
     const models: ModelConfig[] = [
         {
@@ -60,6 +64,12 @@ export function Admin() {
         loadData();
     }, [activeTab]);
 
+    useEffect(() => {
+        if (activeTab === 'assistant') {
+            loadKnowledgeBases();
+        }
+    }, [activeTab]);
+
     const loadData = async () => {
         try {
             setLoading(true);
@@ -67,8 +77,22 @@ export function Admin() {
                 const response = await api.get('/api/admin/users');
                 setUsers(response.data.users);
             } else if (activeTab === 'assistant') {
-                const response = await api.get('/api/admin/assistant/config');
-                setAssistantConfig(response.data.config);
+                const [assistantResponse, knowledgeBasesResponse] = await Promise.all([
+                    api.get('/api/admin/assistant/config'),
+                    api.get('/api/knowledge-bases')
+                ]);
+                
+                setAssistantConfig(assistantResponse.data.config);
+                setKnowledgeBases(knowledgeBasesResponse.data.data || []);
+
+                if (assistantResponse.data.config.tool_resources?.file_search?.vector_store_ids?.length > 0) {
+                    const kb = knowledgeBasesResponse.data.data?.find(
+                        (kb: KnowledgeBase) => kb.vectorStoreId === assistantResponse.data.config.tool_resources.file_search.vector_store_ids[0]
+                    );
+                    if (kb) {
+                        setSelectedKnowledgeBase(kb.id);
+                    }
+                }
             } else if (activeTab === 'vision') {
                 const response = await api.get('/api/admin/vision/config');
                 setVisionConfig(response.data.config);
@@ -98,6 +122,16 @@ export function Admin() {
         }
     };
 
+    const loadKnowledgeBases = async () => {
+        try {
+            const response = await api.get('/api/knowledge-bases');
+            setKnowledgeBases(response.data.knowledgeBases);
+        } catch (error) {
+            console.error('Erro ao carregar bases de conhecimento:', error);
+            toast.error('Erro ao carregar bases de conhecimento');
+        }
+    };
+
     const handleRoleUpdate = async (userId: string, newRole: string) => {
         try {
             await api.put(`/api/admin/users/${userId}/role`, { role: newRole });
@@ -114,7 +148,8 @@ export function Admin() {
             await api.put('/api/admin/assistant/config', {
                 model: config.model,
                 instructions: config.instructions,
-                temperature: config.temperature
+                temperature: config.temperature,
+                knowledgeBaseId: selectedKnowledgeBase
             });
             toast.success('Configuração atualizada com sucesso');
             setAssistantConfig(config);
@@ -475,6 +510,23 @@ export function Admin() {
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-gray-700">
+                                Base de Conhecimento
+                            </label>
+                            <select
+                                value={selectedKnowledgeBase || ''}
+                                onChange={(e) => setSelectedKnowledgeBase(e.target.value || undefined)}
+                                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            >
+                                <option value="">Nenhuma</option>
+                                {knowledgeBases?.map((kb) => (
+                                    <option key={kb.id} value={kb.id}>
+                                        {kb.name}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">
                                 Instruções
                             </label>
                             <textarea
@@ -508,6 +560,16 @@ export function Admin() {
                                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             />
                         </div>
+                        {assistantConfig.tool_resources && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">
+                                    Vector Store IDs
+                                </label>
+                                <div className="mt-1 p-2 bg-gray-50 rounded-md">
+                                    {assistantConfig.tool_resources.file_search.vector_store_ids.join(', ')}
+                                </div>
+                            </div>
+                        )}
                         <div>
                             <button
                                 type="submit"

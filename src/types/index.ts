@@ -136,6 +136,20 @@ export interface AssistantConfig {
     model: string;
     instructions: string;
     temperature: number;
+    tools: Array<{
+        type: string;
+        file_search?: {
+            ranking_options?: {
+                ranker: string;
+                score_threshold: number;
+            };
+        };
+    }>;
+    tool_resources?: {
+        file_search: {
+            vector_store_ids: string[];
+        };
+    };
 }
 
 // Tipos de estatísticas

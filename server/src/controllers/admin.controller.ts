@@ -227,12 +227,23 @@ export const getAssistantConfig = asyncHandler(async (_req: Request, res: Respon
         // Buscar detalhes do assistente na OpenAI
         const assistant = await openai.beta.assistants.retrieve(assistantId);
 
+        // Buscar configuração de temperatura do banco
+        const tempConfig = await prisma.systemConfig.findUnique({
+            where: { key: 'default_assistant_temperature' }
+        });
+
         const config = {
             id: assistant.id,
             name: assistant.name,
             model: assistant.model,
             instructions: assistant.instructions,
-            temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.3')
+            temperature: tempConfig ? parseFloat(tempConfig.value) : 0.3,
+            tools: assistant.tools || [],
+            tool_resources: assistant.tools?.some(t => t.type === 'file_search') ? {
+                file_search: {
+                    vector_store_ids: []
+                }
+            } : undefined
         };
 
         res.json({ config });
@@ -244,7 +255,7 @@ export const getAssistantConfig = asyncHandler(async (_req: Request, res: Respon
 
 // Atualizar configuração do assistente
 export const updateAssistantConfig = asyncHandler(async (req: Request, res: Response) => {
-    const { model, instructions, temperature } = req.body;
+    const { model, instructions, temperature, knowledgeBaseId } = req.body;
     const assistantId = process.env.DEFAULT_TRANSLATOR_ASSISTANT_ID;
 
     if (!assistantId) {
@@ -252,24 +263,67 @@ export const updateAssistantConfig = asyncHandler(async (req: Request, res: Resp
     }
 
     try {
+        // Buscar vectorStoreId se houver knowledgeBase
+        let vectorStoreId: string | undefined;
+        if (knowledgeBaseId) {
+            const knowledgeBase = await prisma.knowledgeBase.findUnique({
+                where: { id: knowledgeBaseId }
+            });
+            vectorStoreId = knowledgeBase?.vectorStoreId || undefined;
+        }
+
         // Atualizar o assistente na OpenAI
         const assistant = await openai.beta.assistants.update(
             assistantId,
             {
                 model,
-                instructions
+                instructions,
+                temperature: parseFloat(temperature.toString()),
+                tools: [{ 
+                    type: "file_search",
+                    file_search: {
+                        ranking_options: {
+                            ranker: "default_2024_08_21",
+                            score_threshold: 0.0
+                        }
+                    }
+                }],
+                ...(vectorStoreId && {
+                    tool_resources: {
+                        file_search: {
+                            vector_store_ids: [vectorStoreId]
+                        }
+                    }
+                })
             }
         );
 
-        // Atualizar a temperatura no .env ou onde for apropriado
-        // TODO: Implementar persistência da temperatura
+        // Atualizar a temperatura no banco
+        await prisma.systemConfig.upsert({
+            where: { key: 'default_assistant_temperature' },
+            update: { 
+                value: temperature.toString(),
+                updatedAt: new Date()
+            },
+            create: {
+                key: 'default_assistant_temperature',
+                value: temperature.toString(),
+                description: 'Temperatura padrão do assistente de tradução'
+            }
+        });
 
         const config = {
             id: assistant.id,
             name: assistant.name,
             model: assistant.model,
             instructions: assistant.instructions,
-            temperature
+            temperature,
+            tools: assistant.tools || [],
+            tool_resources: assistant.tools?.some(t => t.type === 'file_search') ? {
+                file_search: {
+                    vector_store_ids: vectorStoreId ? [vectorStoreId] : []
+                }
+            } : undefined
         };
 
         res.json({
