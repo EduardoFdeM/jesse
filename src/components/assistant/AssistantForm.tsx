@@ -272,9 +272,16 @@ export function AssistantForm() {
                             }
                             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
                         >
-                            <option value="gpt-4o-mini">GPT-4o-Mini</option>
+                            <option value="gpt-4o">GPT-4o</option>
+                            <option value="gpt-4-turbo">GPT-4-Turbo</option>
+                            <option value="gpt-4o-mini">GPT-4o-Mini (Não recomendado para base de conhecimento)</option>
                             <option value="gpt-3.5-turbo">GPT-3.5-Turbo</option>
                         </select>
+                        {formData.knowledgeBaseId && formData.model === 'gpt-4o-mini' && (
+                            <p className="mt-1 text-sm text-red-500">
+                                ⚠️ O modelo GPT-4o-Mini não é recomendado para uso com base de conhecimento. Para melhor desempenho, use GPT-4o ou GPT-4-Turbo.
+                            </p>
+                        )}
                     </div>
 
                     <div>

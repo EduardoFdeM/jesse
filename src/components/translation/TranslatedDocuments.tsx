@@ -502,24 +502,28 @@ export function TranslatedDocuments() {
         const metadata = translation.translationMetadata ? JSON.parse(translation.translationMetadata) : {};
         return (
             <div className="text-sm text-gray-500 dark:text-gray-400 space-y-1">
-                {translation.usedKnowledgeBase && (
-                    <div className="flex items-center gap-1">
-                        📚 Base de conhecimento: {translation.knowledgeBase?.name || 'Não especificada'}
-                    </div>
-                )}
                 {translation.usedAssistant && (
                     <div className="flex items-center gap-1">
-                        🤖 Assistant: {translation.assistant?.name || 'Padrão'}
-                        {translation.assistant?.model && (
-                            <span className="text-xs text-gray-400 ml-1">
-                                ({translation.assistant.model})
-                            </span>
-                        )}
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                            🤖 Assistant: {translation.assistant?.name || 'Padrão'}
+                            {translation.assistant?.model && (
+                                <span className="text-xs text-purple-600 ml-1">
+                                    ({translation.assistant.model})
+                                </span>
+                            )}
+                            {translation.assistant?.knowledgeBase && (
+                                <span className="text-xs text-blue-600 ml-1">
+                                    📚 {translation.assistant.knowledgeBase.name}
+                                </span>
+                            )}
+                        </span>
                     </div>
                 )}
                 {metadata.usedOCR && (
                     <div className="flex items-center gap-1">
-                        🔍 OCR avançado: Ativado
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-amber-100 text-amber-800">
+                            🔍 OCR avançado
+                        </span>
                     </div>
                 )}
             </div>
@@ -969,14 +973,6 @@ export function TranslatedDocuments() {
                             </div>
 
                             <div className="flex gap-4 mt-2 text-sm text-gray-600">
-                                <div className="flex items-center">
-                                    <span className="mr-2">Base de Conhecimento:</span>
-                                    {translation.usedKnowledgeBase && translation.knowledgeBase ? (
-                                        <span className="text-green-600" title={translation.knowledgeBase.name}>✓</span>
-                                    ) : (
-                                        <span className="text-red-600">✗</span>
-                                    )}
-                                </div>
                                 <div className="flex items-center">
                                     <span className="mr-2">Assistant Personalizado:</span>
                                     {translation.usedAssistant && translation.assistant ? (

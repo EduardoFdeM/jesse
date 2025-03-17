@@ -184,7 +184,8 @@ export const FileUpload: React.FC<FileUploadProps> = ({
             <option value="">Selecione um assistant</option>
             {assistants.map((assistant) => (
               <option key={assistant.id} value={assistant.id}>
-                {assistant.name}
+                {assistant.name} {assistant.model && `(${assistant.model})`}
+                {assistant.knowledgeBase && ` 📚 ${assistant.knowledgeBase.name}`}
               </option>
             ))}
           </select>
