@@ -133,10 +133,21 @@ export const getAssistant = asyncHandler(async (req: Request, res: Response) => 
     
     const assistant = await prisma.assistant.findFirst({
         where: { 
-            id: req.params.id, 
-            userId: req.user!.id 
+            id: req.params.id,
+            OR: [
+                { userId: req.user!.id },
+                { isPublic: true },
+                { editableBy: { some: { id: req.user!.id } } }
+            ]
         },
         include: {
+            editableBy: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true
+                }
+            },
             knowledgeBase: true
         }
     });
