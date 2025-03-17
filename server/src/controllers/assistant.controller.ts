@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import prisma from '../config/database.js';
-import openai, { OpenAIAssistant } from '../config/openai.js';
+import openai from '../config/openai.js';
 
 // Verificação de autenticação comum
 const verifyUser = (userId: string | undefined): void => {
@@ -33,7 +33,8 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
                     name: true,
                     email: true
                 }
-            }
+            },
+            knowledgeBase: true
         },
         orderBy: { createdAt: 'desc' }
     });
@@ -45,7 +46,7 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
         openaiAssistants.data.some(oa => oa.id === assistant.assistantId)
     ).map(assistant => ({
         ...assistant,
-        assistantId: assistant.assistantId // Garantir que o ID da OpenAI está disponível
+        assistantId: assistant.assistantId
     }));
     
     res.json({ 
@@ -58,14 +59,39 @@ export const getAssistants = asyncHandler(async (req: Request, res: Response) =>
 export const createAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy } = req.body;
+    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy, knowledgeBaseId } = req.body;
     
-    // Criar assistant na OpenAI
+    // Buscar vectorStoreId se houver knowledgeBase
+    let vectorStoreId: string | undefined;
+    if (knowledgeBaseId) {
+        const knowledgeBase = await prisma.knowledgeBase.findUnique({
+            where: { id: knowledgeBaseId }
+        });
+        vectorStoreId = knowledgeBase?.vectorStoreId || undefined;
+    }
+
+    // Criar assistant na OpenAI com configurações de vector store
     const openaiAssistant = await openai.assistant.create({
         name,
         instructions,
         model: model || 'gpt-4o-mini',
-        temperature
+        temperature,
+        tools: [{ 
+            type: "file_search",
+            file_search: {
+                ranking_options: {
+                    ranker: "default_2024_08_21",
+                    score_threshold: 0.0
+                }
+            }
+        }],
+        ...(vectorStoreId && {
+            tool_resources: {
+                file_search: {
+                    vector_store_ids: [vectorStoreId]
+                }
+            }
+        })
     });
 
     // Criar no banco
@@ -82,6 +108,7 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
             userId: req.user!.id,
             assistantId: openaiAssistant.id,
             status: 'active',
+            knowledgeBaseId,
             editableBy: canEdit && editableBy ? {
                 connect: editableBy.map((id: string) => ({ id }))
             } : undefined
@@ -93,7 +120,8 @@ export const createAssistant = asyncHandler(async (req: Request, res: Response) 
                     name: true,
                     email: true
                 }
-            }
+            },
+            knowledgeBase: true
         }
     });
 
@@ -107,6 +135,9 @@ export const getAssistant = asyncHandler(async (req: Request, res: Response) => 
         where: { 
             id: req.params.id, 
             userId: req.user!.id 
+        },
+        include: {
+            knowledgeBase: true
         }
     });
     
@@ -120,7 +151,7 @@ export const getAssistant = asyncHandler(async (req: Request, res: Response) => 
 export const updateAssistant = asyncHandler(async (req: Request, res: Response) => {
     verifyUser(req.user?.id);
     
-    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy } = req.body;
+    const { name, description, instructions, tags, model, temperature, isPublic, canEdit, editableBy, knowledgeBaseId } = req.body;
     
     const assistant = await prisma.assistant.findFirst({ 
         where: { 
@@ -129,20 +160,51 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
                 { userId: req.user!.id },
                 { editableBy: { some: { id: req.user!.id } } }
             ]
-        } 
+        },
+        include: {
+            knowledgeBase: true
+        }
     });
     
     if (!assistant) {
         throw new NotFoundError('Assistant não encontrado');
     }
 
+    // Buscar vectorStoreId se houver knowledgeBase
+    let vectorStoreId: string | undefined;
+    if (knowledgeBaseId) {
+        const knowledgeBase = await prisma.knowledgeBase.findUnique({
+            where: { id: knowledgeBaseId }
+        });
+        vectorStoreId = knowledgeBase?.vectorStoreId || undefined;
+    } else if (assistant.knowledgeBase?.vectorStoreId) {
+        vectorStoreId = assistant.knowledgeBase.vectorStoreId;
+    }
+
     // Atualizar na OpenAI se existir assistantId
     if (assistant.assistantId) {
-        await openai.assistant.modify(assistant.assistantId, {
-            name,
-            instructions,
-            model,
-        });
+        const openaiUpdateParams = {
+            name: name || assistant.name,
+            instructions: instructions || assistant.instructions,
+            model: model || assistant.model,
+            temperature: temperature ?? assistant.temperature,
+            tools: [{ 
+                type: "file_search",
+                file_search: {
+                    ranking_options: {
+                        ranker: "default_2024_08_21",
+                        score_threshold: 0.0
+                    }
+                }
+            }],
+            tool_resources: vectorStoreId ? {
+                file_search: {
+                    vector_store_ids: [vectorStoreId]
+                }
+            } : undefined
+        };
+
+        await openai.assistant.modify(assistant.assistantId, openaiUpdateParams);
     }
 
     // Atualizar no banco
@@ -157,6 +219,7 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
             temperature,
             isPublic,
             canEdit,
+            knowledgeBaseId,
             editableBy: {
                 set: canEdit && editableBy ? editableBy.map((id: string) => ({ id })) : []
             }
@@ -168,7 +231,8 @@ export const updateAssistant = asyncHandler(async (req: Request, res: Response) 
                     name: true,
                     email: true
                 }
-            }
+            },
+            knowledgeBase: true
         }
     });
     

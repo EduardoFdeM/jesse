@@ -156,17 +156,14 @@ declare global {
                 }
             }
         }>;
-        top_p: number;
-        temperature: number;
-        reasoning_effort: string | null;
-        tool_resources: {
+        tool_resources?: {
             file_search?: {
                 vector_store_ids: string[];
             };
-            code_interpreter?: {
-                file_ids: string[];
-            };
         };
+        top_p: number;
+        temperature: number;
+        reasoning_effort: string | null;
         metadata: Record<string, unknown>;
         response_format: 'auto' | { type: string };
     }
